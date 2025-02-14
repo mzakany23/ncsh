@@ -1,6 +1,6 @@
 # NC Soccer Schedule Scraper
 
-A robust web scraper for collecting North Carolina soccer game schedules. Built with Scrapy and deployable to AWS Lambda.
+A robust web scraper for collecting North Coast soccer game schedules. Built with Scrapy and deployable to AWS Lambda.
 
 ## Features (v1.0.0)
 
