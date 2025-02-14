@@ -53,3 +53,7 @@ terraform.rc
 .terraform.lock.hcl
 
 *.log
+
+# Project specific
+data/
+.windsurfrules
