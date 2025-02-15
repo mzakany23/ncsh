@@ -248,11 +248,17 @@ resource "aws_iam_role_policy" "github_actions_iam" {
           "iam:PutRolePolicy",
           "iam:DeleteRolePolicy",
           "iam:GetRolePolicy",
-          "iam:PassRole"
+          "iam:PassRole",
+          "lambda:CreateFunction",
+          "lambda:GetFunction",
+          "lambda:DeleteFunction",
+          "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration"
         ]
         Resource = [
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*"
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*",
+          "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function/*"
         ]
       }
     ]
@@ -274,7 +280,10 @@ resource "aws_iam_role_policy" "github_actions_eventbridge" {
           "events:DeleteRule",
           "events:DescribeRule",
           "events:PutTargets",
-          "events:RemoveTargets"
+          "events:RemoveTargets",
+          "events:ListTagsForResource",
+          "events:TagResource",
+          "events:UntagResource"
         ]
         Resource = [
           "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/*"
