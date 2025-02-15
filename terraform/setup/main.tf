@@ -172,3 +172,40 @@ resource "aws_iam_role_policy" "github_actions_dynamodb" {
     ]
   })
 }
+
+# ECR permissions for GitHub Actions
+resource "aws_iam_role_policy" "github_actions_ecr" {
+  name = "github-actions-ecr-policy"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+          "ecr:DescribeImages",
+          "ecr:ListImages",
+          "ecr:DescribeRepositories",
+          "ecr:GetRepositoryPolicy",
+          "ecr:ListTagsForResource",
+          "ecr:GetLifecyclePolicy",
+          "ecr:GetLifecyclePolicyPreview",
+          "ecr:CreateRepository",
+          "ecr:DeleteRepository",
+          "ecr:TagResource",
+          "ecr:UntagResource"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
