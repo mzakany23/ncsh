@@ -109,7 +109,9 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:GetBucketTagging",
           "s3:GetBucketLocation",
           "s3:GetBucketCors",
-          "s3:PutBucketCors"
+          "s3:PutBucketCors",
+          "s3:GetBucketWebsite",
+          "s3:PutBucketWebsite"
         ]
         Resource = [
           aws_s3_bucket.terraform_state.arn
