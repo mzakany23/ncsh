@@ -83,19 +83,23 @@ jobs:
 
     - name: Terraform Plan (App)
       working-directory: ./terraform/app
-      run: terraform plan
+      run: terraform plan -input=false -out=tfplan
       env:
         TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_github_repo: "mzakany23/ncsh"
         TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
+        TF_VAR_tf_state_bucket: "ncsh-terraform-state"
         TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
 
     - name: Terraform Apply (App)
       if: github.ref == 'refs/heads/main'
       working-directory: ./terraform/app
-      run: terraform apply -auto-approve
+      run: terraform apply -auto-approve tfplan
       env:
         TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_github_repo: "mzakany23/ncsh"
         TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
+        TF_VAR_tf_state_bucket: "ncsh-terraform-state"
         TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
 
     - name: Test Lambda Function

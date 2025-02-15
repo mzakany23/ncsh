@@ -1,0 +1,5 @@
+aws_region         = "us-east-2"
+github_repo        = "mzakany23/ncsh"
+ecr_repository_name = "ncsoccer-scraper"
+tf_state_bucket    = "ncsh-terraform-state"
+data_bucket_name   = "ncsh-app-data"
