@@ -59,6 +59,16 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "app_data" {
   }
 }
 
+# ECR Repository
+resource "aws_ecr_repository" "ncsoccer" {
+  name                 = "ncsoccer-scraper"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 # GitHub Actions OIDC Provider
 resource "aws_iam_openid_connect_provider" "github_actions" {
   url = "https://token.actions.githubusercontent.com"
@@ -124,6 +134,43 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "${aws_s3_bucket.terraform_state.arn}/*",
           "${aws_s3_bucket.app_data.arn}/*"
         ]
+      }
+    ]
+  })
+}
+
+# ECR permissions for GitHub Actions
+resource "aws_iam_role_policy" "github_actions_ecr" {
+  name = "github-actions-ecr-policy"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        Resource = [aws_ecr_repository.ncsoccer.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = ["*"]
       }
     ]
   })

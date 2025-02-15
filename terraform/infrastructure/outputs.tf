@@ -17,3 +17,13 @@ output "github_actions_oidc_provider_arn" {
   description = "ARN of the GitHub Actions OIDC provider"
   value       = aws_iam_openid_connect_provider.github_actions.arn
 }
+
+output "ecr_repository_url" {
+  description = "URL of the ECR repository"
+  value       = aws_ecr_repository.ncsoccer.repository_url
+}
+
+output "ecr_repository_name" {
+  description = "Name of the ECR repository"
+  value       = aws_ecr_repository.ncsoccer.name
+}

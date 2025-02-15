@@ -17,16 +17,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ECR Repository
-resource "aws_ecr_repository" "ncsoccer" {
-  name                 = var.ecr_repository_name
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
 # IAM Role for Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "ncsoccer_lambda_role"
@@ -120,11 +110,16 @@ resource "aws_lambda_function" "ncsoccer_scraper" {
   memory_size   = 512
 
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.ncsoccer.repository_url}:latest"
+  image_uri     = "${data.aws_ecr_repository.ncsoccer.repository_url}:latest"
 
   environment {
     variables = {
       DATA_BUCKET = aws_s3_bucket.scraper_data.id
     }
   }
+}
+
+# Reference the ECR repository from infrastructure
+data "aws_ecr_repository" "ncsoccer" {
+  name = "ncsoccer-scraper"
 }
