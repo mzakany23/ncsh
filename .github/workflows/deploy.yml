@@ -13,93 +13,7 @@ env:
   TF_WORKSPACE: production
 
 jobs:
-  infrastructure:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    environment: production
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
-
-    - name: Terraform Init (Infrastructure)
-      working-directory: ./terraform/infrastructure
-      run: terraform init
-
-    - name: Terraform Plan (Infrastructure)
-      working-directory: ./terraform/infrastructure
-      run: terraform plan
-      env:
-        TF_VAR_aws_region: ${{ env.AWS_REGION }}
-
-    - name: Terraform Apply (Infrastructure)
-      if: github.ref == 'refs/heads/main'
-      working-directory: ./terraform/infrastructure
-      run: terraform apply -auto-approve
-      env:
-        TF_VAR_aws_region: ${{ env.AWS_REGION }}
-
-  app-infrastructure:
-    needs: infrastructure
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    environment: production
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
-
-    - name: Terraform Init (App)
-      working-directory: ./terraform/app
-      run: terraform init
-
-    - name: Terraform Plan (App)
-      working-directory: ./terraform/app
-      run: terraform plan
-      env:
-        TF_VAR_aws_region: ${{ env.AWS_REGION }}
-        TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
-        TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
-
-    - name: Terraform Apply (App)
-      if: github.ref == 'refs/heads/main'
-      working-directory: ./terraform/app
-      run: terraform apply -auto-approve
-      env:
-        TF_VAR_aws_region: ${{ env.AWS_REGION }}
-        TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
-        TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
-
   build-and-push:
-    needs: app-infrastructure
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     environment: production
@@ -150,21 +64,61 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Update Lambda Function
-      run: |
-        aws lambda update-function-code \
-          --function-name ncsoccer_scraper \
-          --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
 
-    - name: Wait for Lambda Update
+    - name: Terraform Init (App)
+      working-directory: ./terraform/app
       run: |
-        aws lambda wait function-updated \
-          --function-name ncsoccer_scraper
+        terraform init \
+          -backend-config="bucket=ncsh-terraform-state" \
+          -backend-config="key=app/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Plan (App)
+      working-directory: ./terraform/app
+      run: terraform plan
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
+        TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
+
+    - name: Terraform Apply (App)
+      if: github.ref == 'refs/heads/main'
+      working-directory: ./terraform/app
+      run: terraform apply -auto-approve
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
+        TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
 
     - name: Test Lambda Function
       run: |
+        # Invoke Lambda and capture response
         aws lambda invoke \
           --function-name ncsoccer_scraper \
           --payload '{"year": 2024, "month": 2, "day": 14, "mode": "day"}' \
           --cli-binary-format raw-in-base64-out \
-          response.json && cat response.json
+          response.json
+
+        # Check if invocation was successful
+        if [ $? -ne 0 ]; then
+          echo "Lambda invocation failed"
+          exit 1
+        fi
+
+        # Parse response and check status code
+        STATUS_CODE=$(cat response.json | jq -r '.statusCode')
+        if [ "$STATUS_CODE" != "200" ]; then
+          echo "Lambda execution failed with status code: $STATUS_CODE"
+          cat response.json
+          exit 1
+        fi
+
+        # Show execution results
+        echo "Lambda execution successful:"
+        cat response.json
