@@ -247,11 +247,37 @@ resource "aws_iam_role_policy" "github_actions_iam" {
           "iam:ListAttachedRolePolicies",
           "iam:PutRolePolicy",
           "iam:DeleteRolePolicy",
-          "iam:GetRolePolicy"
+          "iam:GetRolePolicy",
+          "iam:PassRole"
         ]
         Resource = [
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*"
+        ]
+      }
+    ]
+  })
+}
+
+# EventBridge permissions for GitHub Actions
+resource "aws_iam_role_policy" "github_actions_eventbridge" {
+  name = "github-actions-eventbridge-policy"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "events:PutRule",
+          "events:DeleteRule",
+          "events:DescribeRule",
+          "events:PutTargets",
+          "events:RemoveTargets"
+        ]
+        Resource = [
+          "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/*"
         ]
       }
     ]
