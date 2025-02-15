@@ -174,7 +174,7 @@ resource "aws_iam_role_policy" "github_actions_s3" {
 # ECR permissions for GitHub Actions
 resource "aws_iam_role_policy" "github_actions_ecr" {
   name = "github-actions-ecr-policy"
-  role = aws_iam_role.github_actions.id
+  role = data.aws_iam_role.github_actions.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -211,7 +211,7 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
 # Lambda permissions for GitHub Actions
 resource "aws_iam_role_policy" "github_actions_lambda" {
   name = "github-actions-lambda-policy"
-  role = aws_iam_role.github_actions.id
+  role = data.aws_iam_role.github_actions.id
 
   policy = jsonencode({
     Version = "2012-10-17"
