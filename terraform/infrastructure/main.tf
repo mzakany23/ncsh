@@ -6,11 +6,12 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket = "ncsh-terraform-state"
-    key    = "infrastructure/terraform.tfstate"
-    region = "us-east-2"
-  }
+  # Temporarily comment out backend until S3 bucket exists
+  # backend "s3" {
+  #   bucket = "ncsh-terraform-state"
+  #   key    = "infrastructure/terraform.tfstate"
+  #   region = "us-east-2"
+  # }
 }
 
 provider "aws" {
