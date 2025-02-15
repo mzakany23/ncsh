@@ -128,7 +128,8 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:PutBucketEncryption",
           "s3:PutEncryptionConfiguration",
           "s3:PutBucketOwnershipControls",
-          "s3:PutBucketTagging"
+          "s3:PutBucketTagging",
+          "s3:HeadBucket"
         ]
         Resource = [
           aws_s3_bucket.terraform_state.arn,
