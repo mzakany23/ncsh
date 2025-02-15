@@ -10,13 +10,13 @@ env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: ncsoccer-scraper
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  TF_WORKSPACE: production
+  TF_WORKSPACE: dev
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    environment: production
+    environment: dev
     permissions:
       contents: read
       id-token: write
@@ -30,6 +30,8 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
+        audience: sts.amazonaws.com
+        role-session-name: GitHubActions-Deploy
 
     - name: Login to Amazon ECR
       id: login-ecr
@@ -49,7 +51,7 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    environment: production
+    environment: dev
     permissions:
       contents: read
       id-token: write
