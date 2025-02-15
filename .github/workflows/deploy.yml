@@ -98,8 +98,27 @@ jobs:
 
     - name: Test Lambda Function
       run: |
+        # Invoke Lambda and capture response
         aws lambda invoke \
           --function-name ncsoccer_scraper \
           --payload '{"year": 2024, "month": 2, "day": 14, "mode": "day"}' \
           --cli-binary-format raw-in-base64-out \
-          response.json && cat response.json
+          response.json
+
+        # Check if invocation was successful
+        if [ $? -ne 0 ]; then
+          echo "Lambda invocation failed"
+          exit 1
+        fi
+
+        # Parse response and check status code
+        STATUS_CODE=$(cat response.json | jq -r '.statusCode')
+        if [ "$STATUS_CODE" != "200" ]; then
+          echo "Lambda execution failed with status code: $STATUS_CODE"
+          cat response.json
+          exit 1
+        fi
+
+        # Show execution results
+        echo "Lambda execution successful:"
+        cat response.json
