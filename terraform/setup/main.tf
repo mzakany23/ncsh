@@ -5,13 +5,6 @@ terraform {
       version = "~> 5.0"
     }
   }
-
-  backend "s3" {
-    bucket         = "ncsh-terraform-state"
-    key            = "infrastructure/terraform.tfstate"
-    region         = "us-east-2"
-    dynamodb_table = "ncsh-terraform-state-lock"
-  }
 }
 
 provider "aws" {
@@ -53,37 +46,6 @@ resource "aws_dynamodb_table" "terraform_state_lock" {
   tags = {
     Name        = "Terraform State Lock Table"
     Description = "DynamoDB table for Terraform state locking"
-  }
-}
-
-# S3 Bucket for Application Data
-resource "aws_s3_bucket" "app_data" {
-  bucket = "ncsh-app-data"
-}
-
-resource "aws_s3_bucket_versioning" "app_data" {
-  bucket = aws_s3_bucket.app_data.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "app_data" {
-  bucket = aws_s3_bucket.app_data.id
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-# ECR Repository
-resource "aws_ecr_repository" "ncsoccer" {
-  name                 = "ncsoccer-scraper"
-  image_tag_mutability = "MUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
   }
 }
 
@@ -148,8 +110,7 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:GetBucketLocation"
         ]
         Resource = [
-          aws_s3_bucket.terraform_state.arn,
-          aws_s3_bucket.app_data.arn
+          aws_s3_bucket.terraform_state.arn
         ]
       },
       {
@@ -163,17 +124,16 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:PutObjectAcl"
         ]
         Resource = [
-          "${aws_s3_bucket.terraform_state.arn}/*",
-          "${aws_s3_bucket.app_data.arn}/*"
+          "${aws_s3_bucket.terraform_state.arn}/*"
         ]
       }
     ]
   })
 }
 
-# ECR permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_ecr" {
-  name = "github-actions-ecr-policy"
+# DynamoDB permissions for GitHub Actions
+resource "aws_iam_role_policy" "github_actions_dynamodb" {
+  name = "github-actions-dynamodb-policy"
   role = aws_iam_role.github_actions.id
 
   policy = jsonencode({
@@ -182,65 +142,12 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
       {
         Effect = "Allow"
         Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetRepositoryPolicy",
-          "ecr:DescribeRepositories",
-          "ecr:ListImages",
-          "ecr:DescribeImages",
-          "ecr:BatchGetImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:PutImage"
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
         ]
-        Resource = [aws_ecr_repository.ncsoccer.arn]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken"
-        ]
-        Resource = ["*"]
+        Resource = [aws_dynamodb_table.terraform_state_lock.arn]
       }
     ]
   })
-}
-
-# Lambda permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_lambda" {
-  name = "github-actions-lambda-policy"
-  role = aws_iam_role.github_actions.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "lambda:UpdateFunctionCode",
-          "lambda:UpdateFunctionConfiguration",
-          "lambda:GetFunction",
-          "lambda:InvokeFunction",
-          "lambda:PublishVersion",
-          "lambda:TagResource",
-          "lambda:UntagResource",
-          "lambda:ListTags",
-          "lambda:CreateFunction",
-          "lambda:DeleteFunction",
-          "lambda:GetFunctionConfiguration"
-        ]
-        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:ncsoccer_scraper"
-      }
-    ]
-  })
-}
-
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}
-
-# Reference the GitHub Actions role created in setup
-data "aws_iam_role" "github_actions" {
-  name = "github-actions-ncsh"
 }
