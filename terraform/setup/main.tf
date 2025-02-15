@@ -123,10 +123,16 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:GetLifecycleConfiguration",
           "s3:PutLifecycleConfiguration",
           "s3:GetReplicationConfiguration",
-          "s3:PutReplicationConfiguration"
+          "s3:PutReplicationConfiguration",
+          "s3:PutBucketVersioning",
+          "s3:PutBucketEncryption",
+          "s3:PutEncryptionConfiguration",
+          "s3:PutBucketOwnershipControls",
+          "s3:PutBucketTagging"
         ]
         Resource = [
-          aws_s3_bucket.terraform_state.arn
+          aws_s3_bucket.terraform_state.arn,
+          "arn:aws:s3:::ncsh-app-data"
         ]
       },
       {
@@ -140,7 +146,8 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:PutObjectAcl"
         ]
         Resource = [
-          "${aws_s3_bucket.terraform_state.arn}/*"
+          "${aws_s3_bucket.terraform_state.arn}/*",
+          "arn:aws:s3:::ncsh-app-data/*"
         ]
       }
     ]
@@ -184,27 +191,26 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
       {
         Effect = "Allow"
         Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchGetImage",
           "ecr:BatchCheckLayerAvailability",
-          "ecr:CompleteLayerUpload",
           "ecr:GetDownloadUrlForLayer",
-          "ecr:InitiateLayerUpload",
-          "ecr:PutImage",
-          "ecr:UploadLayerPart",
-          "ecr:DescribeImages",
-          "ecr:ListImages",
-          "ecr:DescribeRepositories",
           "ecr:GetRepositoryPolicy",
-          "ecr:ListTagsForResource",
-          "ecr:GetLifecyclePolicy",
-          "ecr:GetLifecyclePolicyPreview",
-          "ecr:CreateRepository",
-          "ecr:DeleteRepository",
-          "ecr:TagResource",
-          "ecr:UntagResource"
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
         ]
-        Resource = "*"
+        Resource = ["arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/ncsoccer-scraper"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = ["*"]
       }
     ]
   })
