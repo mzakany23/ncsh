@@ -21,6 +21,21 @@ A robust web scraper for collecting North Coast soccer game schedules. Built wit
   - Automated monthly scraping via EventBridge
   - Step Function workflow for reliable execution
 
+## GitHub Environment Configuration
+
+The project uses GitHub Environments for configuration. Set up the following in your GitHub repository:
+
+### Environment Variables
+Set these in your GitHub environment (e.g., "dev"):
+- `AWS_REGION`: AWS region for resources (e.g., "us-east-2")
+- `ECR_REPOSITORY`: ECR repository name (e.g., "ncsoccer-scraper")
+- `TF_STATE_BUCKET`: S3 bucket for Terraform state (e.g., "your-terraform-state")
+
+### Environment Secrets
+Set these in your GitHub environment secrets:
+- `AWS_ROLE_ARN`: IAM role ARN for GitHub Actions
+- `DATA_BUCKET_NAME`: S3 bucket name for scraped data
+
 ## Local Development
 
 1. Set up Python environment:
@@ -49,11 +64,7 @@ Required AWS resources:
 - S3 bucket for data storage
 - Step Function for orchestration
 - EventBridge for scheduling
-
-Required GitHub secrets:
-- `AWS_ROLE_ARN`: IAM role for GitHub Actions
-- `AWS_ACCOUNT_ID`: AWS account ID
-- `DATA_BUCKET_NAME`: S3 bucket name for scraped data
+- DynamoDB for Terraform state locking
 
 ## Project Structure
 
