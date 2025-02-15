@@ -7,9 +7,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "ncsh-terraform-state"
-    key    = "app/terraform.tfstate"
-    region = "us-east-2"
+    bucket         = "ncsh-terraform-state"
+    key            = "app/terraform.tfstate"
+    region         = "us-east-2"
+    dynamodb_table = "ncsh-terraform-state-lock"
   }
 }
 
