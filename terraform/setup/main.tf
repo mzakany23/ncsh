@@ -202,7 +202,8 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
           "ecr:InitiateLayerUpload",
           "ecr:UploadLayerPart",
           "ecr:CompleteLayerUpload",
-          "ecr:PutImage"
+          "ecr:PutImage",
+          "ecr:ListTagsForResource"
         ]
         Resource = ["arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/ncsoccer-scraper"]
       },
