@@ -160,7 +160,8 @@ resource "aws_iam_role_policy" "github_actions_dynamodb" {
         Action = [
           "dynamodb:GetItem",
           "dynamodb:PutItem",
-          "dynamodb:DeleteItem"
+          "dynamodb:DeleteItem",
+          "dynamodb:DescribeTable"
         ]
         Resource = [aws_dynamodb_table.terraform_state_lock.arn]
       }
