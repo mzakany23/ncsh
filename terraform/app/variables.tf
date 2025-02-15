@@ -15,3 +15,15 @@ variable "data_bucket_name" {
   type        = string
   # This needs to be globally unique, so no default provided
 }
+
+variable "github_repo" {
+  description = "GitHub repository in format owner/repo"
+  type        = string
+  # Example: "username/ncsoccer"
+}
+
+variable "tf_state_bucket" {
+  description = "Name of the S3 bucket for Terraform state"
+  type        = string
+  # This needs to be globally unique, so no default provided
+}
