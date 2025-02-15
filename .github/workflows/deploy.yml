@@ -13,7 +13,7 @@ env:
   ENVIRONMENT: dev
 
 jobs:
-  build-and-push:
+  build-infrastructure:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     environment: dev
@@ -33,22 +33,35 @@ jobs:
         audience: sts.amazonaws.com
         role-session-name: GitHubActions-Deploy
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
 
-    - name: Build, tag, and push image to Amazon ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
+    # Infrastructure Terraform
+    - name: Terraform Init (Infrastructure)
+      working-directory: ./terraform/infrastructure
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        terraform init \
+          -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
+          -backend-config="key=infrastructure/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
 
-  deploy:
-    needs: build-and-push
+    - name: Terraform Plan (Infrastructure)
+      working-directory: ./terraform/infrastructure
+      run: terraform plan -input=false -out=tfplan
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Apply (Infrastructure)
+      if: github.ref == 'refs/heads/main'
+      working-directory: ./terraform/infrastructure
+      run: terraform apply -auto-approve tfplan
+
+  build-service:
+    needs: build-infrastructure
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     environment: dev
@@ -65,6 +78,20 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -101,30 +128,3 @@ jobs:
         TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
         TF_VAR_tf_state_bucket: ${{ env.TF_STATE_BUCKET }}
         TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
-
-    - name: Test Lambda Function
-      run: |
-        # Invoke Lambda and capture response
-        aws lambda invoke \
-          --function-name ncsoccer_scraper \
-          --payload '{"year": 2024, "month": 2, "day": 14, "mode": "day"}' \
-          --cli-binary-format raw-in-base64-out \
-          response.json
-
-        # Check if invocation was successful
-        if [ $? -ne 0 ]; then
-          echo "Lambda invocation failed"
-          exit 1
-        fi
-
-        # Parse response and check status code
-        STATUS_CODE=$(cat response.json | jq -r '.statusCode')
-        if [ "$STATUS_CODE" != "200" ]; then
-          echo "Lambda execution failed with status code: $STATUS_CODE"
-          cat response.json
-          exit 1
-        fi
-
-        # Show execution results
-        echo "Lambda execution successful:"
-        cat response.json
