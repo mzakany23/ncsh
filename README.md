@@ -8,7 +8,7 @@ Before using the automated CI/CD pipeline, you must manually set up the required
 
 1. Configure AWS credentials locally:
    ```bash
-   export AWS_PROFILE=mzakany
+   export AWS_PROFILE=<your-profile-name>
    ```
 
 2. Apply the setup module to create bootstrap resources:
