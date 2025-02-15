@@ -49,6 +49,29 @@ resource "aws_ecr_repository" "ncsoccer" {
   }
 }
 
+# ECR Repository Policy for Lambda Access
+resource "aws_ecr_repository_policy" "ncsoccer_policy" {
+  repository = aws_ecr_repository.ncsoccer.name
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid    = "AllowLambdaServiceAccess"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+      }
+    ]
+  })
+}
+
 # IAM Role for Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "ncsoccer_lambda_role"
