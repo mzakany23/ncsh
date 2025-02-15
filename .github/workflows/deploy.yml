@@ -7,16 +7,16 @@ on:
     branches: [ main ]
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-  TF_WORKSPACE: ${{ vars.ENVIRONMENT }}
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: ncsoccer-scraper
+  TF_STATE_BUCKET: ncsh-terraform-state
+  ENVIRONMENT: dev
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    environment: ${{ vars.ENVIRONMENT }}
+    environment: dev
     permissions:
       contents: read
       id-token: write
@@ -51,7 +51,7 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    environment: ${{ vars.ENVIRONMENT }}
+    environment: dev
     permissions:
       contents: read
       id-token: write
