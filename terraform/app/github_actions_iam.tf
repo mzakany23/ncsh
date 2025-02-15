@@ -1,3 +1,6 @@
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
+
 # GitHub Actions OIDC Provider
 resource "aws_iam_openid_connect_provider" "github_actions" {
   url = "https://token.actions.githubusercontent.com"
@@ -137,6 +140,17 @@ resource "aws_iam_role_policy" "github_actions_s3" {
         ]
         Resource = [
           "arn:aws:s3:::${var.tf_state_bucket}/ncsoccer/terraform.tfstate"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = [
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/ncsh-terraform-state-lock"
         ]
       }
     ]
