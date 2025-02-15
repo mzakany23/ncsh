@@ -121,7 +121,9 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:GetBucketReplication",
           "s3:GetBucketObjectLockConfiguration",
           "s3:GetLifecycleConfiguration",
-          "s3:PutLifecycleConfiguration"
+          "s3:PutLifecycleConfiguration",
+          "s3:GetReplicationConfiguration",
+          "s3:PutReplicationConfiguration"
         ]
         Resource = [
           aws_s3_bucket.terraform_state.arn
