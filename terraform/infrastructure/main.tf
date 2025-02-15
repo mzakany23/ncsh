@@ -98,6 +98,22 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_s3_bucket.app_data.arn,
           "${aws_s3_bucket.app_data.arn}/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+        Resource = [aws_ecr_repository.ncsoccer.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = ["*"]
       }
     ]
   })
