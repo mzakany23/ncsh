@@ -137,7 +137,15 @@ resource "aws_iam_role_policy" "github_actions_s3" {
         Action = [
           "s3:ListBucket",
           "s3:GetBucketPolicy",
-          "s3:PutBucketPolicy"
+          "s3:PutBucketPolicy",
+          "s3:GetBucketVersioning",
+          "s3:GetBucketAcl",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:PutBucketPublicAccessBlock",
+          "s3:GetBucketLogging",
+          "s3:GetBucketTagging",
+          "s3:GetBucketLocation"
         ]
         Resource = [
           aws_s3_bucket.terraform_state.arn,
@@ -148,7 +156,11 @@ resource "aws_iam_role_policy" "github_actions_s3" {
         Effect = "Allow"
         Action = [
           "s3:GetObject",
-          "s3:PutObject"
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:GetObjectVersion",
+          "s3:GetObjectAcl",
+          "s3:PutObjectAcl"
         ]
         Resource = [
           "${aws_s3_bucket.terraform_state.arn}/*",
@@ -227,3 +239,8 @@ resource "aws_iam_role_policy" "github_actions_lambda" {
 
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
+
+# Reference the GitHub Actions role created in setup
+data "aws_iam_role" "github_actions" {
+  name = "github-actions-ncsh"
+}
