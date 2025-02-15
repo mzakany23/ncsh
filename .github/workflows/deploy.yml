@@ -10,7 +10,6 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
   TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-  GITHUB_REPO: ${{ vars.GITHUB_REPO }}
   TF_WORKSPACE: ${{ vars.ENVIRONMENT }}
 
 jobs:
@@ -87,7 +86,7 @@ jobs:
       run: terraform plan -input=false -out=tfplan
       env:
         TF_VAR_aws_region: ${{ env.AWS_REGION }}
-        TF_VAR_github_repo: ${{ env.GITHUB_REPO }}
+        TF_VAR_github_repo: ${{ github.repository }}
         TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
         TF_VAR_tf_state_bucket: ${{ env.TF_STATE_BUCKET }}
         TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
@@ -98,7 +97,7 @@ jobs:
       run: terraform apply -auto-approve tfplan
       env:
         TF_VAR_aws_region: ${{ env.AWS_REGION }}
-        TF_VAR_github_repo: ${{ env.GITHUB_REPO }}
+        TF_VAR_github_repo: ${{ github.repository }}
         TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
         TF_VAR_tf_state_bucket: ${{ env.TF_STATE_BUCKET }}
         TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
