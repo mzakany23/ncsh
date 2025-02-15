@@ -175,3 +175,35 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
     ]
   })
 }
+
+# Lambda permissions for GitHub Actions
+resource "aws_iam_role_policy" "github_actions_lambda" {
+  name = "github-actions-lambda-policy"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration",
+          "lambda:GetFunction",
+          "lambda:InvokeFunction",
+          "lambda:PublishVersion",
+          "lambda:TagResource",
+          "lambda:UntagResource",
+          "lambda:ListTags",
+          "lambda:CreateFunction",
+          "lambda:DeleteFunction",
+          "lambda:GetFunctionConfiguration"
+        ]
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:ncsoccer_scraper"
+      }
+    ]
+  })
+}
+
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
