@@ -10,12 +10,99 @@ env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: ncsoccer-scraper
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  TF_WORKSPACE: production
 
 jobs:
-  build-and-push:
+  infrastructure:
     runs-on: ubuntu-latest
-    # Only run on main branch or pull requests
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Init (Infrastructure)
+      working-directory: ./terraform/infrastructure
+      run: terraform init
+
+    - name: Terraform Plan (Infrastructure)
+      working-directory: ./terraform/infrastructure
+      run: terraform plan
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Apply (Infrastructure)
+      if: github.ref == 'refs/heads/main'
+      working-directory: ./terraform/infrastructure
+      run: terraform apply -auto-approve
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+
+  app-infrastructure:
+    needs: infrastructure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.5.0"
+
+    - name: Terraform Init (App)
+      working-directory: ./terraform/app
+      run: terraform init
+
+    - name: Terraform Plan (App)
+      working-directory: ./terraform/app
+      run: terraform plan
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
+        TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
+
+    - name: Terraform Apply (App)
+      if: github.ref == 'refs/heads/main'
+      working-directory: ./terraform/app
+      run: terraform apply -auto-approve
+      env:
+        TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_ecr_repository_name: ${{ env.ECR_REPOSITORY }}
+        TF_VAR_data_bucket_name: ${{ secrets.DATA_BUCKET_NAME }}
+
+  build-and-push:
+    needs: app-infrastructure
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
     permissions:
       contents: read
       id-token: write
@@ -39,16 +126,10 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build a docker container and push it to ECR
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-
-        # Only push if on main branch
-        if [[ $GITHUB_REF == 'refs/heads/main' ]]; then
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          # Also tag as latest
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        fi
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
   deploy:
     needs: build-and-push
@@ -69,26 +150,21 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
+    - name: Update Lambda Function
+      run: |
+        aws lambda update-function-code \
+          --function-name ncsoccer_scraper \
+          --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
 
-    - name: Terraform Init
-      working-directory: ./terraform
-      run: terraform init
-      env:
-        TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+    - name: Wait for Lambda Update
+      run: |
+        aws lambda wait function-updated \
+          --function-name ncsoccer_scraper
 
-    - name: Terraform Plan
-      working-directory: ./terraform
-      run: terraform plan -var="data_bucket_name=${{ secrets.DATA_BUCKET_NAME }}"
-      env:
-        TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
-
-    - name: Terraform Apply
-      working-directory: ./terraform
-      if: github.ref == 'refs/heads/main'
-      run: terraform apply -auto-approve -var="data_bucket_name=${{ secrets.DATA_BUCKET_NAME }}"
-      env:
-        TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+    - name: Test Lambda Function
+      run: |
+        aws lambda invoke \
+          --function-name ncsoccer_scraper \
+          --payload '{"year": 2024, "month": 2, "mode": "month"}' \
+          --cli-binary-format raw-in-base64-out \
+          response.json && cat response.json
