@@ -111,7 +111,15 @@ resource "aws_iam_role_policy" "github_actions_s3" {
           "s3:GetBucketCors",
           "s3:PutBucketCors",
           "s3:GetBucketWebsite",
-          "s3:PutBucketWebsite"
+          "s3:PutBucketWebsite",
+          "s3:GetAccelerateConfiguration",
+          "s3:PutAccelerateConfiguration",
+          "s3:GetBucketRequestPayment",
+          "s3:GetBucketOwnershipControls",
+          "s3:GetBucketNotification",
+          "s3:GetBucketLifecycle",
+          "s3:GetBucketReplication",
+          "s3:GetBucketObjectLockConfiguration"
         ]
         Resource = [
           aws_s3_bucket.terraform_state.arn
