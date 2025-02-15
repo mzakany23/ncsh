@@ -1,5 +1,14 @@
-aws_region         = "us-east-2"
-github_repo        = "mzakany23/ncsh"
-ecr_repository_name = "ncsoccer-scraper"
-tf_state_bucket    = "ncsh-terraform-state"
-data_bucket_name   = "ncsh-app-data"
+# AWS Region for resources
+aws_region = "us-east-2"
+
+# GitHub repository in format owner/repo
+github_repo = "owner/repo"
+
+# ECR repository name for Lambda container
+ecr_repository_name = "your-ecr-repo-name"
+
+# S3 bucket for Terraform state (must be globally unique)
+tf_state_bucket = "your-terraform-state-bucket"
+
+# S3 bucket for application data (must be globally unique)
+data_bucket_name = "your-app-data-bucket"
