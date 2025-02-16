@@ -9,6 +9,8 @@ on:
       - 'requirements.txt'
       - '.github/workflows/deploy.yml'
       - 'terraform/infrastructure/**'
+      - 'lambda_function.py'
+      - 'runner.py'
   pull_request:
     branches: [ main ]
     paths:
@@ -17,6 +19,8 @@ on:
       - 'requirements.txt'
       - '.github/workflows/deploy.yml'
       - 'terraform/infrastructure/**'
+      - 'lambda_function.py'
+      - 'runner.py'
 
 env:
   AWS_REGION: us-east-2
