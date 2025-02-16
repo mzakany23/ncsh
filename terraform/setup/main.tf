@@ -206,7 +206,10 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
           "ecr:ListTagsForResource",
           "ecr:SetRepositoryPolicy",
           "ecr:GetRepositoryPolicy",
-          "ecr:DeleteRepositoryPolicy"
+          "ecr:DeleteRepositoryPolicy",
+          "ecr:PutLifecyclePolicy",
+          "ecr:GetLifecyclePolicy",
+          "ecr:DeleteLifecyclePolicy"
         ]
         Resource = ["arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/ncsoccer-scraper"]
       },
@@ -216,6 +219,29 @@ resource "aws_iam_role_policy" "github_actions_ecr" {
           "ecr:GetAuthorizationToken"
         ]
         Resource = ["*"]
+      }
+    ]
+  })
+}
+
+# AWS Budgets permissions for GitHub Actions
+resource "aws_iam_role_policy" "github_actions_budgets" {
+  name = "github-actions-budgets-policy"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "budgets:ModifyBudget",
+          "budgets:CreateBudget",
+          "budgets:DeleteBudget",
+          "budgets:DescribeBudget",
+          "budgets:ViewBudget"
+        ]
+        Resource = ["arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/*"]
       }
     ]
   })
