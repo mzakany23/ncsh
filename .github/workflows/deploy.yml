@@ -129,7 +129,7 @@ jobs:
         terraform apply -auto-approve
 
   build-service:
-    needs: [build-infrastructure, detect-changes]
+    needs: [detect-changes]
     runs-on: ubuntu-latest
     if: |
       github.ref == 'refs/heads/main' &&
