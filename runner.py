@@ -5,7 +5,6 @@ import os
 import json
 import argparse
 import logging
-import subprocess
 from datetime import datetime, timedelta
 from calendar import monthrange
 
