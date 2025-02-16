@@ -84,22 +84,11 @@ jobs:
     outputs:
       docker-changes: ${{ steps.check.outputs.docker-changes }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Check for Docker-related changes
+      - name: Force docker changes to true
         id: check
         run: |
-          git diff --name-only HEAD^ HEAD > changes.txt
-          echo "Checking for changes in Docker-related files..."
-          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt)' changes.txt; then
-            echo "docker-changes=true" >> $GITHUB_OUTPUT
-            echo "Docker-related changes detected"
-          else
-            echo "docker-changes=false" >> $GITHUB_OUTPUT
-            echo "No Docker-related changes"
-          fi
+          echo "docker-changes=true" >> $GITHUB_OUTPUT
+          echo "Forcing Docker changes to true for testing"
 
   build-service:
     needs: [build-infrastructure, detect-changes]
