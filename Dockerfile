@@ -1,3 +1,4 @@
+# Base image for NC Soccer Scraper Lambda function
 FROM public.ecr.aws/lambda/python:3.11
 
 # Copy requirements.txt
