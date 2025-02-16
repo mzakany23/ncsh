@@ -63,6 +63,14 @@ jobs:
       env:
         TF_VAR_aws_region: ${{ env.AWS_REGION }}
 
+    - name: Remove Terraform Lock (if exists)
+      run: |
+        aws dynamodb delete-item \
+          --table-name ncsh-terraform-state-lock \
+          --key '{"LockID": {"S": "ncsh-terraform-state/infrastructure/terraform.tfstate"}}'
+      env:
+        AWS_REGION: ${{ env.AWS_REGION }}
+
     - name: Terraform Plan (Infrastructure)
       working-directory: ./terraform/infrastructure
       run: terraform plan -input=false -out=tfplan
@@ -84,11 +92,22 @@ jobs:
     outputs:
       docker-changes: ${{ steps.check.outputs.docker-changes }}
     steps:
-      - name: Force docker changes to true
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for Docker-related changes
         id: check
         run: |
-          echo "docker-changes=true" >> $GITHUB_OUTPUT
-          echo "Forcing Docker changes to true for testing"
+          git diff --name-only HEAD^ HEAD > changes.txt
+          echo "Checking for changes in Docker-related files..."
+          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt)' changes.txt; then
+            echo "docker-changes=true" >> $GITHUB_OUTPUT
+            echo "Docker-related changes detected"
+          else
+            echo "docker-changes=false" >> $GITHUB_OUTPUT
+            echo "No Docker-related changes"
+          fi
 
   build-service:
     needs: [build-infrastructure, detect-changes]
