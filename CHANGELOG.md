@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2024-03-16
+
+### Changed
+- Removed virtualenv from Docker container in favor of global dependency installation
+- Split requirements into prod and dev dependencies
+- Simplified CI/CD pipeline by removing infrastructure deployment
+- Added change detection to CI/CD pipeline
+- Added CHANGELOG.md trigger for automated builds
+
 ## [1.0.0] - 2024-02-14
 
 ### Added
