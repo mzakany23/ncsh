@@ -9,7 +9,24 @@ import subprocess
 from datetime import datetime, timedelta
 from calendar import monthrange
 
-logging.basicConfig(level=logging.INFO)
+# Try to install asyncio reactor, but don't fail if we can't
+try:
+    import asyncio
+    import twisted.internet.asyncio
+    twisted.internet.asyncio.install()
+except (ImportError, Exception) as e:
+    print(f"Warning: Could not install asyncio reactor: {e}")
+
+from scrapy.crawler import CrawlerProcess
+from scrapy.utils.project import get_project_settings
+from scrapy.utils.log import configure_logging
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -50,105 +67,89 @@ def is_date_scraped(date_str, lookup_data):
     return date_str in lookup_data and lookup_data[date_str]['success']
 
 
-def run_scraper(year, month, day, lookup_file='data/lookup.json', skip_existing=True):
-    """Run the scrapy spider for a specific date.
+def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
+             html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json'):
+    """Run the scraper for a specific day"""
+    logger.info(f"Starting scraper for {year}-{month:02d}-{day:02d}")
 
-    Args:
-        year (int): Year to scrape.
-        month (int): Month to scrape.
-        day (int): Day to scrape.
-        lookup_file (str): Path to the lookup JSON file.
-        skip_existing (bool): Whether to skip already scraped dates.
+    # Create necessary directories if using file storage
+    if storage_type == 'file':
+        os.makedirs(os.path.dirname(html_prefix), exist_ok=True)
+        os.makedirs(os.path.dirname(json_prefix), exist_ok=True)
+        os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
 
-    Returns:
-        bool: True if scraping was successful, False otherwise.
-    """
-    date_str = f"{year}-{month:02d}-{day:02d}"
-
-    # Check lookup data if skipping existing
-    if skip_existing:
-        lookup_data = load_lookup_data(lookup_file)
-        if is_date_scraped(date_str, lookup_data):
-            logger.info(f"Skipping {date_str} (already scraped)")
-            return True
-
-    # Run the spider
-    cmd = [
-        'scrapy', 'crawl', 'schedule',
-        '-a', f'year={year}',
-        '-a', f'month={month}',
-        '-a', f'day={day}',
-        '-a', f'lookup_file={lookup_file}',
-        '-L', 'INFO'  # Set log level to INFO
-    ]
+    # Configure logging for Scrapy
+    configure_logging()
 
     try:
-        logger.info(f"Starting scrape for {date_str}")
-        # Run the spider and stream output in real-time
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1
+        process = CrawlerProcess(get_project_settings())
+        process.crawl(
+            'schedule',
+            year=year,
+            month=month,
+            day=day,
+            storage_type=storage_type,
+            bucket_name=bucket_name,
+            html_prefix=html_prefix,
+            json_prefix=json_prefix,
+            lookup_file=lookup_file
         )
-
-        # Stream the output
-        for line in process.stdout:
-            print(line, end='')  # Print in real-time
-
-        # Wait for completion and get return code
-        return_code = process.wait()
-
-        if return_code != 0:
-            logger.error(f"Spider failed with return code {return_code}")
-            return False
+        process.start()
 
         # Verify files were created
-        html_file = f"data/html/{date_str}.html"
-        json_file = f"data/json/{date_str}.json"
-        meta_file = f"data/json/{date_str}_meta.json"
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        expected_files = [
+            f"{html_prefix}/{date_str}.html",
+            f"{json_prefix}/{date_str}.json",
+            f"{json_prefix}/{date_str}_meta.json",
+            lookup_file
+        ]
 
-        files_exist = all(os.path.exists(f) for f in [html_file, json_file, meta_file])
-        if not files_exist:
-            logger.error(f"Not all files were created for {date_str}")
-            return False
+        if storage_type == 'file':
+            # Verify local files
+            for file_path in expected_files:
+                if not os.path.exists(file_path):
+                    raise RuntimeError(f"Expected file {file_path} was not created")
+                if os.path.getsize(file_path) == 0:
+                    raise RuntimeError(f"File {file_path} is empty")
+        else:
+            # Verify S3 files
+            import boto3
+            from botocore.exceptions import ClientError
+            s3 = boto3.client('s3')
+            for file_path in expected_files:
+                try:
+                    response = s3.head_object(Bucket=bucket_name, Key=file_path)
+                    if response['ContentLength'] == 0:
+                        raise RuntimeError(f"S3 file {file_path} is empty")
+                except ClientError as e:
+                    if e.response['Error']['Code'] == '404':
+                        raise RuntimeError(f"Expected S3 file {file_path} was not created")
+                    raise
 
-        logger.info(f"All files created successfully for {date_str}")
+        logger.info(f"Successfully scraped data for {date_str}")
         return True
 
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to scrape {date_str}: {e}")
-        logger.error(f"Output: {e.output}")
-        return False
     except Exception as e:
-        logger.error(f"Unexpected error while scraping {date_str}: {e}")
-        return False
+        logger.error(f"Error running scraper: {str(e)}")
+        raise
 
 
-def run_month(year, month, lookup_file='data/lookup.json', skip_existing=True):
-    """Run scraper for all days in a month.
+def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
+              html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json'):
+    """Run the scraper for an entire month"""
+    # Get the number of days in the month
+    if month == 12:
+        next_month = datetime(year + 1, 1, 1)
+    else:
+        next_month = datetime(year, month + 1, 1)
 
-    Args:
-        year (int): Year to scrape.
-        month (int): Month to scrape.
-        lookup_file (str): Path to the lookup JSON file.
-        skip_existing (bool): Whether to skip already scraped dates.
+    last_day = (next_month - timedelta(days=1)).day
 
-    Returns:
-        bool: True if all days were scraped successfully, False otherwise.
-    """
-    _, last_day = monthrange(year, month)
-    failed_days = []
-
+    # Run scraper for each day
     for day in range(1, last_day + 1):
-        if not run_scraper(year, month, day, lookup_file, skip_existing):
-            failed_days.append(day)
-
-    if failed_days:
-        logger.error(f"Failed to scrape days: {failed_days}")
-        return False
-    return True
+        run_scraper(year, month, day, storage_type=storage_type, bucket_name=bucket_name,
+                   html_prefix=html_prefix, json_prefix=json_prefix, lookup_file=lookup_file)
 
 
 def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
@@ -168,8 +169,7 @@ def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
     failed_dates = []
 
     while current <= end_date:
-        if not run_scraper(current.year, current.month, current.day,
-                          lookup_file, skip_existing):
+        if not run_scraper(current.year, current.month, current.day):
             failed_dates.append(current.strftime('%Y-%m-%d'))
         current = current + timedelta(days=1)
 
@@ -181,95 +181,28 @@ def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
 
 def main():
     """Main entry point for the scraper runner."""
-    parser = argparse.ArgumentParser(description='Soccer schedule scraper runner')
-    parser.add_argument(
-        '--mode',
-        choices=['day', 'month', 'range'],
-        required=True,
-        help='Scraping mode'
-    )
-    parser.add_argument(
-        '--year',
-        type=int,
-        required=True,
-        help='Year to scrape'
-    )
-    parser.add_argument(
-        '--month',
-        type=int,
-        help='Month to scrape (required for day and month modes)'
-    )
-    parser.add_argument(
-        '--day',
-        type=int,
-        help='Day to scrape (required for day mode)'
-    )
-    parser.add_argument(
-        '--end-year',
-        type=int,
-        help='End year for range mode'
-    )
-    parser.add_argument(
-        '--end-month',
-        type=int,
-        help='End month for range mode'
-    )
-    parser.add_argument(
-        '--end-day',
-        type=int,
-        help='End day for range mode'
-    )
-    parser.add_argument(
-        '--lookup-file',
-        default='data/lookup.json',
-        help='Path to lookup file'
-    )
-    parser.add_argument(
-        '--skip-existing',
-        action='store_true',
-        help='Skip already scraped dates'
-    )
+    parser = argparse.ArgumentParser(description='Run NC Soccer schedule scraper')
+    parser.add_argument('--mode', choices=['day', 'month'], default='day', help='Scraping mode')
+    parser.add_argument('--year', type=int, help='Target year')
+    parser.add_argument('--month', type=int, help='Target month')
+    parser.add_argument('--day', type=int, help='Target day (only for day mode)')
+    parser.add_argument('--storage-type', choices=['file', 's3'], default='s3', help='Storage type')
+    parser.add_argument('--bucket-name', help='S3 bucket name (only for s3 storage)')
+    parser.add_argument('--html-prefix', default='data/html', help='Prefix for HTML files')
+    parser.add_argument('--json-prefix', default='data/json', help='Prefix for JSON files')
+    parser.add_argument('--lookup-file', default='data/lookup.json', help='Path to lookup file')
 
     args = parser.parse_args()
 
-    # Validate arguments based on mode
+    if args.mode == 'day' and not args.day:
+        parser.error('Day is required for day mode')
+
     if args.mode == 'day':
-        if not all([args.month, args.day]):
-            parser.error("Month and day are required for day mode")
-        success = run_scraper(
-            args.year,
-            args.month,
-            args.day,
-            args.lookup_file,
-            args.skip_existing
-        )
-
-    elif args.mode == 'month':
-        if not args.month:
-            parser.error("Month is required for month mode")
-        success = run_month(
-            args.year,
-            args.month,
-            args.lookup_file,
-            args.skip_existing
-        )
-
-    elif args.mode == 'range':
-        if not all([args.end_year, args.end_month, args.end_day]):
-            parser.error("End year, month, and day are required for range mode")
-        try:
-            start_date = datetime(args.year, args.month or 1, args.day or 1)
-            end_date = datetime(args.end_year, args.end_month, args.end_day)
-            success = run_date_range(
-                start_date,
-                end_date,
-                args.lookup_file,
-                args.skip_existing
-            )
-        except ValueError as e:
-            parser.error(f"Invalid date: {e}")
-
-    return 0 if success else 1
+        run_scraper(args.year, args.month, args.day, args.storage_type, args.bucket_name,
+                   args.html_prefix, args.json_prefix, args.lookup_file)
+    else:
+        run_month(args.year, args.month, args.storage_type, args.bucket_name,
+                 args.html_prefix, args.json_prefix, args.lookup_file)
 
 
 if __name__ == '__main__':

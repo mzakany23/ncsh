@@ -29,7 +29,9 @@ class ScheduleSpider(scrapy.Spider):
         'CONCURRENT_REQUESTS': 1
     }
 
-    def __init__(self, mode='day', year=None, month=None, day=None, skip_existing=True, lookup_file='data/lookup.json', *args, **kwargs):
+    def __init__(self, mode='day', year=None, month=None, day=None, skip_existing=True,
+                 html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
+                 storage_type='s3', bucket_name=None, *args, **kwargs):
         super(ScheduleSpider, self).__init__(*args, **kwargs)
 
         # Parse configuration
@@ -37,16 +39,11 @@ class ScheduleSpider(scrapy.Spider):
         self.target_month = int(month) if month else datetime.now().month
         self.target_day = int(day) if day else datetime.now().day
         self.skip_existing = str(skip_existing).lower() == 'true'
+
+        # Set up storage paths
+        self.html_prefix = html_prefix
+        self.json_prefix = json_prefix
         self.lookup_file = lookup_file
-
-        # Set up storage directories
-        self.html_dir = os.path.join('data', 'html')
-        self.json_dir = os.path.join('data', 'json')
-        os.makedirs(self.html_dir, exist_ok=True)
-        os.makedirs(self.json_dir, exist_ok=True)
-
-        # Load lookup data
-        self.scraped_dates = self._load_lookup_data()
 
         # Create scraper configuration
         self.config = create_scraper_config(
@@ -54,31 +51,34 @@ class ScheduleSpider(scrapy.Spider):
             year=self.target_year,
             month=self.target_month,
             day=self.target_day,
-            skip_existing=self.skip_existing
+            skip_existing=self.skip_existing,
+            storage_type=storage_type,
+            bucket_name=bucket_name
         )
 
         # Set up storage interface
-        self.storage = get_storage_interface(self.config.storage_type)
+        self.storage = get_storage_interface(self.config.storage_type, self.config.bucket_name)
+
+        # Load lookup data
+        self.scraped_dates = self._load_lookup_data()
 
         # Track current month to avoid unnecessary navigation
         self.current_month_date = None
 
     def _load_lookup_data(self):
-        """Load the lookup data from JSON file"""
-        if not os.path.exists(self.lookup_file):
-            # Create empty lookup file if it doesn't exist
-            os.makedirs(os.path.dirname(self.lookup_file), exist_ok=True)
-            with open(self.lookup_file, 'w') as f:
-                json.dump({'scraped_dates': {}}, f)
+        """Load lookup data from storage"""
+        try:
+            content = self.storage.read(self.lookup_file)
+            return json.loads(content)
+        except:
             return {}
 
+    def _save_lookup_data(self):
+        """Save lookup data to storage"""
         try:
-            with open(self.lookup_file, 'r') as f:
-                data = json.load(f)
-                return data.get('scraped_dates', {})
+            self.storage.write(self.lookup_file, json.dumps(self.scraped_dates, indent=2))
         except Exception as e:
-            self.logger.error(f"Error loading lookup file: {e}")
-            return {}
+            self.logger.error(f"Failed to save lookup data: {e}")
 
     def _update_lookup_data(self, date_str, success=True, games_count=0):
         """Update the lookup data with newly scraped date"""
@@ -88,11 +88,7 @@ class ScheduleSpider(scrapy.Spider):
             'timestamp': datetime.now().isoformat()
         }
 
-        try:
-            with open(self.lookup_file, 'w') as f:
-                json.dump({'scraped_dates': self.scraped_dates}, f, indent=2)
-        except Exception as e:
-            self.logger.error(f"Error updating lookup file: {e}")
+        self._save_lookup_data()
 
     def _is_date_scraped(self, date):
         """Check if a date has already been scraped using the lookup data"""
@@ -331,17 +327,14 @@ class ScheduleSpider(scrapy.Spider):
                         venue = cells[3].strip() if len(cells) > 3 else None
                         game_times[venue] = start_time
 
-            # Initialize the JSON file with header structure
-            json_filename = os.path.join(self.json_dir, f"{date_str}.json")
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                # Write the opening of the JSON structure
-                f.write('{\n')
-                f.write(f'  "date": "{date_str}",\n')
-                f.write('  "games_found": true,\n')
-                f.write('  "games": [\n')
+            # Initialize the JSON structure
+            json_data = {
+                'date': date_str,
+                'games_found': True,
+                'games': []
+            }
 
             # Process games one at a time
-            first_game = True
             for row in schedule_table.css('tr')[1:]:  # Skip header row
                 cells = row.css('td')
                 if len(cells) >= 7:  # Ensure we have all expected columns
@@ -398,18 +391,12 @@ class ScheduleSpider(scrapy.Spider):
                         'officials': cells[6].css('::text').get('').strip()
                     }
 
-                    # Write the game to file
-                    with open(json_filename, 'a', encoding='utf-8') as f:
-                        if not first_game:
-                            f.write(',\n')
-                        f.write('    ' + json.dumps(game, indent=2).replace('\n', '\n    '))
-                        first_game = False
+                    json_data['games'].append(game)
                     games_count += 1
 
-            # Close the JSON structure
-            with open(json_filename, 'a', encoding='utf-8') as f:
-                f.write('\n  ]\n')
-                f.write('}\n')
+            # Write the complete JSON file
+            json_filename = f"{self.json_prefix}/{date_str}.json"
+            self.storage.write(json_filename, json.dumps(json_data, indent=2))
 
             self.logger.info(f"Found {games_count} games for {date_str}")
             success = True
@@ -418,7 +405,7 @@ class ScheduleSpider(scrapy.Spider):
             self._update_lookup_data(date_str, success=success, games_count=games_count)
 
     def store_raw_html(self, response, date_str=None):
-        """Store raw HTML response to file"""
+        """Store raw HTML response to storage"""
         if not date_str:
             date_str = response.meta.get('date', datetime.now().strftime('%Y-%m-%d'))
 
@@ -429,25 +416,14 @@ class ScheduleSpider(scrapy.Spider):
             self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
             return
 
-        # Validate directories exist
-        if not os.path.isdir(self.html_dir):
-            self.logger.error(f"HTML directory {self.html_dir} does not exist")
-            return
-        if not os.path.isdir(self.json_dir):
-            self.logger.error(f"JSON directory {self.json_dir} does not exist")
-            return
-
         # Store raw HTML with YYYY-MM-DD.html naming
-        html_filename = os.path.join(self.html_dir, f"{date_str}.html")
-        try:
-            with open(html_filename, 'w', encoding='utf-8') as f:
-                f.write(response.text)
-        except Exception as e:
-            self.logger.error(f"Failed to write HTML file: {e}")
+        html_path = f"{self.html_prefix}/{date_str}.html"
+        if not self.storage.write(html_path, response.text):
+            self.logger.error(f"Failed to write HTML file to {html_path}")
             return
 
-        # Store response metadata in JSON directory
-        meta_filename = os.path.join(self.json_dir, f"{date_str}_meta.json")
+        # Store response metadata
+        meta_path = f"{self.json_prefix}/{date_str}_meta.json"
         meta_data = {
             'url': response.url,
             'date': date_str,
@@ -456,11 +432,8 @@ class ScheduleSpider(scrapy.Spider):
             'headers': {k.decode('utf-8'): v[0].decode('utf-8') if isinstance(v[0], bytes) else v[0] for k, v in response.headers.items()},
             'timestamp': datetime.now().isoformat()
         }
-        try:
-            with open(meta_filename, 'w', encoding='utf-8') as f:
-                json.dump(meta_data, f, indent=2)
-        except Exception as e:
-            self.logger.error(f"Failed to write metadata JSON file: {e}")
+        if not self.storage.write(meta_path, json.dumps(meta_data, indent=2)):
+            self.logger.error(f"Failed to write metadata JSON file to {meta_path}")
             return
 
     def store_metadata(self, metadata, date_str):
@@ -472,21 +445,13 @@ class ScheduleSpider(scrapy.Spider):
             self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
             return
 
-        # Validate JSON directory exists
-        if not os.path.isdir(self.json_dir):
-            self.logger.error(f"JSON directory {self.json_dir} does not exist")
-            return
-
         # Validate metadata structure
         required_fields = ['date', 'games_found']
         if not all(field in metadata for field in required_fields):
             self.logger.error(f"Missing required fields in metadata: {required_fields}")
             return
 
-        json_filename = os.path.join(self.json_dir, f"{date_str}.json")
-        try:
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2)
-        except Exception as e:
-            self.logger.error(f"Failed to write game data JSON file: {e}")
+        json_path = f"{self.json_prefix}/{date_str}.json"
+        if not self.storage.write(json_path, json.dumps(metadata, indent=2)):
+            self.logger.error(f"Failed to write game data JSON file to {json_path}")
             return
