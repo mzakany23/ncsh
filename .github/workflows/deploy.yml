@@ -11,6 +11,7 @@ on:
       - '.github/workflows/deploy.yml'
       - 'lambda_function.py'
       - 'runner.py'
+      - 'CHANGELOG.md'
   pull_request:
     branches: [ main ]
     paths:
@@ -20,6 +21,7 @@ on:
       - '.github/workflows/deploy.yml'
       - 'lambda_function.py'
       - 'runner.py'
+      - 'CHANGELOG.md'
 
 env:
   AWS_REGION: us-east-2
@@ -44,9 +46,9 @@ jobs:
           echo "Changes detected:"
           cat changes.txt
 
-          # Check if any relevant files were changed
-          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt|lambda_function.py|runner.py)' changes.txt; then
-            echo "Relevant changes detected"
+          # Check if CHANGELOG.md was modified or if there are relevant code changes
+          if grep -q -E '^(CHANGELOG.md|ncsoccer/|Dockerfile|requirements.txt|lambda_function.py|runner.py)' changes.txt; then
+            echo "Relevant changes or CHANGELOG update detected"
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
             echo "No relevant changes detected"
