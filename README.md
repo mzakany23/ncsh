@@ -29,12 +29,13 @@ Before using the automated CI/CD pipeline, you must manually set up the required
 
 After these manual steps are complete, the GitHub Actions automation will have the necessary permissions to manage all other infrastructure.
 
-## Features (v1.0.0)
+## Features
 
 - **Schedule Scraping**
   - Scrape game schedules by day or month
   - Collect detailed game information including teams, locations, and times
   - Support for historical and future game schedules
+  - Asynchronous execution using Twisted's asyncio reactor
 
 - **Data Management**
   - JSON output format with schema validation
@@ -43,7 +44,7 @@ After these manual steps are complete, the GitHub Actions automation will have t
   - Optimistic locking for concurrent operations
 
 - **Deployment Options**
-  - Local execution via Makefile commands
+  - Local execution via Python scripts
   - Containerized AWS Lambda deployment
   - Automated monthly scraping via EventBridge
   - Step Function workflow for reliable execution
@@ -62,6 +63,7 @@ Set these in your GitHub environment (e.g., "dev"):
 Set these in your GitHub environment secrets:
 - `AWS_ROLE_ARN`: IAM role ARN for GitHub Actions
 - `DATA_BUCKET_NAME`: S3 bucket name for scraped data
+- `ALERT_EMAIL`: Email address for notifications (optional)
 
 ## Local Development
 
@@ -72,13 +74,24 @@ Set these in your GitHub environment secrets:
    pip install -r requirements.txt
    ```
 
-2. Run the scraper:
+2. Run the scraper locally:
    ```bash
    # Scrape a specific month
-   python runner.py --mode month --year 2024 --month 2
+   .venv/bin/python runner.py --mode month --year 2024 --month 2
 
    # Scrape a specific day
-   python runner.py --mode day --year 2024 --month 2 --day 1
+   .venv/bin/python runner.py --mode day --year 2024 --month 2 --day 1
+   ```
+
+3. Trigger AWS Step Function execution:
+   ```bash
+   .venv/bin/python ./scripts/trigger_step_function.py \
+     --state-machine-arn "arn:aws:states:us-east-2:YOUR_ACCOUNT_ID:stateMachine:YOUR_STATE_MACHINE_NAME" \
+     --year 2024 \
+     --month 3 \
+     --day 1 \
+     --mode day \
+     --profile YOUR_AWS_PROFILE
    ```
 
 ## AWS Deployment
@@ -93,18 +106,42 @@ Required AWS resources:
 - EventBridge for scheduling
 - DynamoDB for Terraform state locking
 
+The CI/CD pipeline automatically:
+1. Builds and tests the application
+2. Deploys infrastructure changes
+3. Updates the Lambda function with the latest code
+4. Configures monitoring and alerting
+
 ## Project Structure
 
 ```
 ├── ncsoccer/              # Main scraper package
 │   ├── spiders/           # Scrapy spiders
 │   └── pipeline/          # Data processing pipeline
+├── scripts/               # Utility scripts
+│   └── trigger_step_function.py  # AWS Step Function trigger
 ├── terraform/             # Infrastructure as code
-├── .github/workflows/     # CI/CD configuration
-├── Dockerfile            # Container definition
-├── lambda_function.py    # AWS Lambda handler
-└── runner.py            # Local execution script
+│   ├── setup/            # Bootstrap resources
+│   └── infrastructure/   # Main infrastructure
+├── tests/                # Test suite
+│   └── integration/      # Integration tests
+├── .github/workflows/    # CI/CD configuration
+├── Dockerfile           # Container definition
+├── lambda_function.py   # AWS Lambda handler
+└── runner.py           # Local execution script
 ```
+
+## Testing
+
+Run integration tests:
+```bash
+.venv/bin/python -m pytest -v tests/integration/
+```
+
+The test suite includes:
+- Lambda function integration tests
+- S3 storage tests
+- Step Function execution tests
 
 ## License
 
@@ -114,5 +151,8 @@ MIT License
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
-## Test Change
-This is a test change to verify our PR workflow.
+Please ensure to:
+1. Update tests as needed
+2. Update documentation
+3. Follow the existing code style
+4. Add meaningful commit messages
