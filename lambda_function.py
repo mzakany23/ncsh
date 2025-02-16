@@ -1,7 +1,8 @@
 import json
 import logging
+import os
+import sys
 from datetime import datetime
-from runner import run_scraper, run_month
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -18,8 +19,16 @@ def handler(event, context):
         "mode": "month"  # or "day" if day is provided
     }
     """
+
     try:
         logger.info(f"Received event: {json.dumps(event)}")
+
+        # Import runner functions here to delay Twisted imports
+        from runner import run_scraper, run_month
+
+        # Validate environment variables
+        if 'DATA_BUCKET' not in os.environ:
+            raise ValueError("DATA_BUCKET environment variable is required")
 
         # Extract parameters from event
         year = event.get('year')
@@ -44,9 +53,20 @@ def handler(event, context):
                         'error': 'Day parameter is required for day mode'
                     })
                 }
-            result = run_scraper(year=year, month=month, day=day)
+            result = run_scraper(
+                year=year,
+                month=month,
+                day=day,
+                storage_type='s3',
+                bucket_name=os.environ['DATA_BUCKET']
+            )
         else:  # month mode
-            result = run_month(year=year, month=month)
+            result = run_month(
+                year=year,
+                month=month,
+                storage_type='s3',
+                bucket_name=os.environ['DATA_BUCKET']
+            )
 
         return {
             'statusCode': 200,
@@ -64,3 +84,13 @@ def handler(event, context):
                 'error': f'Error processing request: {str(e)}'
             })
         }
+
+if __name__ == '__main__':
+    # Handle command line execution
+    if len(sys.argv) != 2:
+        print("Usage: python lambda_function.py '<event_json>'")
+        sys.exit(1)
+
+    event = json.loads(sys.argv[1])
+    response = handler(event, None)
+    print(json.dumps(response))

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime, timedelta
 from enum import Enum
+import os
+import boto3
 
 class ScrapeMode(Enum):
     DAY = "day"
@@ -10,14 +12,16 @@ class ScrapeMode(Enum):
 
 class StorageType(Enum):
     FILE = "file"
+    S3 = "s3"
     # Add other storage types here (e.g., DATABASE = "database")
 
 @dataclass
 class ScraperConfig:
     mode: ScrapeMode
     start_date: datetime
-    storage_type: StorageType = StorageType.FILE
+    storage_type: StorageType = StorageType.S3
     skip_existing: bool = True
+    bucket_name: str = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
 
     @property
     def end_date(self) -> datetime:
@@ -42,14 +46,64 @@ class StorageInterface:
     def exists(self, path: str) -> bool:
         raise NotImplementedError
 
+    def write(self, path: str, content: str) -> bool:
+        raise NotImplementedError
+
+    def read(self, path: str) -> str:
+        raise NotImplementedError
+
 class FileStorage(StorageInterface):
     def exists(self, path: str) -> bool:
-        import os
         return os.path.exists(path)
 
-def get_storage_interface(storage_type: StorageType) -> StorageInterface:
+    def write(self, path: str, content: str) -> bool:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except Exception:
+            return False
+
+    def read(self, path: str) -> str:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+
+class S3Storage(StorageInterface):
+    def __init__(self, bucket_name: str):
+        self.s3 = boto3.client('s3')
+        self.bucket = bucket_name
+
+    def exists(self, path: str) -> bool:
+        try:
+            self.s3.head_object(Bucket=self.bucket, Key=path)
+            return True
+        except:
+            return False
+
+    def write(self, path: str, content: str) -> bool:
+        try:
+            self.s3.put_object(
+                Bucket=self.bucket,
+                Key=path,
+                Body=content.encode('utf-8'),
+                ContentType='text/html' if path.endswith('.html') else 'application/json'
+            )
+            return True
+        except Exception:
+            return False
+
+    def read(self, path: str) -> str:
+        response = self.s3.get_object(Bucket=self.bucket, Key=path)
+        return response['Body'].read().decode('utf-8')
+
+def get_storage_interface(storage_type: StorageType, bucket_name: str = None) -> StorageInterface:
     if storage_type == StorageType.FILE:
         return FileStorage()
+    elif storage_type == StorageType.S3:
+        if not bucket_name:
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+        return S3Storage(bucket_name)
     raise ValueError(f"Unsupported storage type: {storage_type}")
 
 def create_scraper_config(
@@ -58,7 +112,8 @@ def create_scraper_config(
     month: int,
     day: Optional[int] = None,
     skip_existing: bool = True,
-    storage_type: str = "file"
+    storage_type: str = "s3",
+    bucket_name: str = None
 ) -> ScraperConfig:
     """Create a scraper configuration from command line arguments"""
     mode = ScrapeMode(mode.lower())
@@ -73,7 +128,8 @@ def create_scraper_config(
         mode=mode,
         start_date=start_date,
         storage_type=storage,
-        skip_existing=skip_existing
+        skip_existing=skip_existing,
+        bucket_name=bucket_name
     )
 
 def create_pipeline_config(
