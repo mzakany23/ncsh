@@ -86,68 +86,22 @@ resource "aws_iam_role" "github_actions" {
   })
 }
 
-# Base S3 permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_s3" {
-  name = "github-actions-s3-policy"
-  role = aws_iam_role.github_actions.id
+# Add inline policy with explicit DENY for non-allowed S3 buckets
+resource "aws_iam_role_policy" "s3_restrictions" {
+  name = "s3-bucket-restrictions"
+  role = aws_iam_role.github_actions.name
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "s3:ListBucket",
-          "s3:GetBucketPolicy",
-          "s3:PutBucketPolicy",
-          "s3:GetBucketVersioning",
-          "s3:GetBucketAcl",
-          "s3:GetEncryptionConfiguration",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:PutBucketPublicAccessBlock",
-          "s3:GetBucketLogging",
-          "s3:GetBucketTagging",
-          "s3:GetBucketLocation",
-          "s3:GetBucketCors",
-          "s3:PutBucketCors",
-          "s3:GetBucketWebsite",
-          "s3:PutBucketWebsite",
-          "s3:GetAccelerateConfiguration",
-          "s3:PutAccelerateConfiguration",
-          "s3:GetBucketRequestPayment",
-          "s3:GetBucketOwnershipControls",
-          "s3:GetBucketNotification",
-          "s3:GetBucketLifecycle",
-          "s3:GetBucketReplication",
-          "s3:GetBucketObjectLockConfiguration",
-          "s3:GetLifecycleConfiguration",
-          "s3:PutLifecycleConfiguration",
-          "s3:GetReplicationConfiguration",
-          "s3:PutReplicationConfiguration",
-          "s3:PutBucketVersioning",
-          "s3:PutBucketEncryption",
-          "s3:PutEncryptionConfiguration",
-          "s3:PutBucketOwnershipControls",
-          "s3:PutBucketTagging",
-          "s3:HeadBucket"
-        ]
-        Resource = [
+        Sid    = "DenyOtherS3Access"
+        Effect = "Deny"
+        Action = "s3:*"
+        NotResource = [
           aws_s3_bucket.terraform_state.arn,
-          "arn:aws:s3:::ncsh-app-data"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:GetObjectVersion",
-          "s3:GetObjectAcl",
-          "s3:PutObjectAcl"
-        ]
-        Resource = [
           "${aws_s3_bucket.terraform_state.arn}/*",
+          "arn:aws:s3:::ncsh-app-data",
           "arn:aws:s3:::ncsh-app-data/*"
         ]
       }
@@ -155,172 +109,33 @@ resource "aws_iam_role_policy" "github_actions_s3" {
   })
 }
 
-# DynamoDB permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_dynamodb" {
-  name = "github-actions-dynamodb-policy"
-  role = aws_iam_role.github_actions.id
+# Add inline policy for required IAM actions
+resource "aws_iam_role_policy" "github_actions_iam_permissions" {
+  name = "github-actions-iam-permissions"
+  role = aws_iam_role.github_actions.name
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid = "AllowIAMActions"
         Effect = "Allow"
         Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:DescribeTable",
-          "dynamodb:DescribeContinuousBackups",
-          "dynamodb:DescribeTimeToLive",
-          "dynamodb:ListTagsOfResource",
-          "dynamodb:DescribeTableReplicaAutoScaling"
-        ]
-        Resource = [aws_dynamodb_table.terraform_state_lock.arn]
-      }
-    ]
-  })
-}
-
-# ECR permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_ecr" {
-  name = "github-actions-ecr-policy"
-  role = aws_iam_role.github_actions.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:GetRepositoryPolicy",
-          "ecr:DescribeRepositories",
-          "ecr:ListImages",
-          "ecr:DescribeImages",
-          "ecr:BatchGetImage",
-          "ecr:InitiateLayerUpload",
-          "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:PutImage",
-          "ecr:ListTagsForResource",
-          "ecr:SetRepositoryPolicy",
-          "ecr:GetRepositoryPolicy",
-          "ecr:DeleteRepositoryPolicy",
-          "ecr:PutLifecyclePolicy",
-          "ecr:GetLifecyclePolicy",
-          "ecr:DeleteLifecyclePolicy"
-        ]
-        Resource = ["arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/ncsoccer-scraper"]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken"
-        ]
-        Resource = ["*"]
-      }
-    ]
-  })
-}
-
-# AWS Budgets permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_budgets" {
-  name = "github-actions-budgets-policy"
-  role = aws_iam_role.github_actions.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "budgets:ModifyBudget",
-          "budgets:CreateBudget",
-          "budgets:DeleteBudget",
-          "budgets:DescribeBudget",
-          "budgets:ViewBudget"
-        ]
-        Resource = ["arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/*"]
-      }
-    ]
-  })
-}
-
-# IAM permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_iam" {
-  name = "github-actions-iam-policy"
-  role = aws_iam_role.github_actions.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "iam:GetOpenIDConnectProvider",
-          "iam:CreateOpenIDConnectProvider",
-          "iam:DeleteOpenIDConnectProvider",
-          "iam:UpdateOpenIDConnectProviderThumbprint",
-          "iam:AddClientIDToOpenIDConnectProvider",
-          "iam:RemoveClientIDFromOpenIDConnectProvider",
-          "iam:ListOpenIDConnectProviders",
-          "iam:ListOpenIDConnectProviderTags",
-          "iam:TagOpenIDConnectProvider",
-          "iam:UntagOpenIDConnectProvider",
-          "iam:GetRole",
-          "iam:CreateRole",
-          "iam:DeleteRole",
-          "iam:UpdateRole",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "iam:PutRolePolicy",
-          "iam:DeleteRolePolicy",
-          "iam:GetRolePolicy",
-          "iam:PassRole",
-          "lambda:CreateFunction",
-          "lambda:GetFunction",
-          "lambda:DeleteFunction",
-          "lambda:UpdateFunctionCode",
-          "lambda:UpdateFunctionConfiguration",
-          "lambda:ListVersionsByFunction"
+          "iam:*"
         ]
         Resource = [
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
-          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/*",
-          "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function/*"
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ncsoccer_*",
+          "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/github-actions-ncsh"
         ]
       }
     ]
   })
 }
 
-# EventBridge permissions for GitHub Actions
-resource "aws_iam_role_policy" "github_actions_eventbridge" {
-  name = "github-actions-eventbridge-policy"
-  role = aws_iam_role.github_actions.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "events:PutRule",
-          "events:DeleteRule",
-          "events:DescribeRule",
-          "events:PutTargets",
-          "events:RemoveTargets",
-          "events:ListTagsForResource",
-          "events:TagResource",
-          "events:UntagResource"
-        ]
-        Resource = [
-          "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/*"
-        ]
-      }
-    ]
-  })
+# Attach PowerUserAccess policy to GitHub Actions role
+resource "aws_iam_role_policy_attachment" "github_actions_power_user" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = "arn:aws:iam::aws:policy/PowerUserAccess"
 }
 
 # Get current AWS account ID
