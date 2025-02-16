@@ -9,9 +9,9 @@ on:
       - 'Dockerfile'
       - 'requirements.txt'
       - '.github/workflows/deploy.yml'
-      - 'terraform/infrastructure/**'
       - 'lambda_function.py'
       - 'runner.py'
+      - 'CHANGELOG.md'
   pull_request:
     branches: [ main ]
     paths:
@@ -19,77 +19,45 @@ on:
       - 'Dockerfile'
       - 'requirements.txt'
       - '.github/workflows/deploy.yml'
-      - 'terraform/infrastructure/**'
       - 'lambda_function.py'
       - 'runner.py'
+      - 'CHANGELOG.md'
 
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: ncsoccer-scraper
-  TF_STATE_BUCKET: ncsh-terraform-state
   ENVIRONMENT: dev
 
 jobs:
-  build-infrastructure:
+  check-changes:
     runs-on: ubuntu-latest
-    environment: dev
-    permissions:
-      contents: read
-      id-token: write
-
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: ${{ env.AWS_REGION }}
-        audience: sts.amazonaws.com
-        role-session-name: GitHubActions-Deploy
+      - name: Check for relevant changes
+        id: check
+        run: |
+          git diff --name-only HEAD^ HEAD > changes.txt
+          echo "Changes detected:"
+          cat changes.txt
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
-
-    - name: Terraform Init (Infrastructure)
-      working-directory: ./terraform/infrastructure
-      run: |
-        terraform init \
-          -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
-          -backend-config="key=infrastructure/terraform.tfstate" \
-          -backend-config="region=${{ env.AWS_REGION }}"
-      env:
-        TF_VAR_aws_region: ${{ env.AWS_REGION }}
-
-    - name: Remove Terraform Lock (if exists)
-      run: |
-        aws dynamodb delete-item \
-          --table-name ncsh-terraform-state-lock \
-          --key '{"LockID": {"S": "ncsh-terraform-state/infrastructure/terraform.tfstate"}}'
-      env:
-        AWS_REGION: ${{ env.AWS_REGION }}
-
-    - name: Terraform Plan (Infrastructure)
-      working-directory: ./terraform/infrastructure
-      run: terraform plan -input=false -out=tfplan
-      env:
-        TF_VAR_aws_region: ${{ env.AWS_REGION }}
-        TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
-
-    - name: Terraform Apply (Infrastructure)
-      if: github.ref == 'refs/heads/main'
-      working-directory: ./terraform/infrastructure
-      env:
-        AWS_REGION: us-east-2
-        TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
-      run: |
-        terraform apply -auto-approve
+          # Check if CHANGELOG.md was modified or if there are relevant code changes
+          if grep -q -E '^(CHANGELOG.md|ncsoccer/|Dockerfile|requirements.txt|lambda_function.py|runner.py)' changes.txt; then
+            echo "Relevant changes or CHANGELOG update detected"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "No relevant changes detected"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
 
   build-service:
-    needs: [build-infrastructure]
+    needs: [check-changes]
+    if: needs.check-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:

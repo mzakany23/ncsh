@@ -14,6 +14,7 @@ RUN pip install -r requirements.txt
 # Copy function code
 COPY ncsoccer/ ${LAMBDA_TASK_ROOT}/ncsoccer/
 COPY runner.py ${LAMBDA_TASK_ROOT}
+COPY scrapy.cfg ${LAMBDA_TASK_ROOT}
 
 # Copy lambda handler
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
