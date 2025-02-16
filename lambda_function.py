@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime
-from runner import run_scraper
+from runner import run_scraper, run_month
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -35,13 +35,18 @@ def handler(event, context):
                 })
             }
 
-        # Run the scraper
-        result = run_scraper(
-            mode=mode,
-            year=year,
-            month=month,
-            day=day if mode == 'day' else None
-        )
+        # Run the appropriate scraper function based on mode
+        if mode == 'day':
+            if not day:
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({
+                        'error': 'Day parameter is required for day mode'
+                    })
+                }
+            result = run_scraper(year=year, month=month, day=day)
+        else:  # month mode
+            result = run_month(year=year, month=month)
 
         return {
             'statusCode': 200,
