@@ -3,8 +3,20 @@ name: Build and Deploy
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'ncsoccer/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - '.github/workflows/deploy.yml'
+      - 'terraform/infrastructure/**'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'ncsoccer/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - '.github/workflows/deploy.yml'
+      - 'terraform/infrastructure/**'
 
 env:
   AWS_REGION: us-east-2
@@ -24,6 +36,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Needed for detecting changes
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -54,16 +68,46 @@ jobs:
       run: terraform plan -input=false -out=tfplan
       env:
         TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
     - name: Terraform Apply (Infrastructure)
-      if: github.ref == 'refs/heads/main'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       working-directory: ./terraform/infrastructure
-      run: terraform apply -auto-approve tfplan
+      env:
+        AWS_REGION: us-east-2
+        TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      run: |
+        terraform apply -auto-approve
+
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docker-changes: ${{ steps.check.outputs.docker-changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for Docker-related changes
+        id: check
+        run: |
+          git diff --name-only HEAD^ HEAD > changes.txt
+          echo "Checking for changes in Docker-related files..."
+          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt)' changes.txt; then
+            echo "docker-changes=true" >> $GITHUB_OUTPUT
+            echo "Docker-related changes detected"
+          else
+            echo "docker-changes=false" >> $GITHUB_OUTPUT
+            echo "No Docker-related changes"
+          fi
 
   build-service:
-    needs: build-infrastructure
+    needs: [build-infrastructure, detect-changes]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.detect-changes.outputs.docker-changes == 'true'
     environment: dev
     permissions:
       contents: read

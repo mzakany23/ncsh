@@ -39,6 +39,25 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "app_data" {
   }
 }
 
+# S3 Lifecycle Policy
+resource "aws_s3_bucket_lifecycle_configuration" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+
+  rule {
+    id     = "archive_old_data"
+    status = "Enabled"
+
+    transition {
+      days          = 90
+      storage_class = "STANDARD_IA"
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+}
+
 # ECR Repository
 resource "aws_ecr_repository" "ncsoccer" {
   name                 = "ncsoccer-scraper"
@@ -47,6 +66,28 @@ resource "aws_ecr_repository" "ncsoccer" {
   image_scanning_configuration {
     scan_on_push = true
   }
+}
+
+# ECR Lifecycle Policy
+resource "aws_ecr_lifecycle_policy" "ncsoccer" {
+  repository = aws_ecr_repository.ncsoccer.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 5 images"
+        selection = {
+          tagStatus     = "any"
+          countType     = "imageCountMoreThan"
+          countNumber   = 5
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
 }
 
 # ECR Repository Policy for Lambda Access
@@ -301,3 +342,29 @@ resource "aws_iam_role_policy" "eventbridge_policy" {
 
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
+
+# AWS Budget for Cost Monitoring
+resource "aws_budgets_budget" "monthly_cost" {
+  name              = "ncsoccer-monthly-budget"
+  budget_type       = "COST"
+  limit_amount      = "1"
+  limit_unit        = "USD"
+  time_period_start = "2024-01-01_00:00"
+  time_unit         = "MONTHLY"
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.alert_email]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_email_addresses = [var.alert_email]
+  }
+}

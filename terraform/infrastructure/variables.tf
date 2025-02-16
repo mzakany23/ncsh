@@ -3,3 +3,8 @@ variable "aws_region" {
   type        = string
   default     = "us-east-2"
 }
+
+variable "alert_email" {
+  description = "Email address to receive budget alerts"
+  type        = string
+}
