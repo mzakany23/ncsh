@@ -89,6 +89,7 @@ jobs:
         terraform apply -auto-approve
 
   build-service:
+    needs: [build-infrastructure]
     runs-on: ubuntu-latest
     environment: dev
     permissions:
