@@ -1,7 +1,8 @@
-import json
-import logging
 import os
 import sys
+
+import json
+import logging
 from datetime import datetime
 
 logger = logging.getLogger()
