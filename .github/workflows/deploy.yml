@@ -46,7 +46,7 @@ jobs:
           echo "Checking for changes in files..."
 
           # Check Docker changes
-          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt)' changes.txt; then
+          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt|lambda_function.py|runner.py)' changes.txt; then
             echo "docker-changes=true" >> $GITHUB_OUTPUT
             echo "Docker-related changes detected"
           else
