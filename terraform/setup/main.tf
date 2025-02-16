@@ -282,7 +282,8 @@ resource "aws_iam_role_policy" "github_actions_iam" {
           "lambda:GetFunction",
           "lambda:DeleteFunction",
           "lambda:UpdateFunctionCode",
-          "lambda:UpdateFunctionConfiguration"
+          "lambda:UpdateFunctionConfiguration",
+          "lambda:ListVersionsByFunction"
         ]
         Resource = [
           "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com",
