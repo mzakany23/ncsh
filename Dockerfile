@@ -1,5 +1,6 @@
 # Base image for NC Soccer Scraper Lambda function
 # Handles both day and month mode scraping operations
+# Rebuilding to ensure latest code changes are included
 FROM public.ecr.aws/lambda/python:3.11
 
 # Copy requirements.txt
