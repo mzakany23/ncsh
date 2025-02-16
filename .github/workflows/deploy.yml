@@ -1,6 +1,7 @@
 name: Build and Deploy
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
     paths:
@@ -29,52 +30,8 @@ env:
   ENVIRONMENT: dev
 
 jobs:
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      docker-changes: ${{ steps.check.outputs.docker-changes }}
-      terraform-changes: ${{ steps.check.outputs.terraform-changes }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Check for changes
-        id: check
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            # For pull requests, compare with the base branch
-            git fetch origin ${{ github.base_ref }}
-            git diff --name-only origin/${{ github.base_ref }}..HEAD > changes.txt
-          else
-            # For pushes, compare with the previous commit
-            git diff --name-only HEAD^ HEAD > changes.txt
-          fi
-          echo "Checking for changes in files..."
-
-          # Check Docker changes
-          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt|lambda_function.py|runner.py)' changes.txt; then
-            echo "docker-changes=true" >> $GITHUB_OUTPUT
-            echo "Docker-related changes detected"
-          else
-            echo "docker-changes=false" >> $GITHUB_OUTPUT
-            echo "No Docker-related changes"
-          fi
-
-          # Check Terraform changes
-          if grep -q -E '^terraform/' changes.txt; then
-            echo "terraform-changes=true" >> $GITHUB_OUTPUT
-            echo "Terraform changes detected"
-          else
-            echo "terraform-changes=false" >> $GITHUB_OUTPUT
-            echo "No Terraform changes"
-          fi
-
   build-infrastructure:
-    needs: [detect-changes]
     runs-on: ubuntu-latest
-    if: |
-      needs.detect-changes.outputs.terraform-changes == 'true'
     environment: dev
     permissions:
       contents: read
@@ -83,8 +40,6 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 2  # Needed for detecting changes
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -99,7 +54,6 @@ jobs:
       with:
         terraform_version: "1.5.0"
 
-    # Infrastructure Terraform
     - name: Terraform Init (Infrastructure)
       working-directory: ./terraform/infrastructure
       run: |
@@ -126,7 +80,7 @@ jobs:
         TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
     - name: Terraform Apply (Infrastructure)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref == 'refs/heads/main'
       working-directory: ./terraform/infrastructure
       env:
         AWS_REGION: us-east-2
@@ -135,10 +89,7 @@ jobs:
         terraform apply -auto-approve
 
   build-service:
-    needs: [detect-changes]
     runs-on: ubuntu-latest
-    if: |
-      needs.detect-changes.outputs.docker-changes == 'true'
     environment: dev
     permissions:
       contents: read
