@@ -25,9 +25,46 @@ env:
   ENVIRONMENT: dev
 
 jobs:
-  build-infrastructure:
+  detect-changes:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    outputs:
+      docker-changes: ${{ steps.check.outputs.docker-changes }}
+      terraform-changes: ${{ steps.check.outputs.terraform-changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for changes
+        id: check
+        run: |
+          git diff --name-only HEAD^ HEAD > changes.txt
+          echo "Checking for changes in files..."
+
+          # Check Docker changes
+          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt)' changes.txt; then
+            echo "docker-changes=true" >> $GITHUB_OUTPUT
+            echo "Docker-related changes detected"
+          else
+            echo "docker-changes=false" >> $GITHUB_OUTPUT
+            echo "No Docker-related changes"
+          fi
+
+          # Check Terraform changes
+          if grep -q -E '^terraform/' changes.txt; then
+            echo "terraform-changes=true" >> $GITHUB_OUTPUT
+            echo "Terraform changes detected"
+          else
+            echo "terraform-changes=false" >> $GITHUB_OUTPUT
+            echo "No Terraform changes"
+          fi
+
+  build-infrastructure:
+    needs: [detect-changes]
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.detect-changes.outputs.terraform-changes == 'true'
     environment: dev
     permissions:
       contents: read
@@ -86,28 +123,6 @@ jobs:
         TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
       run: |
         terraform apply -auto-approve
-
-  detect-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      docker-changes: ${{ steps.check.outputs.docker-changes }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Check for Docker-related changes
-        id: check
-        run: |
-          git diff --name-only HEAD^ HEAD > changes.txt
-          echo "Checking for changes in Docker-related files..."
-          if grep -q -E '^(ncsoccer/|Dockerfile|requirements.txt)' changes.txt; then
-            echo "docker-changes=true" >> $GITHUB_OUTPUT
-            echo "Docker-related changes detected"
-          else
-            echo "docker-changes=false" >> $GITHUB_OUTPUT
-            echo "No Docker-related changes"
-          fi
 
   build-service:
     needs: [build-infrastructure, detect-changes]
