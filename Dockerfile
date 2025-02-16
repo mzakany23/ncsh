@@ -5,9 +5,6 @@ FROM public.ecr.aws/lambda/python:3.11
 
 # Removed virtualenv creation; install dependencies globally
 
-# Add build argument to force fresh pip installs
-ARG BUILD_DATE=unknown
-
 # Copy requirements.txt
 COPY requirements.txt ${LAMBDA_TASK_ROOT}
 
