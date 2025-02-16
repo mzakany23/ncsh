@@ -1,4 +1,5 @@
 terraform {
+  # Trigger pipeline to test updated IAM permissions (ECR lifecycle and AWS Budgets)
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -108,6 +109,11 @@ resource "aws_ecr_repository_policy" "ncsoccer_policy" {
           "ecr:BatchGetImage",
           "ecr:BatchCheckLayerAvailability"
         ]
+        Condition = {
+          StringLike = {
+            "aws:SourceArn": "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:ncsoccer_scraper"
+          }
+        }
       }
     ]
   })
