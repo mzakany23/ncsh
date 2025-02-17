@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.0] - 2024-03-17
+### Changed
+- Simplified deployment process to only trigger on CHANGELOG.md updates
+- Added comprehensive smoke test documentation for data verification
+- Improved data quality checks with expected patterns for HTML sizes and game counts
+
 ### Fixed
 - Updated Lambda handler name in Dockerfile to match function name in lambda_function.py
 
