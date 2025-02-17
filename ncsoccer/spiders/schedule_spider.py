@@ -44,8 +44,10 @@ class ScheduleSpider(scrapy.Spider):
         self.use_test_data = use_test_data
 
         # Set up storage paths
-        self.html_prefix = html_prefix
-        self.json_prefix = json_prefix
+        # Use test_data prefix if use_test_data is True
+        prefix = 'test_data' if use_test_data else 'data'
+        self.html_prefix = f'{prefix}/html' if use_test_data else html_prefix
+        self.json_prefix = f'{prefix}/json' if use_test_data else json_prefix
         self.lookup_file = lookup_file
 
         # Create scraper configuration
@@ -401,25 +403,18 @@ class ScheduleSpider(scrapy.Spider):
             return
 
     def store_metadata(self, metadata, date_str):
-        """Store game metadata in JSON format using partitioned storage"""
-        # Validate date string format
+        """Store metadata in JSON format using partitioned storage"""
         try:
             dt = datetime.strptime(date_str, '%Y-%m-%d')
         except ValueError:
             self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
             return
 
-        # Validate metadata structure
-        required_fields = ['date', 'games_found']
-        if not all(field in metadata for field in required_fields):
-            self.logger.error(f"Missing required fields in metadata: {required_fields}")
-            return
-
         # Store in partitioned format
         year = dt.year
         month = dt.month
         day = dt.day
-        base_output = os.path.dirname(self.json_prefix)  # Get the base directory (e.g., tests/data)
+        base_output = self.json_prefix.split('/json')[0]  # Get the base directory (e.g., test_data or data)
         write_record(metadata, base_output, "metadata", year, month, day, storage=self.storage)
 
     def store_games(self, games, date_str):
@@ -433,7 +428,7 @@ class ScheduleSpider(scrapy.Spider):
         # Store in partitioned format
         year = dt.year
         month = dt.month
-        base_output = os.path.dirname(self.json_prefix)  # Get the base directory (e.g., test_data or data)
+        base_output = self.json_prefix.split('/json')[0]  # Get the base directory (e.g., test_data or data)
         write_record(games, base_output, "games", year, month, storage=self.storage)
 
 def write_record(data, base_output, record_type, year, month, day=None, storage=None):

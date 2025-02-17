@@ -81,23 +81,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
               html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
               lookup_type='file', region='us-east-2', target_days=None, table_name=None,
               force_scrape=False, use_test_data=False):
-    """Run the scraper for specific days in a month
-
-    Args:
-        year (int): Year to scrape
-        month (int): Month to scrape
-        storage_type (str): Storage type ('file' or 's3')
-        bucket_name (str): S3 bucket name (for s3 storage)
-        html_prefix (str): Prefix for HTML files
-        json_prefix (str): Prefix for JSON files
-        lookup_file (str): Path to lookup file
-        lookup_type (str): Lookup type ('file' or 'dynamodb')
-        region (str): AWS region name
-        target_days (list[int], optional): Specific days to scrape. If None, scrapes all days in month.
-        table_name (str, optional): DynamoDB table name (for dynamodb lookup)
-        force_scrape (bool): Whether to force scraping even if date exists in lookup
-        use_test_data (bool): Whether to use test data instead of live scraping
-    """
+    """Run the scraper for specific days in a month"""
     # Get the number of days in the month if we need all days
     if target_days is None:
         if month == 12:
@@ -111,6 +95,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         target_days = list(target_days)
 
     success = True
+    errors = []
 
     try:
         # Configure logging for Scrapy
@@ -165,10 +150,14 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         # Verify files were created for all target days
         for day in target_days:
             date_str = f"{year}-{month:02d}-{day:02d}"
+
+            # Define expected files based on storage type and test mode
+            prefix = 'test_data' if use_test_data else 'data'
             expected_files = [
-                f"{html_prefix}/{date_str}.html",
-                f"{json_prefix}/{date_str}.json",
-                f"{json_prefix}/{date_str}_meta.json"
+                f"{prefix}/html/{date_str}.html",
+                f"{prefix}/json/{date_str}_meta.json",
+                f"{prefix}/games/year={year}/month={month:02d}/data.jsonl",
+                f"{prefix}/metadata/year={year}/month={month:02d}/data.jsonl"
             ]
 
             if storage_type == 'file':
@@ -196,8 +185,13 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             logger.info(f"Successfully verified files for {date_str}")
 
     except Exception as e:
-        logger.error(f"Error running scraper: {str(e)}")
+        error_msg = f"Error running scraper: {str(e)}"
+        logger.error(error_msg)
+        errors.append(error_msg)
         success = False
+
+    if not success:
+        raise RuntimeError(f"Scraper failed with errors: {'; '.join(errors)}")
 
     return success
 
