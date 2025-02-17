@@ -7,6 +7,12 @@ from runner import run_scraper, run_month
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+# Suppress DEBUG messages from third-party libraries
+logging.getLogger("twisted").setLevel(logging.WARNING)
+logging.getLogger("scrapy").setLevel(logging.WARNING)
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
     """AWS Lambda handler function"""
@@ -16,9 +22,15 @@ def lambda_handler(event, context):
         month = event.get('month', datetime.now().month)
         mode = event.get('mode', 'day')
         day = event.get('day', datetime.now().day) if mode == 'day' else None
+        force_scrape = event.get('force_scrape', False)
+        test_mode = event.get('test_mode', False)
 
         # Get bucket name from environment variable
         bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+        table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+
+        # Use test_data prefix in test mode
+        prefix = 'test_data' if test_mode else 'data'
 
         # Run scraper with S3 storage and DynamoDB lookup
         result = False
@@ -29,10 +41,12 @@ def lambda_handler(event, context):
                 day=day,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='test_data/html',  # Use test_data prefix
-                json_prefix='test_data/json',  # Use test_data prefix
-                lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
-                region='us-east-2'
+                html_prefix=f'{prefix}/html',
+                json_prefix=f'{prefix}/json',
+                lookup_type='dynamodb',
+                table_name=table_name,
+                region='us-east-2',
+                force_scrape=force_scrape
             )
         else:
             result = run_month(
@@ -40,10 +54,12 @@ def lambda_handler(event, context):
                 month=month,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='test_data/html',  # Use test_data prefix
-                json_prefix='test_data/json',  # Use test_data prefix
-                lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
-                region='us-east-2'
+                html_prefix=f'{prefix}/html',
+                json_prefix=f'{prefix}/json',
+                lookup_type='dynamodb',
+                table_name=table_name,
+                region='us-east-2',
+                force_scrape=force_scrape
             )
 
         return {

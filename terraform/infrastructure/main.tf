@@ -75,6 +75,23 @@ resource "aws_dynamodb_table" "scraped_dates" {
   }
 }
 
+# DynamoDB Table for Testing
+resource "aws_dynamodb_table" "scraped_dates_test" {
+  name           = "ncsh-scraped-dates-test"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "date"
+
+  attribute {
+    name = "date"
+    type = "S"
+  }
+
+  tags = {
+    Name = "NC Soccer Scraper Test Lookup Table"
+    Environment = "test"
+  }
+}
+
 # Add DynamoDB permissions to Lambda role
 resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
   role       = aws_iam_role.lambda_role.name
@@ -95,9 +112,14 @@ resource "aws_iam_policy" "lambda_dynamodb_policy" {
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
           "dynamodb:Query",
-          "dynamodb:Scan"
+          "dynamodb:Scan",
+          "dynamodb:CreateTable",
+          "dynamodb:DeleteTable"
         ]
-        Resource = [aws_dynamodb_table.scraped_dates.arn]
+        Resource = [
+          aws_dynamodb_table.scraped_dates.arn,
+          aws_dynamodb_table.scraped_dates_test.arn
+        ]
       }
     ]
   })
