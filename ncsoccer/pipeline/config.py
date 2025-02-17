@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 from datetime import datetime, timedelta
 from enum import Enum
 import os
@@ -70,8 +70,8 @@ class FileStorage(StorageInterface):
             return f.read()
 
 class S3Storage(StorageInterface):
-    def __init__(self, bucket_name: str):
-        self.s3 = boto3.client('s3')
+    def __init__(self, bucket_name: str, region: str = "us-east-2"):
+        self.s3 = boto3.client('s3', region_name=region)
         self.bucket = bucket_name
 
     def exists(self, path: str) -> bool:
@@ -97,13 +97,27 @@ class S3Storage(StorageInterface):
         response = self.s3.get_object(Bucket=self.bucket, Key=path)
         return response['Body'].read().decode('utf-8')
 
-def get_storage_interface(storage_type: StorageType, bucket_name: str = None) -> StorageInterface:
+def get_storage_interface(storage_type: str | StorageType, bucket_name: str = None, region: str = "us-east-2") -> StorageInterface:
+    """Get the appropriate storage interface based on type
+
+    Args:
+        storage_type (Union[str, StorageType]): Type of storage to use ('file' or 's3')
+        bucket_name (str, optional): Name of S3 bucket for S3 storage. Defaults to None.
+        region (str, optional): AWS region for S3 storage. Defaults to "us-east-2".
+
+    Returns:
+        StorageInterface: The configured storage interface
+    """
+    # Convert string to StorageType if needed
+    if isinstance(storage_type, str):
+        storage_type = StorageType(storage_type.lower())
+
     if storage_type == StorageType.FILE:
         return FileStorage()
     elif storage_type == StorageType.S3:
         if not bucket_name:
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-        return S3Storage(bucket_name)
+        return S3Storage(bucket_name, region=region)
     raise ValueError(f"Unsupported storage type: {storage_type}")
 
 def create_scraper_config(
