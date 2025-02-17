@@ -7,12 +7,6 @@ from runner import run_scraper, run_month
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-# Suppress DEBUG messages from third-party libraries
-logging.getLogger("twisted").setLevel(logging.WARNING)
-logging.getLogger("scrapy").setLevel(logging.WARNING)
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
     """AWS Lambda handler function"""
@@ -35,8 +29,8 @@ def lambda_handler(event, context):
                 day=day,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='data/html',  # Use production prefix
-                json_prefix='data/json',  # Use production prefix
+                html_prefix='test_data/html',  # Use test_data prefix
+                json_prefix='test_data/json',  # Use test_data prefix
                 lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
                 region='us-east-2'
             )
@@ -46,8 +40,8 @@ def lambda_handler(event, context):
                 month=month,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='data/html',  # Use production prefix
-                json_prefix='data/json',  # Use production prefix
+                html_prefix='test_data/html',  # Use test_data prefix
+                json_prefix='test_data/json',  # Use test_data prefix
                 lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
                 region='us-east-2'
             )
