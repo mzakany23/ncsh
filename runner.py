@@ -101,6 +101,9 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             next_month = datetime(year, month + 1, 1)
         last_day = (next_month - timedelta(days=1)).day
         target_days = range(1, last_day + 1)
+    else:
+        # Ensure target_days is a list
+        target_days = list(target_days)
 
     success = True
 
@@ -152,7 +155,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         # Start the reactor once for all spiders
         process.start()
 
-        # Verify files were created for all days
+        # Verify files were created for all target days
         for day in target_days:
             date_str = f"{year}-{month:02d}-{day:02d}"
             expected_files = [
