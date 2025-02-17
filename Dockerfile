@@ -19,5 +19,5 @@ COPY scrapy.cfg ${LAMBDA_TASK_ROOT}
 # Copy lambda handler
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 
-# Set the CMD to your handler
-CMD [ "lambda_function.handler" ]
+# Set the CMD to your handler (matches the function name in lambda_function.py)
+CMD [ "lambda_function.lambda_handler" ]
