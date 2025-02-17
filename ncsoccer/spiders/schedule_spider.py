@@ -40,14 +40,20 @@ class ScheduleSpider(scrapy.Spider):
         self.target_year = int(year) if year else datetime.now().year
         self.target_month = int(month) if month else datetime.now().month
         self.target_day = int(day) if day else datetime.now().day
-        self.skip_existing = str(skip_existing).lower() == 'true' and not force_scrape
+
+        # Fix force_scrape handling - convert string to bool properly
+        force_scrape = str(force_scrape).lower() == 'true'
+        self.skip_existing = not force_scrape
         self.use_test_data = use_test_data
 
         # Set up storage paths
         # Use test_data prefix if use_test_data is True
-        prefix = 'test_data' if use_test_data else 'data'
-        self.html_prefix = f'{prefix}/html' if use_test_data else html_prefix
-        self.json_prefix = f'{prefix}/json' if use_test_data else json_prefix
+        if use_test_data:
+            self.html_prefix = 'test_data/html'
+            self.json_prefix = 'test_data/json'
+        else:
+            self.html_prefix = html_prefix
+            self.json_prefix = json_prefix
         self.lookup_file = lookup_file
 
         # Create scraper configuration
@@ -77,16 +83,17 @@ class ScheduleSpider(scrapy.Spider):
 
     def start_requests(self):
         """Override start_requests to use GET first to establish session"""
-        if self.skip_existing and self._is_date_scraped(datetime(self.target_year, self.target_month, self.target_day)):
-            self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
-            return
+        try:
+            if self.skip_existing and self._is_date_scraped(datetime(self.target_year, self.target_month, self.target_day)):
+                self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
+                return
 
-        if self.use_test_data:
-            # Load test HTML directly
+            # Try to load local HTML file first, regardless of test mode
             date_str = f"{self.target_year}-{self.target_month:02d}-{self.target_day:02d}"
             html_path = os.path.join(self.html_prefix, f"{date_str}.html")
             try:
                 if os.path.exists(html_path):
+                    self.logger.info(f"Loading HTML from local file: {html_path}")
                     with open(html_path, 'r', encoding='utf-8') as f:
                         html_content = f.read()
                     request = Request(url=self.start_urls[0])
@@ -100,31 +107,37 @@ class ScheduleSpider(scrapy.Spider):
                     yield from self.parse_schedule(response)
                     return
                 else:
-                    self.logger.info(f"Test HTML file not found at {html_path}, falling back to real request")
+                    self.logger.info(f"Local HTML file not found at {html_path}, proceeding with network request.")
+                    req = Request(url=self.start_urls[0], callback=self.parse_schedule)
+                    req.meta['date'] = date_str
+                    yield req
             except Exception as e:
-                self.logger.error(f"Failed to load test HTML: {e}")
-                self.logger.info("Falling back to real request")
+                self.logger.error(f"Failed to load HTML: {e}")
+                raise RuntimeError(f"Failed to load HTML: {e}")
 
-        # If we're already on the correct month, we can reuse that state
-        if (self.current_month_date and
-            self.current_month_date.year == self.target_year and
-            self.current_month_date.month == self.target_month):
-            self.logger.info(f"Already on correct month: {self.current_month_date.strftime('%B %Y')}")
-            # Create a fake response to reuse the parse method
-            response = scrapy.http.HtmlResponse(
+            # If we're already on the correct month, we can reuse that state
+            if (self.current_month_date and
+                self.current_month_date.year == self.target_year and
+                self.current_month_date.month == self.target_month):
+                self.logger.info(f"Already on correct month: {self.current_month_date.strftime('%B %Y')}")
+                # Create a fake response to reuse the parse method
+                response = scrapy.http.HtmlResponse(
+                    url=self.start_urls[0],
+                    body=b'',  # Empty body since we'll make a new request anyway
+                    encoding='utf-8'
+                )
+                return self.parse(response)
+
+            # Otherwise start fresh from the current date
+            yield scrapy.Request(
                 url=self.start_urls[0],
-                body=b'',  # Empty body since we'll make a new request anyway
-                encoding='utf-8'
+                callback=self.parse,
+                dont_filter=True,
+                meta={'dont_redirect': True, 'handle_httpstatus_list': [301, 302]}
             )
-            return self.parse(response)
-
-        # Otherwise start fresh from the current date
-        yield scrapy.Request(
-            url=self.start_urls[0],
-            callback=self.parse,
-            dont_filter=True,
-            meta={'dont_redirect': True, 'handle_httpstatus_list': [301, 302]}
-        )
+        except Exception as e:
+            self.logger.error(f"Error in start_requests: {e}")
+            raise RuntimeError(f"Error in start_requests: {e}")
 
     def validate_current_page(self, response, expected_date=None):
         """Validate that we're on the expected page
@@ -308,6 +321,9 @@ class ScheduleSpider(scrapy.Spider):
             # Find the schedule table
             schedule_table = response.css('table#ctl00_c_Schedule1_GridView1')
 
+            # Initialize empty games list
+            games = []
+
             if not schedule_table:
                 self.logger.warning(f"No schedule table found for {date_str}")
                 metadata = {
@@ -317,11 +333,19 @@ class ScheduleSpider(scrapy.Spider):
                     'games_count': 0
                 }
                 self.store_metadata(metadata, date_str)
+                # Store empty games list instead of returning
+                self.store_games(games, date_str)
+                success = True  # This is still a successful scrape, just with no games
+                games_count = 0
+                yield {  # Yield empty result instead of returning
+                    'date': date_str,
+                    'games_found': False,
+                    'games_count': 0
+                }
                 return
 
             # Process games one at a time
             rows = schedule_table.css('tr')[1:]  # Skip header row
-            games = []
             for row in rows:
                 cells = row.css('td')
                 if len(cells) >= 7:  # Ensure we have all expected columns
@@ -329,17 +353,41 @@ class ScheduleSpider(scrapy.Spider):
                     league = cells[0].css('a::text').get('').strip()
                     # Extract session from league name (e.g., "session 2 2024" from "Mens 40+ Friday night 7v7 Indoor session 2 2024")
                     session = league.split('session')[-1].strip() if 'session' in league else ''
+
+                    # Extract scores from the versus column
+                    versus_text = cells[2].css('span::text').get('').strip()
+                    home_score = None
+                    away_score = None
+                    if versus_text and ' - ' in versus_text:
+                        try:
+                            scores = versus_text.split(' - ')
+                            home_score = int(scores[0].strip())
+                            away_score = int(scores[1].strip())
+                        except (ValueError, IndexError):
+                            self.logger.warning(f"Failed to parse scores from: {versus_text}")
+                            home_score = None
+                            away_score = None
+                    elif versus_text == 'v':
+                        # This is a pending game, scores should be None
+                        home_score = None
+                        away_score = None
+                    else:
+                        self.logger.warning(f"Unexpected versus text format: {versus_text}")
+
+                    # Extract status (no times available)
+                    status = cells[4].css('a::text').get('').strip()
+
                     games.append({
                         'league': league,
                         'session': session,
                         'home_team': cells[1].css('a::text').get('').strip(),
                         'away_team': cells[3].css('a::text').get('').strip(),
-                        'status': cells[4].css('a::text').get('').strip(),
+                        'status': status,
                         'venue': cells[5].css('a::text').get('').strip(),
                         'officials': cells[6].css('::text').get('').strip(),
-                        'time': None,  # Required by schema
-                        'home_score': None,  # Required by schema
-                        'away_score': None   # Required by schema
+                        'time': None,  # No times available in the HTML
+                        'home_score': home_score,
+                        'away_score': away_score
                     })
 
             # Write the complete JSON file
@@ -364,6 +412,14 @@ class ScheduleSpider(scrapy.Spider):
 
             self.logger.info(f"Found {games_count} games for {date_str}")
             success = True
+
+            # Yield the result
+            yield {
+                'date': date_str,
+                'games_found': True,
+                'games_count': games_count,
+                'games': games
+            }
 
         finally:
             # Always update the lookup with the result
