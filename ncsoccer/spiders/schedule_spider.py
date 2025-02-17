@@ -86,21 +86,24 @@ class ScheduleSpider(scrapy.Spider):
             date_str = f"{self.target_year}-{self.target_month:02d}-{self.target_day:02d}"
             html_path = os.path.join(self.html_prefix, f"{date_str}.html")
             try:
-                with open(html_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                request = Request(url=self.start_urls[0])
-                response = HtmlResponse(
-                    url=self.start_urls[0],
-                    body=html_content.encode('utf-8'),
-                    encoding='utf-8',
-                    request=request
-                )
-                response.meta['date'] = date_str
-                yield from self.parse_schedule(response)
-                return
+                if os.path.exists(html_path):
+                    with open(html_path, 'r', encoding='utf-8') as f:
+                        html_content = f.read()
+                    request = Request(url=self.start_urls[0])
+                    response = HtmlResponse(
+                        url=self.start_urls[0],
+                        body=html_content.encode('utf-8'),
+                        encoding='utf-8',
+                        request=request
+                    )
+                    response.meta['date'] = date_str
+                    yield from self.parse_schedule(response)
+                    return
+                else:
+                    self.logger.info(f"Test HTML file not found at {html_path}, falling back to real request")
             except Exception as e:
                 self.logger.error(f"Failed to load test HTML: {e}")
-                return
+                self.logger.info("Falling back to real request")
 
         # If we're already on the correct month, we can reuse that state
         if (self.current_month_date and
@@ -428,14 +431,27 @@ class ScheduleSpider(scrapy.Spider):
         # Store in partitioned format
         year = dt.year
         month = dt.month
+        day = dt.day
         base_output = self.json_prefix.split('/json')[0]  # Get the base directory (e.g., test_data or data)
-        write_record(games, base_output, "games", year, month, storage=self.storage)
+        write_record(games, base_output, "games", year, month, day, storage=self.storage)
 
-def write_record(data, base_output, record_type, year, month, day=None, storage=None):
+def write_record(data, base_output, record_type, year, month, day, storage=None):
     """Write a record to partitioned storage.
-    Both games and metadata are stored in data.jsonl files under year/month partitions."""
+    Both games and metadata are stored in data.jsonl files under year/month/day partitions.
+
+    Args:
+        data: The data to write (list or dict)
+        base_output: Base directory for output (e.g. 'data' or 'test_data')
+        record_type: Type of record ('games' or 'metadata')
+        year: Year for partitioning
+        month: Month for partitioning
+        day: Day for partitioning (required)
+        storage: Optional storage interface (e.g. for S3)
+    """
     import os, json
-    directory = os.path.join(base_output, record_type, f"year={year}", f"month={month:02d}")
+
+    # Build the directory path with required day-level partitioning
+    directory = os.path.join(base_output, record_type, f"year={year}", f"month={month:02d}", f"day={day:02d}")
     file_path = os.path.join(directory, "data.jsonl")
 
     # Prepare content to write
@@ -446,8 +462,6 @@ def write_record(data, base_output, record_type, year, month, day=None, storage=
 
     # If a storage interface is provided, use it (e.g., for s3)
     if storage is not None:
-        # Note: storage.write should handle overwriting the file. If append is needed, the storage
-        # interface must support it; otherwise, you could read existing content and then append.
         return storage.write(file_path, content)
     else:
         os.makedirs(directory, exist_ok=True)

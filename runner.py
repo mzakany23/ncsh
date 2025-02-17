@@ -156,8 +156,8 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             expected_files = [
                 f"{prefix}/html/{date_str}.html",
                 f"{prefix}/json/{date_str}_meta.json",
-                f"{prefix}/games/year={year}/month={month:02d}/data.jsonl",
-                f"{prefix}/metadata/year={year}/month={month:02d}/data.jsonl"
+                f"{prefix}/games/year={year}/month={month:02d}/day={day:02d}/data.jsonl",
+                f"{prefix}/metadata/year={year}/month={month:02d}/day={day:02d}/data.jsonl"
             ]
 
             if storage_type == 'file':
