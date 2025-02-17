@@ -29,8 +29,8 @@ def lambda_handler(event, context):
                 day=day,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='test_data/html',  # Use test_data prefix
-                json_prefix='test_data/json',  # Use test_data prefix
+                html_prefix='data/html',  # Use production prefix
+                json_prefix='data/json',  # Use production prefix
                 lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
                 region='us-east-2'
             )
