@@ -5,12 +5,6 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'ncsoccer/**'
-      - 'Dockerfile'
-      - 'requirements.txt'
-      - '.github/workflows/deploy.yml'
-      - 'lambda_function.py'
-      - 'runner.py'
       - 'CHANGELOG.md'
 
 env:
@@ -19,35 +13,7 @@ env:
   ENVIRONMENT: dev
 
 jobs:
-  check-changes:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Check for relevant changes
-        id: check
-        run: |
-          git diff --name-only HEAD^ HEAD > changes.txt
-          echo "Changes detected:"
-          cat changes.txt
-
-          # Check if CHANGELOG.md was modified or if there are relevant code changes
-          if grep -q -E '^(CHANGELOG.md|ncsoccer/|Dockerfile|requirements.txt|lambda_function.py|runner.py)' changes.txt; then
-            echo "Relevant changes or CHANGELOG update detected"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "No relevant changes detected"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
-
   build-service:
-    needs: [check-changes]
-    if: needs.check-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
