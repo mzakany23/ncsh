@@ -67,7 +67,8 @@ def is_date_scraped(date_str, lookup_data):
 
 
 def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
-             html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json'):
+             html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
+             lookup_type='file', region='us-east-2'):
     """Run the scraper for a specific day"""
     logger.info(f"Starting scraper for {year}-{month:02d}-{day:02d}")
 
@@ -91,7 +92,10 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             bucket_name=bucket_name,
             html_prefix=html_prefix,
             json_prefix=json_prefix,
-            lookup_file=lookup_file
+            lookup_file=lookup_file,
+            lookup_type=lookup_type,
+            region=region,
+            table_name=os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')  # Get table name from env
         )
         process.start()
 
@@ -100,8 +104,7 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
         expected_files = [
             f"{html_prefix}/{date_str}.html",
             f"{json_prefix}/{date_str}.json",
-            f"{json_prefix}/{date_str}_meta.json",
-            lookup_file
+            f"{json_prefix}/{date_str}_meta.json"
         ]
 
         if storage_type == 'file':
@@ -135,7 +138,8 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
 
 
 def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
-              html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json'):
+              html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
+              lookup_type='file', region='us-east-2'):
     """Run the scraper for an entire month"""
     # Get the number of days in the month
     if month == 12:
@@ -148,7 +152,8 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
     # Run scraper for each day
     for day in range(1, last_day + 1):
         run_scraper(year, month, day, storage_type=storage_type, bucket_name=bucket_name,
-                   html_prefix=html_prefix, json_prefix=json_prefix, lookup_file=lookup_file)
+                   html_prefix=html_prefix, json_prefix=json_prefix, lookup_file=lookup_file,
+                   lookup_type=lookup_type, region=region)
 
 
 def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
@@ -190,6 +195,8 @@ def main():
     parser.add_argument('--html-prefix', default='data/html', help='Prefix for HTML files')
     parser.add_argument('--json-prefix', default='data/json', help='Prefix for JSON files')
     parser.add_argument('--lookup-file', default='data/lookup.json', help='Path to lookup file')
+    parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup storage type')
+    parser.add_argument('--region', default='us-east-2', help='AWS region name')
 
     args = parser.parse_args()
 
@@ -198,10 +205,10 @@ def main():
 
     if args.mode == 'day':
         run_scraper(args.year, args.month, args.day, args.storage_type, args.bucket_name,
-                   args.html_prefix, args.json_prefix, args.lookup_file)
+                   args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region)
     else:
         run_month(args.year, args.month, args.storage_type, args.bucket_name,
-                 args.html_prefix, args.json_prefix, args.lookup_file)
+                 args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region)
 
 
 if __name__ == '__main__':
