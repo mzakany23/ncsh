@@ -13,7 +13,43 @@ env:
   ENVIRONMENT: dev
 
 jobs:
+  validate-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for valid CHANGELOG update
+        id: check
+        run: |
+          git diff --name-only HEAD^ HEAD > changes.txt
+          echo "Changes detected:"
+          cat changes.txt
+
+          # Check if CHANGELOG.md was modified and contains a new version entry
+          if grep -q '^CHANGELOG.md$' changes.txt; then
+            DIFF=$(git diff HEAD^ HEAD -- CHANGELOG.md)
+            if echo "$DIFF" | grep -q '^\+## \[[0-9]\+\.[0-9]\+\.[0-9]\+\]'; then
+              echo "Valid version update detected in CHANGELOG.md"
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            else
+              echo "CHANGELOG.md modified but no new version entry found"
+              echo "should_run=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "CHANGELOG.md not modified"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
   build-service:
+    needs: [validate-changes]
+    if: needs.validate-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
