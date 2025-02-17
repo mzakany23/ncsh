@@ -124,7 +124,8 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             'LOG_LEVEL': 'INFO',
             'COOKIES_DEBUG': True,
             'DOWNLOAD_DELAY': 1,
-            'CONCURRENT_REQUESTS': 1
+            'CONCURRENT_REQUESTS': 1,
+            'TELNETCONSOLE_ENABLED': False  # Disable telnet console for Lambda
         })
         process = CrawlerProcess(settings)
 
