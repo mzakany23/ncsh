@@ -1,72 +1,49 @@
 import os
 import sys
-
 import json
 import logging
 from datetime import datetime
+from runner import run_scraper, run_month
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def handler(event, context):
-    """
-    AWS Lambda handler for NC Soccer schedule scraper.
-
-    Expected event format:
-    {
-        "year": 2024,
-        "month": 2,
-        "day": null,  # Optional, if not provided will scrape entire month
-        "mode": "month"  # or "day" if day is provided
-    }
-    """
-
+def lambda_handler(event, context):
+    """AWS Lambda handler function"""
     try:
-        logger.info(f"Received event: {json.dumps(event)}")
-
-        # Import runner functions here to delay Twisted imports
-        from runner import run_scraper, run_month
-
-        # Validate environment variables
-        if 'DATA_BUCKET' not in os.environ:
-            raise ValueError("DATA_BUCKET environment variable is required")
-
         # Extract parameters from event
-        year = event.get('year')
-        month = event.get('month')
-        day = event.get('day')
-        mode = event.get('mode', 'month')
+        year = event.get('year', datetime.now().year)
+        month = event.get('month', datetime.now().month)
+        mode = event.get('mode', 'day')
+        day = event.get('day', datetime.now().day) if mode == 'day' else None
 
-        if not year or not month:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({
-                    'error': 'Missing required parameters: year and month are required'
-                })
-            }
+        # Get bucket name from environment variable
+        bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
 
-        # Run the appropriate scraper function based on mode
+        # Run scraper with S3 storage and DynamoDB lookup
+        result = False
         if mode == 'day':
-            if not day:
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({
-                        'error': 'Day parameter is required for day mode'
-                    })
-                }
             result = run_scraper(
                 year=year,
                 month=month,
                 day=day,
                 storage_type='s3',
-                bucket_name=os.environ['DATA_BUCKET']
+                bucket_name=bucket_name,
+                html_prefix='test_data/html',  # Use test_data prefix
+                json_prefix='test_data/json',  # Use test_data prefix
+                lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
+                region='us-east-2'
             )
-        else:  # month mode
+        else:
             result = run_month(
                 year=year,
                 month=month,
                 storage_type='s3',
-                bucket_name=os.environ['DATA_BUCKET']
+                bucket_name=bucket_name,
+                html_prefix='test_data/html',  # Use test_data prefix
+                json_prefix='test_data/json',  # Use test_data prefix
+                lookup_type='dynamodb',  # Use DynamoDB lookup in Lambda
+                region='us-east-2'
             )
 
         return {
@@ -78,11 +55,11 @@ def handler(event, context):
         }
 
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
+        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
             'body': json.dumps({
-                'error': f'Error processing request: {str(e)}'
+                'error': str(e)
             })
         }
 
@@ -93,5 +70,5 @@ if __name__ == '__main__':
         sys.exit(1)
 
     event = json.loads(sys.argv[1])
-    response = handler(event, None)
+    response = lambda_handler(event, None)
     print(json.dumps(response))

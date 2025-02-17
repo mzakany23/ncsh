@@ -12,6 +12,7 @@ from ..pipeline.config import (
     get_storage_interface,
     create_scraper_config
 )
+from ..pipeline.lookup import get_lookup_interface
 
 class ScheduleSpider(scrapy.Spider):
     name = 'schedule'
@@ -31,7 +32,8 @@ class ScheduleSpider(scrapy.Spider):
 
     def __init__(self, mode='day', year=None, month=None, day=None, skip_existing=True,
                  html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-                 storage_type='s3', bucket_name=None, *args, **kwargs):
+                 storage_type='s3', bucket_name=None, lookup_type='file', region='us-east-2',
+                 table_name=None, *args, **kwargs):
         super(ScheduleSpider, self).__init__(*args, **kwargs)
 
         # Parse configuration
@@ -57,43 +59,18 @@ class ScheduleSpider(scrapy.Spider):
         )
 
         # Set up storage interface
-        self.storage = get_storage_interface(self.config.storage_type, self.config.bucket_name)
+        self.storage = get_storage_interface(self.config.storage_type, self.config.bucket_name, region=region)
 
-        # Load lookup data
-        self.scraped_dates = self._load_lookup_data()
+        # Set up lookup interface
+        self.lookup = get_lookup_interface(lookup_type, lookup_file=lookup_file, region=region, table_name=table_name)
 
         # Track current month to avoid unnecessary navigation
         self.current_month_date = None
 
-    def _load_lookup_data(self):
-        """Load lookup data from storage"""
-        try:
-            content = self.storage.read(self.lookup_file)
-            return json.loads(content)
-        except:
-            return {}
-
-    def _save_lookup_data(self):
-        """Save lookup data to storage"""
-        try:
-            self.storage.write(self.lookup_file, json.dumps(self.scraped_dates, indent=2))
-        except Exception as e:
-            self.logger.error(f"Failed to save lookup data: {e}")
-
-    def _update_lookup_data(self, date_str, success=True, games_count=0):
-        """Update the lookup data with newly scraped date"""
-        self.scraped_dates[date_str] = {
-            'success': success,
-            'games_count': games_count,
-            'timestamp': datetime.now().isoformat()
-        }
-
-        self._save_lookup_data()
-
     def _is_date_scraped(self, date):
         """Check if a date has already been scraped using the lookup data"""
         date_str = date.strftime('%Y-%m-%d')
-        return date_str in self.scraped_dates and self.scraped_dates[date_str]['success']
+        return self.lookup.is_date_scraped(date_str)
 
     def start_requests(self):
         """Override start_requests to use GET first to establish session"""
@@ -402,7 +379,7 @@ class ScheduleSpider(scrapy.Spider):
             success = True
 
         finally:
-            self._update_lookup_data(date_str, success=success, games_count=games_count)
+            self.lookup.update_date(date_str, success=success, games_count=games_count)
 
     def store_raw_html(self, response, date_str=None):
         """Store raw HTML response to storage"""
