@@ -249,12 +249,13 @@ def verify_partitioned_data(bucket_name, date_str, test_mode=False):
     dt = datetime.strptime(date_str, '%Y-%m-%d')
     year = dt.year
     month = dt.month
+    day = dt.day
 
     # Use test_data prefix in test mode, data prefix in production
     prefix = 'test_data' if test_mode else 'data'
 
     # Check games partition
-    games_path = f"{prefix}/games/year={year}/month={month:02d}/data.jsonl"
+    games_path = f"{prefix}/games/year={year}/month={month:02d}/day={day:02d}/data.jsonl"
     try:
         response = s3.get_object(Bucket=bucket_name, Key=games_path)
         games_data = [json.loads(line) for line in response['Body'].read().decode('utf-8').splitlines()]
@@ -267,7 +268,7 @@ def verify_partitioned_data(bucket_name, date_str, test_mode=False):
         raise
 
     # Check metadata partition
-    metadata_path = f"{prefix}/metadata/year={year}/month={month:02d}/data.jsonl"
+    metadata_path = f"{prefix}/metadata/year={year}/month={month:02d}/day={day:02d}/data.jsonl"
     try:
         response = s3.get_object(Bucket=bucket_name, Key=metadata_path)
         metadata_data = [json.loads(line) for line in response['Body'].read().decode('utf-8').splitlines()]
@@ -336,8 +337,8 @@ def test_handler(dynamodb_test_table, s3_test_bucket):
     expected_files = [
         f"test_data/html/{date_str}.html",
         f"test_data/json/{date_str}_meta.json",
-        f"test_data/games/year={year}/month={int(month):02}/data.jsonl",
-        f"test_data/metadata/year={year}/month={int(month):02}/data.jsonl"
+        f"test_data/games/year={year}/month={int(month):02d}/day={int(day):02d}/data.jsonl",
+        f"test_data/metadata/year={year}/month={int(month):02d}/day={int(day):02d}/data.jsonl"
     ]
 
     for file_path in expected_files:
@@ -358,6 +359,16 @@ def test_e2e(dynamodb_test_table, s3_test_bucket):
     # Set up environment variables
     os.environ['DATA_BUCKET'] = s3_test_bucket
     os.environ['DYNAMODB_TABLE'] = dynamodb_test_table
+
+    # Copy test HTML to production path in S3
+    date_str = "2024-03-01"
+    s3 = boto3.client('s3', region_name=AWS_REGION)
+    html_content = load_test_html(date_str)
+    s3.put_object(
+        Bucket=s3_test_bucket,
+        Key=f"data/html/{date_str}.html",
+        Body=html_content.encode('utf-8')
+    )
 
     # Test event with production settings (no test_mode)
     event = {
@@ -384,11 +395,13 @@ def test_e2e(dynamodb_test_table, s3_test_bucket):
 
     # Verify S3 files exist and have content
     s3 = boto3.client('s3', region_name=AWS_REGION)
+    date_str = "2024-03-01"
+    year, month, day = date_str.split('-')
     expected_files = [
-        "data/html/2024-03-01.html",
-        "data/json/2024-03-01_meta.json",
-        "data/games/year=2024/month=03/data.jsonl",
-        "data/metadata/year=2024/month=03/data.jsonl"
+        f"data/html/{date_str}.html",
+        f"data/json/{date_str}_meta.json",
+        f"data/games/year={year}/month={int(month):02d}/day={int(day):02d}/data.jsonl",
+        f"data/metadata/year={year}/month={int(month):02d}/day={int(day):02d}/data.jsonl"
     ]
 
     for file_path in expected_files:
@@ -400,4 +413,4 @@ def test_e2e(dynamodb_test_table, s3_test_bucket):
             assert False, f"Failed to verify S3 file {file_path}: {str(e)}"
 
     # Verify partitioned data content
-    verify_partitioned_data(s3_test_bucket, "2024-03-01", test_mode=False)
+    verify_partitioned_data(s3_test_bucket, date_str, test_mode=False)
