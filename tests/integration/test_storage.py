@@ -22,7 +22,7 @@ def cleanup():
     if os.path.exists(test_dir):
         shutil.rmtree(test_dir)
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def s3_test_bucket():
     """Set up test bucket prefix for S3 storage tests"""
     bucket_name = 'ncsh-app-data'
@@ -40,6 +40,27 @@ def s3_test_bucket():
     except ClientError:
         pass
 
+@pytest.fixture(scope="module")
+def dynamodb_test_table():
+    """Create a test DynamoDB table for integration tests"""
+    table_name = "ncsh-scraped-dates-test"
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-2')
+
+    # Create the test table
+    table = dynamodb.create_table(
+        TableName=table_name,
+        KeySchema=[{'AttributeName': 'date', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'date', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST'
+    )
+    table.wait_until_exists()
+
+    yield table_name
+
+    # Cleanup - delete the table
+    table.delete()
+    table.wait_until_not_exists()
+
 def verify_json_content(data, date_str):
     """Helper function to verify JSON file content"""
     assert 'date' in data
@@ -55,6 +76,18 @@ def verify_lookup_content(lookup_data, date_str):
     assert "timestamp" in lookup_data[date_str], "Lookup entry missing 'timestamp' field"
     assert lookup_data[date_str]["success"], "Spider run was not marked as successful"
     assert lookup_data[date_str]["games_count"] > 0, "No games were recorded in lookup data"
+
+def verify_dynamodb_entry(table_name, date_str):
+    """Verify that the DynamoDB entry was created correctly"""
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-2')
+    table = dynamodb.Table(table_name)
+    response = table.get_item(Key={'date': date_str})
+
+    assert 'Item' in response, f"Date {date_str} not found in DynamoDB"
+    item = response['Item']
+    assert item['success'], "Spider run was not marked as successful in DynamoDB"
+    assert item['games_count'] > 0, "No games were recorded in DynamoDB"
+    assert 'timestamp' in item, "Timestamp missing in DynamoDB entry"
 
 def test_spider_file_creation():
     """Integration test that spider creates the expected files in local filesystem"""
@@ -105,7 +138,7 @@ def test_spider_file_creation():
         lookup_data = json.load(f)
         verify_lookup_content(lookup_data['scraped_dates'], date_str)
 
-def test_spider_s3_creation(s3_test_bucket):
+def test_spider_s3_creation(s3_test_bucket, dynamodb_test_table):
     """Integration test that spider creates the expected files in S3"""
     # Set up test date
     test_year = 2024
@@ -113,7 +146,10 @@ def test_spider_s3_creation(s3_test_bucket):
     test_day = 1
     date_str = f"{test_year}-{test_month:02d}-{test_day:02d}"
 
-    # Run spider via CLI with file lookup (not DynamoDB)
+    # Set environment variables
+    os.environ['DYNAMODB_TABLE'] = dynamodb_test_table
+
+    # Run spider via CLI with DynamoDB lookup
     result = subprocess.run([
         'python', 'runner.py',
         '--mode', 'day',
@@ -124,9 +160,9 @@ def test_spider_s3_creation(s3_test_bucket):
         '--bucket-name', s3_test_bucket,
         '--html-prefix', 'test_data/html',
         '--json-prefix', 'test_data/json',
-        '--lookup-file', 'test_data/lookup.json',
-        '--lookup-type', 'file',  # Changed from dynamodb to file
-        '--region', 'us-east-2'
+        '--lookup-type', 'dynamodb',
+        '--region', 'us-east-2',
+        '--table-name', dynamodb_test_table
     ], check=True, capture_output=True, text=True)
 
     print("Spider output:", result.stdout)
@@ -155,7 +191,5 @@ def test_spider_s3_creation(s3_test_bucket):
     data = json.loads(json_response['Body'].read().decode('utf-8'))
     verify_json_content(data, date_str)
 
-    # Verify lookup file structure instead of DynamoDB
-    with open("test_data/lookup.json") as f:
-        lookup_data = json.load(f)
-        verify_lookup_content(lookup_data['scraped_dates'], date_str)
+    # Verify DynamoDB entry
+    verify_dynamodb_entry(dynamodb_test_table, date_str)
