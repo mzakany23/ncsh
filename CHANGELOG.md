@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2024-03-17
+### Fixed
+- Added back CHANGELOG.md validation step in deployment workflow
+- Added check to ensure new version entry exists in CHANGELOG.md
+
 ## [2.0.0] - 2024-03-17
 ### Changed
 - Simplified deployment process to only trigger on CHANGELOG.md updates
