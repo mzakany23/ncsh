@@ -321,13 +321,20 @@ class ScheduleSpider(scrapy.Spider):
                 cells = row.css('td')
                 if len(cells) >= 7:  # Ensure we have all expected columns
                     games_count += 1
+                    league = cells[0].css('a::text').get('').strip()
+                    # Extract session from league name (e.g., "session 2 2024" from "Mens 40+ Friday night 7v7 Indoor session 2 2024")
+                    session = league.split('session')[-1].strip() if 'session' in league else ''
                     games.append({
-                        'league': cells[0].css('a::text').get('').strip(),
+                        'league': league,
+                        'session': session,
                         'home_team': cells[1].css('a::text').get('').strip(),
                         'away_team': cells[3].css('a::text').get('').strip(),
                         'status': cells[4].css('a::text').get('').strip(),
                         'venue': cells[5].css('a::text').get('').strip(),
-                        'officials': cells[6].css('::text').get('').strip()
+                        'officials': cells[6].css('::text').get('').strip(),
+                        'time': None,  # Required by schema
+                        'home_score': None,  # Required by schema
+                        'away_score': None   # Required by schema
                     })
 
             # Write the complete JSON file
@@ -338,6 +345,9 @@ class ScheduleSpider(scrapy.Spider):
             }
             json_filename = f"{self.json_prefix}/{date_str}.json"
             self.storage.write(json_filename, json.dumps(json_data, indent=2))
+
+            # Store games in partitioned format
+            self.store_games(games, date_str)
 
             # Store metadata in partitioned format
             metadata = {
@@ -410,7 +420,7 @@ class ScheduleSpider(scrapy.Spider):
         month = dt.month
         day = dt.day
         base_output = os.path.dirname(self.json_prefix)  # Get the base directory (e.g., tests/data)
-        write_record(metadata, base_output, "metadata", year, month, day)
+        write_record(metadata, base_output, "metadata", year, month, day, storage=self.storage)
 
     def store_games(self, games, date_str):
         """Store games data in JSON format using partitioned storage"""
@@ -423,13 +433,29 @@ class ScheduleSpider(scrapy.Spider):
         # Store in partitioned format
         year = dt.year
         month = dt.month
-        base_output = os.path.dirname(self.json_prefix)  # Get the base directory (test_data or data)
-        write_record(games, base_output, "games", year, month)
+        base_output = os.path.dirname(self.json_prefix)  # Get the base directory (e.g., test_data or data)
+        write_record(games, base_output, "games", year, month, storage=self.storage)
 
-def write_record(data, base_output, record_type, year, month, day):
+def write_record(data, base_output, record_type, year, month, day=None, storage=None):
+    """Write a record to partitioned storage.
+    Both games and metadata are stored in data.jsonl files under year/month partitions."""
     import os, json
-    directory = os.path.join(base_output, 'json', 'raw', record_type, str(year), f"{month:02d}")
-    os.makedirs(directory, exist_ok=True)
-    file_path = os.path.join(directory, f"{day:02d}.json")
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
+    directory = os.path.join(base_output, record_type, f"year={year}", f"month={month:02d}")
+    file_path = os.path.join(directory, "data.jsonl")
+
+    # Prepare content to write
+    if isinstance(data, list):
+        content = "".join(json.dumps(item) + '\n' for item in data)
+    else:
+        content = json.dumps(data) + '\n'
+
+    # If a storage interface is provided, use it (e.g., for s3)
+    if storage is not None:
+        # Note: storage.write should handle overwriting the file. If append is needed, the storage
+        # interface must support it; otherwise, you could read existing content and then append.
+        return storage.write(file_path, content)
+    else:
+        os.makedirs(directory, exist_ok=True)
+        mode = 'a' if os.path.exists(file_path) else 'w'
+        with open(file_path, mode, encoding='utf-8') as f:
+            f.write(content)

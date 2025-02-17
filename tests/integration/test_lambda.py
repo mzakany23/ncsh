@@ -308,7 +308,8 @@ def test_handler(dynamodb_test_table, s3_test_bucket):
         "month": int(month),
         "day": int(day),
         "mode": "day",
-        "force_scrape": True  # Force scraping even if date exists in lookup
+        "force_scrape": True,  # Force scraping even if date exists in lookup
+        "test_mode": True  # Enable test mode to use test_data prefix
     }
     logger.info(f"Test event: {json.dumps(event, indent=2)}")
 
@@ -322,11 +323,10 @@ def test_handler(dynamodb_test_table, s3_test_bucket):
     assert json.loads(response["body"])["result"] is True
 
     # Verify DynamoDB entry
-    dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
-    table = dynamodb.Table(dynamodb_test_table)
-    response = table.get_item(Key={'date': date_str})
-    assert 'Item' in response, f"Date {date_str} not found in DynamoDB"
-    item = response['Item']
-    assert item['success'], "Spider run was not marked as successful in DynamoDB"
-    assert item['games_count'] > 0, "No games were recorded in DynamoDB"
-    assert 'timestamp' in item, "Timestamp missing in DynamoDB entry"
+    verify_dynamodb_entry(dynamodb_test_table, date_str)
+
+    # Verify S3 partitioned data
+    verify_partitioned_data(s3_test_bucket, date_str)
+
+    # Verify raw files
+    verify_raw_files(s3_test_bucket, date_str)

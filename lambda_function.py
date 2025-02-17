@@ -23,10 +23,14 @@ def lambda_handler(event, context):
         mode = event.get('mode', 'day')
         day = event.get('day', datetime.now().day) if mode == 'day' else None
         force_scrape = event.get('force_scrape', False)
+        test_mode = event.get('test_mode', False)
 
         # Get bucket name from environment variable
         bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
         table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+
+        # Use test_data prefix in test mode
+        prefix = 'test_data' if test_mode else 'data'
 
         # Run scraper with S3 storage and DynamoDB lookup
         result = False
@@ -37,8 +41,8 @@ def lambda_handler(event, context):
                 day=day,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='data/html',
-                json_prefix='data/json',
+                html_prefix=f'{prefix}/html',
+                json_prefix=f'{prefix}/json',
                 lookup_type='dynamodb',
                 table_name=table_name,
                 region='us-east-2',
@@ -50,8 +54,8 @@ def lambda_handler(event, context):
                 month=month,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                html_prefix='data/html',
-                json_prefix='data/json',
+                html_prefix=f'{prefix}/html',
+                json_prefix=f'{prefix}/json',
                 lookup_type='dynamodb',
                 table_name=table_name,
                 region='us-east-2',
