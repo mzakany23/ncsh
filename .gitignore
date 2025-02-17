@@ -59,4 +59,5 @@ terraform.rc
 # Project specific
 data/
 test_data/
+!tests/data/html/2024-03-01.html
 .windsurfrules

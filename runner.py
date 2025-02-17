@@ -68,16 +68,19 @@ def is_date_scraped(date_str, lookup_data):
 
 def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
              html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-             lookup_type='file', region='us-east-2', table_name=None):
+             lookup_type='file', region='us-east-2', table_name=None, force_scrape=False,
+             use_test_data=False):
     """Run the scraper for a specific day"""
     # Just call run_month with a single day
     return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
-                    lookup_file, lookup_type, region, target_days=[day], table_name=table_name)
+                    lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
+                    force_scrape=force_scrape, use_test_data=use_test_data)
 
 
 def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
               html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-              lookup_type='file', region='us-east-2', target_days=None, table_name=None):
+              lookup_type='file', region='us-east-2', target_days=None, table_name=None,
+              force_scrape=False, use_test_data=False):
     """Run the scraper for specific days in a month
 
     Args:
@@ -92,6 +95,8 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         region (str): AWS region name
         target_days (list[int], optional): Specific days to scrape. If None, scrapes all days in month.
         table_name (str, optional): DynamoDB table name (for dynamodb lookup)
+        force_scrape (bool): Whether to force scraping even if date exists in lookup
+        use_test_data (bool): Whether to use test data instead of live scraping
     """
     # Get the number of days in the month if we need all days
     if target_days is None:
@@ -149,7 +154,9 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                 lookup_file=lookup_file,
                 lookup_type=lookup_type,
                 region=region,
-                table_name=table_name or os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+                table_name=table_name or os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates'),
+                force_scrape=force_scrape,
+                use_test_data=use_test_data
             )
 
         # Start the reactor once for all spiders
@@ -237,6 +244,8 @@ def main():
     parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup storage type')
     parser.add_argument('--region', default='us-east-2', help='AWS region name')
     parser.add_argument('--table-name', help='DynamoDB table name (for dynamodb lookup)')
+    parser.add_argument('--force-scrape', action='store_true', help='Force scraping even if date exists in lookup')
+    parser.add_argument('--use-test-data', action='store_true', help='Use test data instead of live scraping')
 
     args = parser.parse_args()
 
@@ -246,11 +255,11 @@ def main():
     if args.mode == 'day':
         run_scraper(args.year, args.month, args.day, args.storage_type, args.bucket_name,
                    args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region,
-                   args.table_name)
+                   args.table_name, args.force_scrape, args.use_test_data)
     else:
         run_month(args.year, args.month, args.storage_type, args.bucket_name,
                  args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region,
-                 table_name=args.table_name)
+                 table_name=args.table_name, force_scrape=args.force_scrape, use_test_data=args.use_test_data)
 
 
 if __name__ == '__main__':

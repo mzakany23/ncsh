@@ -1,5 +1,5 @@
 import scrapy
-from scrapy.http import FormRequest
+from scrapy.http import FormRequest, HtmlResponse, Request
 from ncsoccer.items import NcsoccerItem
 from datetime import datetime, timedelta
 import os
@@ -33,14 +33,15 @@ class ScheduleSpider(scrapy.Spider):
     def __init__(self, mode='day', year=None, month=None, day=None, skip_existing=True,
                  html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
                  storage_type='s3', bucket_name=None, lookup_type='file', region='us-east-2',
-                 table_name=None, *args, **kwargs):
+                 table_name=None, force_scrape=False, use_test_data=False, *args, **kwargs):
         super(ScheduleSpider, self).__init__(*args, **kwargs)
 
         # Parse configuration
         self.target_year = int(year) if year else datetime.now().year
         self.target_month = int(month) if month else datetime.now().month
         self.target_day = int(day) if day else datetime.now().day
-        self.skip_existing = str(skip_existing).lower() == 'true'
+        self.skip_existing = str(skip_existing).lower() == 'true' and not force_scrape
+        self.use_test_data = use_test_data
 
         # Set up storage paths
         self.html_prefix = html_prefix
@@ -77,6 +78,27 @@ class ScheduleSpider(scrapy.Spider):
         if self.skip_existing and self._is_date_scraped(datetime(self.target_year, self.target_month, self.target_day)):
             self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
             return
+
+        if self.use_test_data:
+            # Load test HTML directly
+            date_str = f"{self.target_year}-{self.target_month:02d}-{self.target_day:02d}"
+            html_path = os.path.join(self.html_prefix, f"{date_str}.html")
+            try:
+                with open(html_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                request = Request(url=self.start_urls[0])
+                response = HtmlResponse(
+                    url=self.start_urls[0],
+                    body=html_content.encode('utf-8'),
+                    encoding='utf-8',
+                    request=request
+                )
+                response.meta['date'] = date_str
+                yield from self.parse_schedule(response)
+                return
+            except Exception as e:
+                self.logger.error(f"Failed to load test HTML: {e}")
+                return
 
         # If we're already on the correct month, we can reuse that state
         if (self.current_month_date and
@@ -286,99 +308,50 @@ class ScheduleSpider(scrapy.Spider):
                 metadata = {
                     'date': date_str,
                     'games_found': False,
-                    'error': 'No schedule table found'
+                    'error': 'No schedule table found',
+                    'games_count': 0
                 }
                 self.store_metadata(metadata, date_str)
                 return
 
-            # Find the events table for game times
-            events_table = response.css('table.ezl-base-table.league-border-color.mb-0.w-100 tr')
-            game_times = {}
+            # Process games one at a time
+            rows = schedule_table.css('tr')[1:]  # Skip header row
+            games = []
+            for row in rows:
+                cells = row.css('td')
+                if len(cells) >= 7:  # Ensure we have all expected columns
+                    games_count += 1
+                    games.append({
+                        'league': cells[0].css('a::text').get('').strip(),
+                        'home_team': cells[1].css('a::text').get('').strip(),
+                        'away_team': cells[3].css('a::text').get('').strip(),
+                        'status': cells[4].css('a::text').get('').strip(),
+                        'venue': cells[5].css('a::text').get('').strip(),
+                        'officials': cells[6].css('::text').get('').strip()
+                    })
 
-            # Extract times from events table
-            for row in events_table:
-                cells = row.css('td[align="left"]::text').getall()
-                if len(cells) >= 2:
-                    start_time = cells[0].strip()
-                    if start_time:  # Only store if we have a valid time
-                        venue = cells[3].strip() if len(cells) > 3 else None
-                        game_times[venue] = start_time
-
-            # Initialize the JSON structure
+            # Write the complete JSON file
             json_data = {
                 'date': date_str,
                 'games_found': True,
-                'games': []
+                'games': games
             }
-
-            # Process games one at a time
-            for row in schedule_table.css('tr')[1:]:  # Skip header row
-                cells = row.css('td')
-                if len(cells) >= 7:  # Ensure we have all expected columns
-                    # Parse score into home and away
-                    score_text = cells[2].css('span::text').get('').strip()
-                    home_score = away_score = None
-                    if score_text and ' - ' in score_text:
-                        scores = score_text.split(' - ')
-                        if len(scores) == 2:
-                            try:
-                                home_score = int(scores[0])
-                                away_score = int(scores[1])
-                            except ValueError:
-                                self.logger.warning(f"Could not parse scores from: {score_text}")
-
-                    # Get status or game time
-                    status_text = cells[4].css('a::text').get('').strip()
-                    status = time = None
-
-                    # Check if it's a time (e.g., "7:00 PM") or status (e.g., "Complete")
-                    if 'PM' in status_text or 'AM' in status_text:
-                        status = 'Scheduled'
-                        time = status_text
-                    else:
-                        status = status_text
-                        venue = cells[5].css('a::text').get('').strip()
-                        time = game_times.get(venue)
-
-                    # Parse league and session from the league field
-                    league_text = cells[0].css('a::text').get('').strip()
-                    league = session = None
-                    if '"' in league_text:  # e.g. 'Mens Open "C" Indoor session 2 2025'
-                        parts = league_text.split('"')
-                        if len(parts) >= 3:
-                            # Extract league (e.g. "Mens Open C")
-                            league = (parts[0] + parts[1] + parts[2].split(' ')[0]).strip()
-                            # Extract session (e.g. "Indoor session 2 2025")
-                            session = ' '.join(parts[2].split(' ')[1:]).strip()
-                    else:
-                        league = league_text
-                        session = ''
-
-                    venue = cells[5].css('a::text').get('').strip()
-                    game = {
-                        'league': league,
-                        'session': session,
-                        'home_team': cells[1].css('a::text').get('').strip(),
-                        'away_team': cells[3].css('a::text').get('').strip(),
-                        'home_score': home_score,
-                        'away_score': away_score,
-                        'status': status,
-                        'venue': venue,
-                        'time': time,
-                        'officials': cells[6].css('::text').get('').strip()
-                    }
-
-                    json_data['games'].append(game)
-                    games_count += 1
-
-            # Write the complete JSON file
             json_filename = f"{self.json_prefix}/{date_str}.json"
             self.storage.write(json_filename, json.dumps(json_data, indent=2))
+
+            # Store metadata in partitioned format
+            metadata = {
+                'date': date_str,
+                'games_found': True,
+                'games_count': games_count
+            }
+            self.store_metadata(metadata, date_str)
 
             self.logger.info(f"Found {games_count} games for {date_str}")
             success = True
 
         finally:
+            # Always update the lookup with the result
             self.lookup.update_date(date_str, success=success, games_count=games_count)
 
     def store_raw_html(self, response, date_str=None):
@@ -418,10 +391,10 @@ class ScheduleSpider(scrapy.Spider):
             return
 
     def store_metadata(self, metadata, date_str):
-        """Store game metadata in JSON format"""
+        """Store game metadata in JSON format using partitioned storage"""
         # Validate date string format
         try:
-            datetime.strptime(date_str, '%Y-%m-%d')
+            dt = datetime.strptime(date_str, '%Y-%m-%d')
         except ValueError:
             self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
             return
@@ -432,7 +405,31 @@ class ScheduleSpider(scrapy.Spider):
             self.logger.error(f"Missing required fields in metadata: {required_fields}")
             return
 
-        json_path = f"{self.json_prefix}/{date_str}.json"
-        if not self.storage.write(json_path, json.dumps(metadata, indent=2)):
-            self.logger.error(f"Failed to write game data JSON file to {json_path}")
+        # Store in partitioned format
+        year = dt.year
+        month = dt.month
+        day = dt.day
+        base_output = os.path.dirname(self.json_prefix)  # Get the base directory (e.g., tests/data)
+        write_record(metadata, base_output, "metadata", year, month, day)
+
+    def store_games(self, games, date_str):
+        """Store games data in JSON format using partitioned storage"""
+        try:
+            dt = datetime.strptime(date_str, '%Y-%m-%d')
+        except ValueError:
+            self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
             return
+
+        # Store in partitioned format
+        year = dt.year
+        month = dt.month
+        base_output = os.path.dirname(self.json_prefix)  # Get the base directory (test_data or data)
+        write_record(games, base_output, "games", year, month)
+
+def write_record(data, base_output, record_type, year, month, day):
+    import os, json
+    directory = os.path.join(base_output, 'json', 'raw', record_type, str(year), f"{month:02d}")
+    os.makedirs(directory, exist_ok=True)
+    file_path = os.path.join(directory, f"{day:02d}.json")
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
