@@ -16,81 +16,49 @@ logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
     """AWS Lambda handler function"""
-    try:
-        # Extract parameters from event
-        year = event.get('year', datetime.now().year)
-        month = event.get('month', datetime.now().month)
-        mode = event.get('mode', 'day')
-        day = event.get('day', datetime.now().day) if mode == 'day' else None
-        force_scrape = event.get('force_scrape', False)
-        test_mode = event.get('test_mode', False)
+    logger.info("Entered lambda_handler")
+    # Extract parameters from event
+    year = event.get('year', datetime.now().year)
+    month = event.get('month', datetime.now().month)
+    mode = event.get('mode', 'day')
+    day = event.get('day', datetime.now().day) if mode == 'day' else None
+    force_scrape = event.get('force_scrape', False)
+    test_mode = event.get('test_mode', False)
 
-        # Get bucket name from environment variable
-        bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-        table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+    logger.info("Parameters: year=%s, month=%s, day=%s, mode=%s, force_scrape=%s, test_mode=%s", year, month, day, mode, force_scrape, test_mode)
 
-        # Use test_data prefix in test mode
-        prefix = 'test_data' if test_mode else 'data'
+    # Get bucket name and table name from environment variables
+    bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+    table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
 
-        # Run scraper with S3 storage and DynamoDB lookup
-        try:
-            if mode == 'day':
-                result = run_scraper(
-                    year=year,
-                    month=month,
-                    day=day,
-                    storage_type='s3',
-                    bucket_name=bucket_name,
-                    html_prefix=f'{prefix}/html',
-                    json_prefix=f'{prefix}/json',
-                    lookup_type='dynamodb',
-                    table_name=table_name,
-                    region='us-east-2',
-                    force_scrape=force_scrape,
-                    use_test_data=test_mode
-                )
-            else:
-                result = run_month(
-                    year=year,
-                    month=month,
-                    storage_type='s3',
-                    bucket_name=bucket_name,
-                    html_prefix=f'{prefix}/html',
-                    json_prefix=f'{prefix}/json',
-                    lookup_type='dynamodb',
-                    table_name=table_name,
-                    region='us-east-2',
-                    force_scrape=force_scrape,
-                    use_test_data=test_mode
-                )
+    # Determine storage prefix: in test_mode, use environment variable TEST_DATA_DIR if set, else default to 'test_data'; otherwise, use 'data'
+    if test_mode:
+        prefix = os.environ.get('TEST_DATA_DIR', 'test_data')
+    else:
+        prefix = 'data'
+    logger.info("Using storage prefix: %s", prefix)
 
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'Scraping completed successfully',
-                    'result': result
-                })
-            }
-
-        except RuntimeError as e:
-            logger.error(f"Scraper failed: {str(e)}")
-            return {
-                'statusCode': 500,
-                'body': json.dumps({
-                    'error': str(e),
-                    'result': False
-                })
-            }
-
-    except Exception as e:
-        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e),
-                'result': False
-            })
-        }
+    if mode == 'day':
+        logger.info("About to call run_scraper")
+        result = run_scraper(
+            year=year,
+            month=month,
+            day=day,
+            storage_type='s3',
+            bucket_name=bucket_name,
+            html_prefix=f'{prefix}/html',
+            json_prefix=f'{prefix}/json',
+            lookup_file='data/lookup.json',
+            lookup_type='dynamodb',
+            table_name=table_name,
+            force_scrape=force_scrape,
+            use_test_data=test_mode
+        )
+        logger.info("Scraper returned: %s", result)
+    else:
+        logger.info("Non-day mode not implemented")
+        result = None
+    return {"statusCode": 200, "body": json.dumps({"result": result})}
 
 if __name__ == '__main__':
     # Handle command line execution
