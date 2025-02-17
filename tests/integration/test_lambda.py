@@ -318,15 +318,32 @@ def test_handler(dynamodb_test_table, s3_test_bucket):
     logger.info(f"Response: {json.dumps(response, indent=2)}")
 
     # Verify response
-    assert response["statusCode"] == 200
-    assert "message" in json.loads(response["body"])
-    assert json.loads(response["body"])["result"] is True
+    response_body = json.loads(response["body"])
+    if response["statusCode"] != 200:
+        logger.error(f"Lambda failed: {response_body.get('error', 'Unknown error')}")
+        assert False, f"Lambda failed with status {response['statusCode']}"
+
+    assert response_body["result"] is True, "Lambda returned success=False"
 
     # Verify DynamoDB entry
     verify_dynamodb_entry(dynamodb_test_table, date_str)
 
-    # Verify S3 partitioned data
-    verify_partitioned_data(s3_test_bucket, date_str)
+    # Verify S3 files exist and have content
+    s3 = boto3.client('s3', region_name=AWS_REGION)
+    expected_files = [
+        f"test_data/html/{date_str}.html",
+        f"test_data/json/{date_str}_meta.json",
+        f"test_data/games/year={year}/month={int(month):02}/data.jsonl",
+        f"test_data/metadata/year={year}/month={int(month):02}/data.jsonl"
+    ]
 
-    # Verify raw files
-    verify_raw_files(s3_test_bucket, date_str)
+    for file_path in expected_files:
+        try:
+            response = s3.head_object(Bucket=s3_test_bucket, Key=file_path)
+            assert response['ContentLength'] > 0, f"S3 file {file_path} is empty"
+            logger.info(f"Verified S3 file: {file_path} (size: {response['ContentLength']} bytes)")
+        except Exception as e:
+            assert False, f"Failed to verify S3 file {file_path}: {str(e)}"
+
+    # Verify partitioned data content
+    verify_partitioned_data(s3_test_bucket, date_str)

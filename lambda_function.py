@@ -33,49 +33,62 @@ def lambda_handler(event, context):
         prefix = 'test_data' if test_mode else 'data'
 
         # Run scraper with S3 storage and DynamoDB lookup
-        result = False
-        if mode == 'day':
-            result = run_scraper(
-                year=year,
-                month=month,
-                day=day,
-                storage_type='s3',
-                bucket_name=bucket_name,
-                html_prefix=f'{prefix}/html',
-                json_prefix=f'{prefix}/json',
-                lookup_type='dynamodb',
-                table_name=table_name,
-                region='us-east-2',
-                force_scrape=force_scrape
-            )
-        else:
-            result = run_month(
-                year=year,
-                month=month,
-                storage_type='s3',
-                bucket_name=bucket_name,
-                html_prefix=f'{prefix}/html',
-                json_prefix=f'{prefix}/json',
-                lookup_type='dynamodb',
-                table_name=table_name,
-                region='us-east-2',
-                force_scrape=force_scrape
-            )
+        try:
+            if mode == 'day':
+                result = run_scraper(
+                    year=year,
+                    month=month,
+                    day=day,
+                    storage_type='s3',
+                    bucket_name=bucket_name,
+                    html_prefix=f'{prefix}/html',
+                    json_prefix=f'{prefix}/json',
+                    lookup_type='dynamodb',
+                    table_name=table_name,
+                    region='us-east-2',
+                    force_scrape=force_scrape,
+                    use_test_data=test_mode
+                )
+            else:
+                result = run_month(
+                    year=year,
+                    month=month,
+                    storage_type='s3',
+                    bucket_name=bucket_name,
+                    html_prefix=f'{prefix}/html',
+                    json_prefix=f'{prefix}/json',
+                    lookup_type='dynamodb',
+                    table_name=table_name,
+                    region='us-east-2',
+                    force_scrape=force_scrape,
+                    use_test_data=test_mode
+                )
 
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': 'Scraping completed successfully',
-                'result': result
-            })
-        }
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': 'Scraping completed successfully',
+                    'result': result
+                })
+            }
+
+        except RuntimeError as e:
+            logger.error(f"Scraper failed: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({
+                    'error': str(e),
+                    'result': False
+                })
+            }
 
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
             'body': json.dumps({
-                'error': str(e)
+                'error': str(e),
+                'result': False
             })
         }
 
