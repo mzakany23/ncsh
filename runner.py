@@ -68,92 +68,127 @@ def is_date_scraped(date_str, lookup_data):
 
 def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
              html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-             lookup_type='file', region='us-east-2'):
+             lookup_type='file', region='us-east-2', table_name=None):
     """Run the scraper for a specific day"""
-    logger.info(f"Starting scraper for {year}-{month:02d}-{day:02d}")
-
-    # Create necessary directories if using file storage
-    if storage_type == 'file':
-        os.makedirs(os.path.dirname(html_prefix), exist_ok=True)
-        os.makedirs(os.path.dirname(json_prefix), exist_ok=True)
-        os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
-
-    # Configure logging for Scrapy
-    configure_logging()
-
-    try:
-        process = CrawlerProcess(get_project_settings())
-        process.crawl(
-            'schedule',
-            year=year,
-            month=month,
-            day=day,
-            storage_type=storage_type,
-            bucket_name=bucket_name,
-            html_prefix=html_prefix,
-            json_prefix=json_prefix,
-            lookup_file=lookup_file,
-            lookup_type=lookup_type,
-            region=region,
-            table_name=os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')  # Get table name from env
-        )
-        process.start()
-
-        # Verify files were created
-        date_str = f"{year}-{month:02d}-{day:02d}"
-        expected_files = [
-            f"{html_prefix}/{date_str}.html",
-            f"{json_prefix}/{date_str}.json",
-            f"{json_prefix}/{date_str}_meta.json"
-        ]
-
-        if storage_type == 'file':
-            # Verify local files
-            for file_path in expected_files:
-                if not os.path.exists(file_path):
-                    raise RuntimeError(f"Expected file {file_path} was not created")
-                if os.path.getsize(file_path) == 0:
-                    raise RuntimeError(f"File {file_path} is empty")
-        else:
-            # Verify S3 files
-            import boto3
-            from botocore.exceptions import ClientError
-            s3 = boto3.client('s3')
-            for file_path in expected_files:
-                try:
-                    response = s3.head_object(Bucket=bucket_name, Key=file_path)
-                    if response['ContentLength'] == 0:
-                        raise RuntimeError(f"S3 file {file_path} is empty")
-                except ClientError as e:
-                    if e.response['Error']['Code'] == '404':
-                        raise RuntimeError(f"Expected S3 file {file_path} was not created")
-                    raise
-
-        logger.info(f"Successfully scraped data for {date_str}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error running scraper: {str(e)}")
-        raise
+    # Just call run_month with a single day
+    return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
+                    lookup_file, lookup_type, region, target_days=[day], table_name=table_name)
 
 
 def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
               html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-              lookup_type='file', region='us-east-2'):
-    """Run the scraper for an entire month"""
-    # Get the number of days in the month
-    if month == 12:
-        next_month = datetime(year + 1, 1, 1)
-    else:
-        next_month = datetime(year, month + 1, 1)
+              lookup_type='file', region='us-east-2', target_days=None, table_name=None):
+    """Run the scraper for specific days in a month
 
-    last_day = (next_month - timedelta(days=1)).day
+    Args:
+        year (int): Year to scrape
+        month (int): Month to scrape
+        storage_type (str): Storage type ('file' or 's3')
+        bucket_name (str): S3 bucket name (for s3 storage)
+        html_prefix (str): Prefix for HTML files
+        json_prefix (str): Prefix for JSON files
+        lookup_file (str): Path to lookup file
+        lookup_type (str): Lookup type ('file' or 'dynamodb')
+        region (str): AWS region name
+        target_days (list[int], optional): Specific days to scrape. If None, scrapes all days in month.
+        table_name (str, optional): DynamoDB table name (for dynamodb lookup)
+    """
+    # Get the number of days in the month if we need all days
+    if target_days is None:
+        if month == 12:
+            next_month = datetime(year + 1, 1, 1)
+        else:
+            next_month = datetime(year, month + 1, 1)
+        last_day = (next_month - timedelta(days=1)).day
+        target_days = range(1, last_day + 1)
 
-    # Run scraper for each day
-    for day in range(1, last_day + 1):
-        run_scraper(year, month, day, storage_type=storage_type, bucket_name=bucket_name,
-                   html_prefix=html_prefix, json_prefix=json_prefix, lookup_file=lookup_file,
-                   lookup_type=lookup_type, region=region)
+    success = True
+
+    try:
+        # Configure logging for Scrapy
+        configure_logging()
+
+        # Get bucket name from environment if not provided
+        if storage_type == 's3' and not bucket_name:
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
+        # Create necessary directories if using file storage
+        if storage_type == 'file':
+            os.makedirs(os.path.dirname(html_prefix), exist_ok=True)
+            os.makedirs(os.path.dirname(json_prefix), exist_ok=True)
+            os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
+
+        # Create a single crawler process with settings
+        settings = get_project_settings()
+        settings.update({
+            'LOG_LEVEL': 'INFO',
+            'COOKIES_DEBUG': True,
+            'DOWNLOAD_DELAY': 1,
+            'CONCURRENT_REQUESTS': 1
+        })
+        process = CrawlerProcess(settings)
+
+        # Schedule all spiders
+        for day in target_days:
+            date_str = f"{year}-{month:02d}-{day:02d}"
+            logger.info(f"Scheduling scrape for {date_str}")
+
+            process.crawl(
+                'schedule',
+                year=year,
+                month=month,
+                day=day,
+                storage_type=storage_type,
+                bucket_name=bucket_name,
+                html_prefix=html_prefix,
+                json_prefix=json_prefix,
+                lookup_file=lookup_file,
+                lookup_type=lookup_type,
+                region=region,
+                table_name=table_name or os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+            )
+
+        # Start the reactor once for all spiders
+        process.start()
+
+        # Verify files were created for all days
+        for day in target_days:
+            date_str = f"{year}-{month:02d}-{day:02d}"
+            expected_files = [
+                f"{html_prefix}/{date_str}.html",
+                f"{json_prefix}/{date_str}.json",
+                f"{json_prefix}/{date_str}_meta.json"
+            ]
+
+            if storage_type == 'file':
+                # Verify local files
+                for file_path in expected_files:
+                    if not os.path.exists(file_path):
+                        raise RuntimeError(f"Expected file {file_path} was not created")
+                    if os.path.getsize(file_path) == 0:
+                        raise RuntimeError(f"File {file_path} is empty")
+            else:
+                # Verify S3 files
+                import boto3
+                from botocore.exceptions import ClientError
+                s3 = boto3.client('s3', region_name=region)
+                for file_path in expected_files:
+                    try:
+                        response = s3.head_object(Bucket=bucket_name, Key=file_path)
+                        if response['ContentLength'] == 0:
+                            raise RuntimeError(f"S3 file {file_path} is empty")
+                    except ClientError as e:
+                        if e.response['Error']['Code'] == '404':
+                            raise RuntimeError(f"Expected S3 file {file_path} was not created")
+                        raise
+
+            logger.info(f"Successfully verified files for {date_str}")
+
+    except Exception as e:
+        logger.error(f"Error running scraper: {str(e)}")
+        success = False
+
+    return success
 
 
 def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
@@ -197,6 +232,7 @@ def main():
     parser.add_argument('--lookup-file', default='data/lookup.json', help='Path to lookup file')
     parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup storage type')
     parser.add_argument('--region', default='us-east-2', help='AWS region name')
+    parser.add_argument('--table-name', help='DynamoDB table name (for dynamodb lookup)')
 
     args = parser.parse_args()
 
@@ -205,10 +241,12 @@ def main():
 
     if args.mode == 'day':
         run_scraper(args.year, args.month, args.day, args.storage_type, args.bucket_name,
-                   args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region)
+                   args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region,
+                   args.table_name)
     else:
         run_month(args.year, args.month, args.storage_type, args.bucket_name,
-                 args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region)
+                 args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region,
+                 table_name=args.table_name)
 
 
 if __name__ == '__main__':

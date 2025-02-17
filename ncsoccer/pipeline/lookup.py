@@ -104,7 +104,21 @@ class LocalFileLookup(Lookup):
         self._save_lookup_data()
 
 def get_lookup_interface(lookup_type: str = 'file', **kwargs) -> Lookup:
-    """Factory function to get the appropriate lookup interface"""
+    """Factory function to get the appropriate lookup interface
+
+    Args:
+        lookup_type (str, optional): Type of lookup to use ('file' or 'dynamodb'). Defaults to 'file'.
+        **kwargs: Additional arguments to pass to the lookup interface:
+            - lookup_file (str): Path to lookup file (for file lookup)
+            - table_name (str): DynamoDB table name (for dynamodb lookup)
+            - region (str): AWS region (for dynamodb lookup)
+
+    Returns:
+        Lookup: The configured lookup interface
+
+    Raises:
+        ValueError: If an unsupported lookup type is specified
+    """
     if lookup_type == 'dynamodb':
         return DynamoDBLookup(**kwargs)
     elif lookup_type == 'file':
