@@ -243,15 +243,18 @@ def verify_metadata_schema(metadata):
             else:
                 assert isinstance(metadata[field], expected_type), f"Field {field} has wrong type. Expected {expected_type}, got {type(metadata[field])}"
 
-def verify_partitioned_data(bucket_name, date_str):
+def verify_partitioned_data(bucket_name, date_str, test_mode=False):
     """Verify that data is correctly partitioned in S3"""
     s3 = boto3.client('s3', region_name=AWS_REGION)
     dt = datetime.strptime(date_str, '%Y-%m-%d')
     year = dt.year
     month = dt.month
 
+    # Use test_data prefix in test mode, data prefix in production
+    prefix = 'test_data' if test_mode else 'data'
+
     # Check games partition
-    games_path = f"test_data/games/year={year}/month={month:02d}/data.jsonl"
+    games_path = f"{prefix}/games/year={year}/month={month:02d}/data.jsonl"
     try:
         response = s3.get_object(Bucket=bucket_name, Key=games_path)
         games_data = [json.loads(line) for line in response['Body'].read().decode('utf-8').splitlines()]
@@ -264,7 +267,7 @@ def verify_partitioned_data(bucket_name, date_str):
         raise
 
     # Check metadata partition
-    metadata_path = f"test_data/metadata/year={year}/month={month:02d}/data.jsonl"
+    metadata_path = f"{prefix}/metadata/year={year}/month={month:02d}/data.jsonl"
     try:
         response = s3.get_object(Bucket=bucket_name, Key=metadata_path)
         metadata_data = [json.loads(line) for line in response['Body'].read().decode('utf-8').splitlines()]
@@ -346,4 +349,55 @@ def test_handler(dynamodb_test_table, s3_test_bucket):
             assert False, f"Failed to verify S3 file {file_path}: {str(e)}"
 
     # Verify partitioned data content
-    verify_partitioned_data(s3_test_bucket, date_str)
+    verify_partitioned_data(s3_test_bucket, date_str, test_mode=True)
+
+def test_e2e(dynamodb_test_table, s3_test_bucket):
+    """Test a real run using production paths but with cached HTML"""
+    logger.info("Starting E2E test")
+
+    # Set up environment variables
+    os.environ['DATA_BUCKET'] = s3_test_bucket
+    os.environ['DYNAMODB_TABLE'] = dynamodb_test_table
+
+    # Test event with production settings (no test_mode)
+    event = {
+        "year": 2024,
+        "month": 3,
+        "day": 1,
+        "mode": "day",
+        "force_scrape": True,
+        "test_mode": False  # Use production paths
+    }
+    logger.info(f"Test event: {json.dumps(event, indent=2)}")
+
+    # Run handler
+    response = lambda_handler(event, None)
+    logger.info(f"Response: {json.dumps(response, indent=2)}")
+
+    # Verify response
+    assert response["statusCode"] == 200, f"Lambda failed with status {response['statusCode']}"
+    response_body = json.loads(response["body"])
+    assert response_body["result"] is True, "Lambda returned success=False"
+
+    # Verify DynamoDB entry
+    verify_dynamodb_entry(dynamodb_test_table, "2024-03-01")
+
+    # Verify S3 files exist and have content
+    s3 = boto3.client('s3', region_name=AWS_REGION)
+    expected_files = [
+        "data/html/2024-03-01.html",
+        "data/json/2024-03-01_meta.json",
+        "data/games/year=2024/month=03/data.jsonl",
+        "data/metadata/year=2024/month=03/data.jsonl"
+    ]
+
+    for file_path in expected_files:
+        try:
+            response = s3.head_object(Bucket=s3_test_bucket, Key=file_path)
+            assert response['ContentLength'] > 0, f"S3 file {file_path} is empty"
+            logger.info(f"Verified S3 file: {file_path} (size: {response['ContentLength']} bytes)")
+        except Exception as e:
+            assert False, f"Failed to verify S3 file {file_path}: {str(e)}"
+
+    # Verify partitioned data content
+    verify_partitioned_data(s3_test_bucket, "2024-03-01", test_mode=False)
