@@ -12,16 +12,6 @@ on:
       - 'lambda_function.py'
       - 'runner.py'
       - 'CHANGELOG.md'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'ncsoccer/**'
-      - 'Dockerfile'
-      - 'requirements.txt'
-      - '.github/workflows/deploy.yml'
-      - 'lambda_function.py'
-      - 'runner.py'
-      - 'CHANGELOG.md'
 
 env:
   AWS_REGION: us-east-2
