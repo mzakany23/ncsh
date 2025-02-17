@@ -12,9 +12,13 @@ from calendar import monthrange
 try:
     import asyncio
     import twisted.internet.asyncio
+    from twisted.internet import reactor
     twisted.internet.asyncio.install()
 except (ImportError, Exception) as e:
     print(f"Warning: Could not install asyncio reactor: {e}")
+
+# Global flag to track if reactor has been started
+_reactor_started = False
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
@@ -71,10 +75,18 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
              lookup_type='file', region='us-east-2', table_name=None, force_scrape=False,
              use_test_data=False):
     """Run the scraper for a specific day"""
-    # Just call run_month with a single day
-    return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
-                    lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
-                    force_scrape=force_scrape, use_test_data=use_test_data)
+    try:
+        logger.info(f"Starting run_scraper with params: year={year}, month={month}, day={day}, "
+                   f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
+                   f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}")
+        
+        # Just call run_month with a single day
+        return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
+                        lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
+                        force_scrape=force_scrape, use_test_data=use_test_data)
+    except Exception as e:
+        logger.error(f"Error in run_scraper: {str(e)}", exc_info=True)
+        raise RuntimeError(f"Error in run_scraper: {str(e)}")
 
 
 def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
@@ -82,31 +94,40 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
               lookup_type='file', region='us-east-2', target_days=None, table_name=None,
               force_scrape=False, use_test_data=False):
     """Run the scraper for specific days in a month"""
-    # Get the number of days in the month if we need all days
-    if target_days is None:
-        if month == 12:
-            next_month = datetime(year + 1, 1, 1)
-        else:
-            next_month = datetime(year, month + 1, 1)
-        last_day = (next_month - timedelta(days=1)).day
-        target_days = range(1, last_day + 1)
-    else:
-        # Ensure target_days is a list
-        target_days = list(target_days)
-
-    success = True
-    errors = []
-
     try:
+        logger.info(f"Starting run_month with params: year={year}, month={month}, "
+                   f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
+                   f"json_prefix={json_prefix}, lookup_type={lookup_type}, target_days={target_days}, "
+                   f"force_scrape={force_scrape}, use_test_data={use_test_data}")
+
+        # Get the number of days in the month if we need all days
+        if target_days is None:
+            if month == 12:
+                next_month = datetime(year + 1, 1, 1)
+            else:
+                next_month = datetime(year, month + 1, 1)
+            last_day = (next_month - timedelta(days=1)).day
+            target_days = range(1, last_day + 1)
+        else:
+            # Ensure target_days is a list
+            target_days = list(target_days)
+
+        logger.info(f"Target days to process: {target_days}")
+
+        success = True
+        errors = []
+
         # Configure logging for Scrapy
         configure_logging()
 
         # Get bucket name from environment if not provided
         if storage_type == 's3' and not bucket_name:
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+            logger.info(f"Using bucket name from environment: {bucket_name}")
 
         # Create necessary directories if using file storage
         if storage_type == 'file':
+            logger.info("Creating necessary directories for file storage")
             os.makedirs(os.path.dirname(html_prefix), exist_ok=True)
             os.makedirs(os.path.dirname(json_prefix), exist_ok=True)
             os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
@@ -120,14 +141,51 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             'CONCURRENT_REQUESTS': 1,
             'TELNETCONSOLE_ENABLED': False  # Disable telnet console for Lambda
         })
-        process = CrawlerProcess(settings)
+        logger.info(f"Using Scrapy settings: {settings.copy_to_dict()}")
+        
+        try:
+            process = CrawlerProcess(settings)
+            logger.info("Created CrawlerProcess successfully")
+        except Exception as e:
+            logger.error(f"Failed to create CrawlerProcess: {str(e)}", exc_info=True)
+            raise
 
         # Schedule all spiders
         for day in target_days:
             date_str = f"{year}-{month:02d}-{day:02d}"
             logger.info(f"Scheduling scrape for {date_str}")
 
-            process.crawl(
+            try:
+                process.crawl(
+                    'schedule',
+                    year=year,
+                    month=month,
+                    day=day,
+                    storage_type=storage_type,
+                    bucket_name=bucket_name,
+                    html_prefix=html_prefix,
+                    json_prefix=json_prefix,
+                    lookup_file=lookup_file,
+                    lookup_type=lookup_type,
+                    region=region,
+                    table_name=table_name or os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates'),
+                    force_scrape=force_scrape,
+                    use_test_data=use_test_data
+                )
+                logger.info(f"Successfully scheduled spider for {date_str}")
+            except Exception as e:
+                logger.error(f"Failed to schedule spider for {date_str}: {str(e)}", exc_info=True)
+                raise
+
+        # Create a deferred to track spider completion
+        from twisted.internet import defer
+        deferreds = []
+
+        # Schedule all spiders and collect their deferreds
+        for day in target_days:
+            date_str = f"{year}-{month:02d}-{day:02d}"
+            logger.info(f"Scheduling scrape for {date_str}")
+            d = process.crawl(
                 'schedule',
                 year=year,
                 month=month,
@@ -143,9 +201,30 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                 force_scrape=force_scrape,
                 use_test_data=use_test_data
             )
+            deferreds.append(d)
+            logger.info(f"Successfully scheduled spider for {date_str}")
 
-        # Start the reactor once for all spiders
-        process.start()
+        # Wait for all spiders to complete
+        logger.info("Waiting for spiders to complete")
+        deferred_list = defer.DeferredList(deferreds)
+        deferred_list.addCallback(lambda _: logger.info("All spiders completed"))
+
+        # Start the reactor if not already started
+        global _reactor_started
+        if not _reactor_started:
+            logger.info("Starting Scrapy reactor")
+            try:
+                process.start()
+                _reactor_started = True
+                logger.info("Scrapy reactor completed successfully")
+            except Exception as e:
+                logger.error(f"Error in Scrapy reactor: {str(e)}", exc_info=True)
+                raise
+        else:
+            logger.info("Using existing reactor")
+            # Wait a bit for spiders to complete their work
+            import time
+            time.sleep(5)
 
         # Verify files were created for all target days
         for day in target_days:
@@ -153,34 +232,29 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
 
             # Define expected files based on storage type and test mode
             prefix = 'test_data' if use_test_data else 'data'
+            logger.info(f"Verifying files with prefix: {prefix}")
+            
             expected_files = [
                 f"{prefix}/html/{date_str}.html",
                 f"{prefix}/json/{date_str}_meta.json",
                 f"{prefix}/games/year={year}/month={month:02d}/day={day:02d}/data.jsonl",
                 f"{prefix}/metadata/year={year}/month={month:02d}/day={day:02d}/data.jsonl"
             ]
+            logger.info(f"Expected files to verify: {expected_files}")
 
-            if storage_type == 'file':
-                # Verify local files
-                for file_path in expected_files:
-                    if not os.path.exists(file_path):
-                        raise RuntimeError(f"Expected file {file_path} was not created")
-                    if os.path.getsize(file_path) == 0:
-                        raise RuntimeError(f"File {file_path} is empty")
-            else:
-                # Verify S3 files
-                import boto3
-                from botocore.exceptions import ClientError
-                s3 = boto3.client('s3', region_name=region)
-                for file_path in expected_files:
-                    try:
-                        response = s3.head_object(Bucket=bucket_name, Key=file_path)
-                        if response['ContentLength'] == 0:
-                            raise RuntimeError(f"S3 file {file_path} is empty")
-                    except ClientError as e:
-                        if e.response['Error']['Code'] == '404':
-                            raise RuntimeError(f"Expected S3 file {file_path} was not created")
-                        raise
+            # Get the storage interface based on configuration
+            from ncsoccer.pipeline.config import get_storage_interface
+            storage = get_storage_interface(storage_type, bucket_name, region)
+            logger.info(f"Using storage interface: {storage.__class__.__name__}")
+
+            # Verify files using the storage interface
+            for file_path in expected_files:
+                logger.info(f"Checking for file: {file_path}")
+                if not storage.exists(file_path):
+                    error_msg = f"Expected file {file_path} was not created"
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+                logger.info(f"Found file: {file_path}")
 
             logger.info(f"Successfully verified files for {date_str}")
 

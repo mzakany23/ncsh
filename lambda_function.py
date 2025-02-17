@@ -16,81 +16,48 @@ logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
     """AWS Lambda handler function"""
-    try:
-        # Extract parameters from event
-        year = event.get('year', datetime.now().year)
-        month = event.get('month', datetime.now().month)
-        mode = event.get('mode', 'day')
-        day = event.get('day', datetime.now().day) if mode == 'day' else None
-        force_scrape = event.get('force_scrape', False)
-        test_mode = event.get('test_mode', False)
+    logger.info("Entered lambda_handler")
 
-        # Get bucket name from environment variable
-        bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-        table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+    # Extract parameters from event with defaults
+    now = datetime.now()
+    year = event.get('year', now.year)
+    month = event.get('month', now.month)
+    force_scrape = event.get('force_scrape', False)
 
-        # Use test_data prefix in test mode
-        prefix = 'test_data' if test_mode else 'data'
+    # Get bucket name and table name from environment variables
+    bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+    table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
 
-        # Run scraper with S3 storage and DynamoDB lookup
-        try:
-            if mode == 'day':
-                result = run_scraper(
-                    year=year,
-                    month=month,
-                    day=day,
-                    storage_type='s3',
-                    bucket_name=bucket_name,
-                    html_prefix=f'{prefix}/html',
-                    json_prefix=f'{prefix}/json',
-                    lookup_type='dynamodb',
-                    table_name=table_name,
-                    region='us-east-2',
-                    force_scrape=force_scrape,
-                    use_test_data=test_mode
-                )
-            else:
-                result = run_month(
-                    year=year,
-                    month=month,
-                    storage_type='s3',
-                    bucket_name=bucket_name,
-                    html_prefix=f'{prefix}/html',
-                    json_prefix=f'{prefix}/json',
-                    lookup_type='dynamodb',
-                    table_name=table_name,
-                    region='us-east-2',
-                    force_scrape=force_scrape,
-                    use_test_data=test_mode
-                )
+    # Common parameters for both day and month modes
+    common_params = {
+        'storage_type': 's3',
+        'bucket_name': bucket_name,
+        'html_prefix': 'data/html',
+        'json_prefix': 'data/json',
+        'lookup_type': 'dynamodb',
+        'table_name': table_name,
+        'force_scrape': force_scrape
+    }
 
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'Scraping completed successfully',
-                    'result': result
-                })
-            }
+    # If day is provided, run in day mode, otherwise run in month mode
+    if 'day' in event:
+        logger.info("Running in day mode")
+        result = run_scraper(
+            year=year,
+            month=month,
+            day=event['day'],
+            **common_params
+        )
+    else:
+        logger.info("Running in month mode")
+        result = run_month(
+            year=year,
+            month=month,
+            **common_params
+        )
 
-        except RuntimeError as e:
-            logger.error(f"Scraper failed: {str(e)}")
-            return {
-                'statusCode': 500,
-                'body': json.dumps({
-                    'error': str(e),
-                    'result': False
-                })
-            }
-
-    except Exception as e:
-        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'error': str(e),
-                'result': False
-            })
-        }
+    logger.info("Operation completed with result: %s", result)
+    return {"statusCode": 200, "body": json.dumps({"result": result})}
 
 if __name__ == '__main__':
     # Handle command line execution
