@@ -144,22 +144,22 @@ class ScheduleSpider(scrapy.Spider):
 
     def parse(self, response):
         """Initial parse of the schedule page"""
-        # Only store HTML for target date, not navigation pages
-        if response.meta.get('date') == datetime(self.target_year, self.target_month, self.target_day).strftime('%Y-%m-%d'):
-            self.store_raw_html(response)
-
         # Validate the current page (no expected date yet, just checking we can parse it)
         is_valid, current_month_date, error = self.validate_current_page(response)
         if not is_valid:
             self.logger.error(f"Initial page validation failed: {error}")
             return
 
+        # Only store HTML for target date, not navigation pages
+        target_date = datetime(self.target_year, self.target_month, self.target_day)
+        if response.meta.get('date') == target_date.strftime('%Y-%m-%d'):
+            self.store_raw_html(response)
+
         # Update our current month tracking
         self.current_month_date = current_month_date
         self.logger.info(f"Current page shows: {current_month_date.strftime('%B %Y')}")
 
         # If we're not in the correct month, click the back/forward button
-        target_date = datetime(self.target_year, self.target_month, self.target_day)
         if current_month_date.year != target_date.year or current_month_date.month != target_date.month:
             self.logger.info(f"Need to navigate from {current_month_date.strftime('%B %Y')} to {target_date.strftime('%B %Y')}")
 
@@ -383,6 +383,10 @@ class ScheduleSpider(scrapy.Spider):
 
     def store_raw_html(self, response, date_str=None):
         """Store raw HTML response to storage"""
+        if not response or not response.text:
+            self.logger.error("Cannot store empty response")
+            return
+
         if not date_str:
             date_str = response.meta.get('date', datetime.now().strftime('%Y-%m-%d'))
 
@@ -406,7 +410,7 @@ class ScheduleSpider(scrapy.Spider):
             'date': date_str,
             'type': 'daily',
             'status': response.status,
-            'headers': {k.decode('utf-8'): v[0].decode('utf-8') if isinstance(v[0], bytes) else v[0] for k, v in response.headers.items()},
+            'headers': {k.decode('utf-8'): (v[0].decode('utf-8') if (v[0] is not None and isinstance(v[0], bytes)) else (v[0] or '')) for k, v in response.headers.items()},
             'timestamp': datetime.now().isoformat()
         }
         if not self.storage.write(meta_path, json.dumps(meta_data, indent=2)):
