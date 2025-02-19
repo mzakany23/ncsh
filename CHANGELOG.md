@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reorganized scraping module into proper Python package structure
 - Updated Makefile to handle virtual environments consistently
 
+### Fixed
+- Fixed Docker build paths in scraping module
+- Made build jobs parallel in CI pipeline
+
 ## [2.0.1] - 2025-02-16
 ### Fixed
 - Added back CHANGELOG.md validation step in deployment workflow
