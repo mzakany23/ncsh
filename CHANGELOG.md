@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.4] - 2025-02-19
+### Fixed
+- Added missing list_json_files function to Lambda
+- Improved JSON file discovery in S3
+
 ## [2.1.3] - 2025-02-19
 ### Added
 - Strict schema validation for game data using Pydantic

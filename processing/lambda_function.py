@@ -12,6 +12,31 @@ from typing import List, Dict, Any
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def list_json_files(src_bucket: str, src_prefix: str) -> List[str]:
+    """List all JSON files in the specified S3 bucket and prefix"""
+    logger.info(f"Listing JSON files in s3://{src_bucket}/{src_prefix}")
+    s3 = boto3.client("s3")
+
+    try:
+        # List all objects with the specified prefix
+        paginator = s3.get_paginator('list_objects_v2')
+        files = []
+
+        for page in paginator.paginate(Bucket=src_bucket, Prefix=src_prefix):
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if key.endswith('.json'):
+                        files.append(key)
+
+        logger.info(f"Found {len(files)} JSON files")
+        return files
+
+    except Exception as e:
+        error_msg = f"Error listing JSON files: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
 def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str, Any]]:
     """Validate and transform raw data using Pydantic models with strict validation"""
     validated_data = []
