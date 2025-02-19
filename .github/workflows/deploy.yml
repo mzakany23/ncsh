@@ -2,11 +2,10 @@ name: Build and Deploy
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [ main ]
+  push:
+    branches: [main]
     paths:
       - 'CHANGELOG.md'
-
 env:
   AWS_REGION: us-east-2
   SCRAPER_REPOSITORY: ncsoccer-scraper
@@ -15,7 +14,6 @@ env:
 
 jobs:
   validate-changes:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
@@ -49,7 +47,8 @@ jobs:
 
   build-scraper:
     needs: [validate-changes]
-    if: needs.validate-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    # Build on main branch push, pull request, or manual trigger
+    if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
@@ -88,7 +87,8 @@ jobs:
 
   build-processing:
     needs: [validate-changes]
-    if: needs.validate-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    # Build on main branch push, pull request, or manual trigger
+    if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
