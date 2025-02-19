@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-all
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements
 
 # Clean up data directories
 clean-data:
@@ -21,3 +21,51 @@ clean-all: clean-data
 
 # Default clean command
 clean: clean-data
+
+venv:
+	@echo "Creating virtual environment..."
+	uv venv
+
+compile-requirements:
+	@echo "Compiling requirements..."
+	cd scraping && uv pip compile requirements.in -o requirements.txt
+	cd processing && uv pip compile requirements.in -o requirements.txt
+
+install: venv compile-requirements
+	@echo "Installing dependencies..."
+	cd scraping && uv pip install -r requirements.txt && uv pip install -e . \
+		pytest>=8.0.0 pytest-asyncio>=0.23.0 ruff>=0.3.0
+	cd processing && uv pip install -r requirements.txt \
+		pytest>=8.0.0 ruff>=0.3.0
+
+test: install
+	@echo "Running tests..."
+	source .venv/bin/activate && cd scraping && python -m pytest tests/
+	@echo "Note: processing module has no tests yet"
+
+lint: install
+	@echo "Running linter..."
+	source .venv/bin/activate && cd scraping && ruff check ncsoccer tests
+	source .venv/bin/activate && cd processing && ruff check .
+
+format: install
+	@echo "Running formatter..."
+	source .venv/bin/activate && cd scraping && ruff format ncsoccer tests
+	source .venv/bin/activate && cd processing && ruff format .
+
+deploy-scraper: compile-requirements
+	cd terraform/infrastructure && terraform apply -target=aws_lambda_function.ncsoccer_scraper
+
+deploy-processing: compile-requirements
+	cd terraform/infrastructure && terraform apply -target=aws_lambda_function.processing
+
+scrape-month:
+	AWS_PROFILE=mzakany python scripts/trigger_step_function.py \
+		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsh-scraper \
+		--mode month \
+		--year $${YEAR} \
+		--month $${MONTH}
+
+process-data:
+	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
+		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-processing

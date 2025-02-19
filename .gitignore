@@ -22,19 +22,26 @@ wheels/
 *.egg
 
 # Virtual Environment
-venv/
-.venv/
-ENV/
-env/
 .env
+.venv
+env/
+venv/
+ENV/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+
+# Project specific
+.scrapy/
+data/
 .cursor/
-.cursor
+
+# uv
+=*.*.*
+=*.*
 
 # OS
 .DS_Store
@@ -57,7 +64,6 @@ terraform.rc
 *.log
 
 # Project specific
-data/
 test_data/
 !tests/data/html/2024-03-01.html
 .windsurfrules
