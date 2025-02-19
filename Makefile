@@ -33,10 +33,8 @@ compile-requirements:
 
 install: venv compile-requirements
 	@echo "Installing dependencies..."
-	cd scraping && uv pip install -r requirements.txt && uv pip install -e . \
-		pytest>=8.0.0 pytest-asyncio>=0.23.0 ruff>=0.3.0
-	cd processing && uv pip install -r requirements.txt \
-		pytest>=8.0.0 ruff>=0.3.0
+	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
+	cd processing && uv pip install -r requirements.txt
 
 test: install
 	@echo "Running tests..."
