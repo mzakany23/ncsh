@@ -76,9 +76,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build scraper image
-        cd scraping
-        docker build -t $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG -f scraping/Dockerfile scraping/
         docker tag $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
         docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG
         docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
@@ -90,7 +88,8 @@ jobs:
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
 
   build-processing:
-    needs: [build-scraper]
+    needs: [validate-changes]
+    if: needs.validate-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
@@ -116,9 +115,7 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Build processing image
-        cd processing
-        docker build -t $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG .
+        docker build -t $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG -f processing/Dockerfile processing/
         docker tag $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:latest
         docker push $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG
         docker push $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:latest
