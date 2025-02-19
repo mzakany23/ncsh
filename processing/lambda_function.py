@@ -4,6 +4,7 @@ import json
 import logging
 import boto3
 import pandas as pd
+import pyarrow as pa
 import io
 from datetime import datetime
 from models import GameData, Game
@@ -100,23 +101,27 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         # Convert to Parquet with schema enforcement
         logger.info("Converting to Parquet format")
         out_buffer = io.BytesIO()
+
+        # Define PyArrow schema
+        schema = pa.schema([
+            ('date', pa.timestamp('ns')),
+            ('home_team', pa.string()),
+            ('away_team', pa.string()),
+            ('home_score', pa.int64()),
+            ('away_score', pa.int64()),
+            ('league', pa.string()),
+            ('time', pa.string()),
+            ('url', pa.string()),
+            ('type', pa.string()),
+            ('status', pa.float64()),
+            ('headers', pa.string()),
+            ('timestamp', pa.timestamp('ns'))
+        ])
+
         df.to_parquet(
             out_buffer,
             index=False,
-            schema={
-                'date': 'timestamp[ns]',
-                'home_team': 'string',
-                'away_team': 'string',
-                'home_score': 'int64',
-                'away_score': 'int64',
-                'league': 'string',
-                'time': 'string',
-                'url': 'string',
-                'type': 'string',
-                'status': 'float64',
-                'headers': 'string',
-                'timestamp': 'timestamp[ns]'
-            }
+            schema=schema
         )
         out_buffer.seek(0)
 
