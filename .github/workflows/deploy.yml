@@ -2,7 +2,8 @@ name: Build and Deploy
 
 on:
   workflow_dispatch:
-  push:
+  pull_request:
+    types: [closed]
     branches: [ main ]
     paths:
       - 'CHANGELOG.md'
@@ -15,6 +16,7 @@ env:
 
 jobs:
   validate-changes:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
