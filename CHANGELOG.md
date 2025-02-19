@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.1.4] - 2025-02-19
+## [2.1.5] - 2025-02-19
 ### Added
 - Strict schema validation for game data using Pydantic
 - Field-level validation for team names, scores, and URLs
