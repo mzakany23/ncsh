@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pydantic models for game data schema validation
 - Strict type checking for Parquet file generation
 - Improved error handling for data validation
+- Colocate Parquet file to overwrite existing file on new processing run
 
 ### Changed
 - Refactored JSON to Parquet conversion to use schema validation
