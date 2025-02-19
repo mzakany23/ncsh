@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2025-02-19
+### Added
+- Strict schema validation for game data using Pydantic
+- Field-level validation for team names, scores, and URLs
+- Detailed validation error tracking and reporting
+- Automatic backup of previous Parquet file
+
+### Changed
+- Simplified Parquet storage to use single file with backup
+- Enhanced data validation with strict type checking
+- Improved error handling and logging
+- Updated schema enforcement in Parquet generation
+
+### Fixed
+- Prevented empty or whitespace-only strings in critical fields
+- Ensured consistent data types in Parquet schema
+- Added validation for score values and URL format
+
 ## [2.1.0] - 2025-02-19
 ### Added
 - Pydantic models for game data schema validation
