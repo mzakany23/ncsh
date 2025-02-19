@@ -159,6 +159,30 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         logger.error(error_msg)
         raise Exception(error_msg)
 
+def list_json_files(bucket: str, prefix: str) -> List[str]:
+    """List all JSON files in the specified S3 bucket and prefix"""
+    logger.info(f"Listing JSON files in s3://{bucket}/{prefix}")
+    s3 = boto3.client("s3")
+    files = []
+
+    try:
+        paginator = s3.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if key.endswith('.json') or key.endswith('.jsonl'):
+                        files.append(key)
+                        logger.info(f"Found file: {key}")
+
+        logger.info(f"Found {len(files)} JSON files")
+        return files
+
+    except Exception as e:
+        error_msg = f"Error listing JSON files: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
 def lambda_handler(event, context):
     """AWS Lambda handler for the processing pipeline"""
     logger.info(f"Processing event: {json.dumps(event)}")
