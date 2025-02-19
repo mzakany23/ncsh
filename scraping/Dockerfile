@@ -13,8 +13,11 @@ COPY requirements.txt ${LAMBDA_TASK_ROOT}
 # Install Python dependencies
 RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
-# Copy package files
-COPY ncsoccer ${LAMBDA_TASK_ROOT}/ncsoccer
+# Copy package files and setup
+COPY . ${LAMBDA_TASK_ROOT}
+
+# Install the package
+RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 
 # Copy lambda handler
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
