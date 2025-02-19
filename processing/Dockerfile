@@ -4,14 +4,14 @@ FROM public.ecr.aws/lambda/python:3.11
 RUN yum install -y gcc python3-devel && \
     yum clean all
 
-# Copy requirements first to leverage Docker cache
+# Copy requirements first for better caching
 COPY requirements.txt ${LAMBDA_TASK_ROOT}
 
 # Install Python dependencies
 RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
-# Copy function code
-COPY lambda_function.py ${LAMBDA_TASK_ROOT}
+# Copy function code and models
+COPY lambda_function.py models.py ${LAMBDA_TASK_ROOT}/
 
 # Set the CMD to your handler
 CMD [ "lambda_function.lambda_handler" ]

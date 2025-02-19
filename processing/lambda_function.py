@@ -13,7 +13,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str, Any]]:
-    """Validate and transform raw data using Pydantic models"""
+    """Validate and transform raw data using Pydantic models with strict validation"""
     validated_data = []
 
     for record in raw_data:
@@ -27,7 +27,7 @@ def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str
             for game in games:
                 if game is not None:
                     try:
-                        # Create GameData instance with a single Game
+                        # Create GameData instance with strict validation
                         game_data = GameData(
                             date=record['date'],
                             games=Game(**game),
@@ -50,13 +50,15 @@ def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str
     return validated_data
 
 def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
-    """Convert JSON files to Parquet format"""
+    """Convert JSON files to Parquet format with strict schema validation"""
     logger.info(f"Converting {len(files)} JSON files to Parquet")
     s3 = boto3.client("s3")
 
     try:
         # Process each JSON file
         all_validated_data = []
+        validation_errors = []
+
         for key in files:
             logger.info(f"Processing {key}")
             try:
@@ -77,14 +79,17 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
                 logger.info(f"Successfully processed {key}, valid records: {len(validated_data)}")
 
             except Exception as e:
-                logger.error(f"Error processing {key}: {str(e)}")
+                error_msg = f"Error processing {key}: {str(e)}"
+                logger.error(error_msg)
+                validation_errors.append(error_msg)
                 continue
 
         if not all_validated_data:
             logger.warning("No valid records were processed")
             return {
                 "status": "WARNING",
-                "message": "No valid records were processed"
+                "message": "No valid records were processed",
+                "validation_errors": validation_errors
             }
 
         # Convert to DataFrame
@@ -92,13 +97,12 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         df = pd.DataFrame(all_validated_data)
         logger.info(f"DataFrame shape: {df.shape}")
 
-        # Convert to Parquet
+        # Convert to Parquet with schema enforcement
         logger.info("Converting to Parquet format")
         out_buffer = io.BytesIO()
         df.to_parquet(
             out_buffer,
             index=False,
-            # Specify schema for consistent column types
             schema={
                 'date': 'timestamp[ns]',
                 'home_team': 'string',
@@ -116,17 +120,17 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         )
         out_buffer.seek(0)
 
-        # Use a fixed location for the Parquet file
-        dst_key = f"{dst_prefix}current/data.parquet"
-        backup_key = f"{dst_prefix}backup/data.parquet"
+        # Define file locations
+        current_key = f"{dst_prefix}data.parquet"
+        backup_key = f"{dst_prefix}data.backup.parquet"
 
-        # Create backup of existing file if it exists
         try:
-            s3.head_object(Bucket=dst_bucket, Key=dst_key)
+            # Create backup of existing file if it exists
+            s3.head_object(Bucket=dst_bucket, Key=current_key)
             logger.info("Creating backup of existing Parquet file")
             s3.copy_object(
                 Bucket=dst_bucket,
-                CopySource={'Bucket': dst_bucket, 'Key': dst_key},
+                CopySource={'Bucket': dst_bucket, 'Key': current_key},
                 Key=backup_key
             )
         except s3.exceptions.ClientError as e:
@@ -134,38 +138,26 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
                 raise
             logger.info("No existing Parquet file to backup")
 
-        # Clean up old versioned files
-        try:
-            logger.info("Cleaning up old versioned Parquet files")
-            old_versions = s3.list_objects_v2(
-                Bucket=dst_bucket,
-                Prefix=f"{dst_prefix}v"
-            )
-            if 'Contents' in old_versions:
-                for obj in old_versions['Contents']:
-                    logger.info(f"Deleting old version: {obj['Key']}")
-                    s3.delete_object(Bucket=dst_bucket, Key=obj['Key'])
-        except Exception as e:
-            logger.warning(f"Error cleaning up old versions: {str(e)}")
-
         # Upload new Parquet file
-        logger.info(f"Uploading Parquet file to s3://{dst_bucket}/{dst_key}")
+        logger.info(f"Uploading Parquet file to s3://{dst_bucket}/{current_key}")
         s3.put_object(
             Bucket=dst_bucket,
-            Key=dst_key,
+            Key=current_key,
             Body=out_buffer.getvalue()
         )
 
         return {
             "status": "SUCCESS",
             "source": f"s3://{src_bucket}",
-            "destination": f"s3://{dst_bucket}/{dst_key}",
-            "rows_processed": len(df)
+            "destination": f"s3://{dst_bucket}/{current_key}",
+            "rows_processed": len(df),
+            "validation_errors": validation_errors if validation_errors else None
         }
 
     except Exception as e:
-        logger.error(f"Error converting to Parquet: {str(e)}")
-        raise
+        error_msg = f"Error converting to Parquet: {str(e)}"
+        logger.error(error_msg)
+        raise Exception(error_msg)
 
 def lambda_handler(event, context):
     """AWS Lambda handler for the processing pipeline"""
