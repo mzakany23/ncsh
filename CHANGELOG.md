@@ -19,11 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced data validation with strict type checking
 - Improved error handling and logging
 - Updated schema enforcement in Parquet generation
+- Rebuilt Lambda container with required dependencies
 
 ### Fixed
 - Prevented empty or whitespace-only strings in critical fields
 - Ensured consistent data types in Parquet schema
 - Added validation for score values and URL format
+- Fixed missing Pydantic dependency in Lambda container
 
 ## [2.1.0] - 2025-02-19
 ### Added
