@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed scraping module imports by moving runner.py into package
 - Updated tests to use correct module paths
 - Fixed Lambda function imports to use proper package structure
-- Fixed deployment workflow to validate PRs and only deploy on merge to main
+- Fixed deployment workflow to validate PRs and only deploy merge to main
 
 ## [2.0.1] - 2025-02-16
 ### Fixed
