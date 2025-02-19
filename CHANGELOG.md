@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2024-03-19
+### Changed
+- Switched to uv for Python package management
+- Improved dependency management with compiled requirements.txt
+- Reorganized scraping module into proper Python package structure
+- Updated Makefile to handle virtual environments consistently
+
 ## [2.0.1] - 2024-03-17
 ### Fixed
 - Added back CHANGELOG.md validation step in deployment workflow
