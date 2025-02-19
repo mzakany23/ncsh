@@ -9,7 +9,8 @@ on:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REPOSITORY: ncsoccer-scraper
+  SCRAPER_REPOSITORY: ncsoccer-scraper
+  PROCESSING_REPOSITORY: ncsoccer-processing
   ENVIRONMENT: dev
 
 jobs:
@@ -47,7 +48,7 @@ jobs:
             exit 1
           fi
 
-  build-service:
+  build-scraper:
     needs: [validate-changes]
     if: needs.validate-changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -75,13 +76,55 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        # Build scraper image
+        cd scraping
+        docker build -t $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
+        docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
 
     - name: Update Lambda Function
       run: |
         aws lambda update-function-code \
           --function-name ncsoccer_scraper \
-          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
+
+  build-processing:
+    needs: [build-scraper]
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build processing image
+        cd processing
+        docker build -t $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:latest
+        docker push $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/${{ env.PROCESSING_REPOSITORY }}:latest
+
+    - name: Update Lambda Function
+      run: |
+        aws lambda update-function-code \
+          --function-name ncsoccer-processing \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.PROCESSING_REPOSITORY }}:${{ github.sha }}
