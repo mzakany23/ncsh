@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths:
       - 'CHANGELOG.md'
+  push:
+    branches: [main]
+    paths:
+      - 'CHANGELOG.md'
 env:
   AWS_REGION: us-east-2
   SCRAPER_REPOSITORY: ncsoccer-scraper
@@ -47,8 +51,8 @@ jobs:
 
   build-scraper:
     needs: [validate-changes]
-    # Only build on main branch push or manual trigger
-    if: (needs.validate-changes.outputs.should_run == 'true' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    # Build on main branch push, pull request, or manual trigger
+    if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
@@ -87,8 +91,8 @@ jobs:
 
   build-processing:
     needs: [validate-changes]
-    # Only build on main branch push or manual trigger
-    if: (needs.validate-changes.outputs.should_run == 'true' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    # Build on main branch push, pull request, or manual trigger
+    if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
     permissions:
