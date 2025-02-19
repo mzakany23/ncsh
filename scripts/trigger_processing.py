@@ -5,6 +5,7 @@ import boto3
 import json
 import logging
 from datetime import datetime
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -31,19 +32,14 @@ def trigger_processing(state_machine_arn, src_bucket=None, src_prefix=None, dst_
     try:
         client = boto3.client('stepfunctions')
 
-        # Build input based on provided parameters
+        # Build input based on provided parameters with defaults
         input_data = {
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "src_bucket": src_bucket or os.environ.get("DATA_BUCKET", "ncsh-app-data"),
+            "src_prefix": src_prefix or os.environ.get("JSON_PREFIX", "data/json/"),
+            "dst_bucket": dst_bucket or os.environ.get("DATA_BUCKET", "ncsh-app-data"),
+            "dst_prefix": dst_prefix or os.environ.get("PARQUET_PREFIX", "data/parquet/")
         }
-
-        if src_bucket:
-            input_data["src_bucket"] = src_bucket
-        if src_prefix:
-            input_data["src_prefix"] = src_prefix
-        if dst_bucket:
-            input_data["dst_bucket"] = dst_bucket
-        if dst_prefix:
-            input_data["dst_prefix"] = dst_prefix
 
         # Start the execution
         response = client.start_execution(
