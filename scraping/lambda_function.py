@@ -3,7 +3,7 @@ import sys
 import json
 import logging
 from datetime import datetime
-from runner import run_scraper, run_month
+from ncsoccer.runner import run_scraper, run_month
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

@@ -2,6 +2,7 @@ import os
 import pytest
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
 def test_local_runner_e2e():
     """Test the local runner.py script end-to-end with file storage"""
@@ -13,7 +14,7 @@ def test_local_runner_e2e():
 
     # Run the scraper with file storage
     result = subprocess.run([
-        'python', 'runner.py',
+        'python', '-m', 'ncsoccer.runner',
         '--year', str(year),
         '--month', str(month),
         '--day', str(day),

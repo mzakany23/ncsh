@@ -79,7 +79,7 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
         logger.info(f"Starting run_scraper with params: year={year}, month={month}, day={day}, "
                    f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
                    f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}")
-        
+
         # Just call run_month with a single day
         return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
                         lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
@@ -142,7 +142,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             'TELNETCONSOLE_ENABLED': False  # Disable telnet console for Lambda
         })
         logger.info(f"Using Scrapy settings: {settings.copy_to_dict()}")
-        
+
         try:
             process = CrawlerProcess(settings)
             logger.info("Created CrawlerProcess successfully")
@@ -233,7 +233,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             # Define expected files based on storage type and test mode
             prefix = 'test_data' if use_test_data else 'data'
             logger.info(f"Verifying files with prefix: {prefix}")
-            
+
             expected_files = [
                 f"{prefix}/html/{date_str}.html",
                 f"{prefix}/json/{date_str}_meta.json",
@@ -297,38 +297,47 @@ def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
     return True
 
 
-def main():
-    """Main entry point for the scraper runner."""
-    parser = argparse.ArgumentParser(description='Run NC Soccer schedule scraper')
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='NC Soccer Schedule Scraper')
+    parser.add_argument('--year', type=int, required=True, help='Year to scrape')
+    parser.add_argument('--month', type=int, required=True, help='Month to scrape')
+    parser.add_argument('--day', type=int, help='Day to scrape (optional)')
     parser.add_argument('--mode', choices=['day', 'month'], default='day', help='Scraping mode')
-    parser.add_argument('--year', type=int, help='Target year')
-    parser.add_argument('--month', type=int, help='Target month')
-    parser.add_argument('--day', type=int, help='Target day (only for day mode)')
-    parser.add_argument('--storage-type', choices=['file', 's3'], default='s3', help='Storage type')
-    parser.add_argument('--bucket-name', help='S3 bucket name (only for s3 storage)')
-    parser.add_argument('--html-prefix', default='data/html', help='Prefix for HTML files')
-    parser.add_argument('--json-prefix', default='data/json', help='Prefix for JSON files')
-    parser.add_argument('--lookup-file', default='data/lookup.json', help='Path to lookup file')
-    parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup storage type')
-    parser.add_argument('--region', default='us-east-2', help='AWS region name')
-    parser.add_argument('--table-name', help='DynamoDB table name (for dynamodb lookup)')
-    parser.add_argument('--force-scrape', action='store_true', help='Force scraping even if date exists in lookup')
-    parser.add_argument('--use-test-data', action='store_true', help='Use test data instead of live scraping')
+    parser.add_argument('--force-scrape', action='store_true', help='Force scrape even if already done')
+    parser.add_argument('--storage-type', choices=['file', 's3'], default='file', help='Storage type')
+    parser.add_argument('--bucket-name', default='ncsh-app-data', help='S3 bucket name')
+    parser.add_argument('--html-prefix', default='data/html', help='HTML prefix')
+    parser.add_argument('--json-prefix', default='data/json', help='JSON prefix')
+    parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup type')
+    parser.add_argument('--table-name', default='ncsh-scraped-dates', help='DynamoDB table name')
 
     args = parser.parse_args()
 
-    if args.mode == 'day' and not args.day:
-        parser.error('Day is required for day mode')
+    # Common parameters
+    common_params = {
+        'storage_type': args.storage_type,
+        'bucket_name': args.bucket_name,
+        'html_prefix': args.html_prefix,
+        'json_prefix': args.json_prefix,
+        'lookup_type': args.lookup_type,
+        'table_name': args.table_name,
+        'force_scrape': args.force_scrape
+    }
 
-    if args.mode == 'day':
-        run_scraper(args.year, args.month, args.day, args.storage_type, args.bucket_name,
-                   args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region,
-                   args.table_name, args.force_scrape, args.use_test_data)
+    if args.mode == 'day' and args.day:
+        result = run_scraper(
+            year=args.year,
+            month=args.month,
+            day=args.day,
+            **common_params
+        )
     else:
-        run_month(args.year, args.month, args.storage_type, args.bucket_name,
-                 args.html_prefix, args.json_prefix, args.lookup_file, args.lookup_type, args.region,
-                 table_name=args.table_name, force_scrape=args.force_scrape, use_test_data=args.use_test_data)
+        result = run_month(
+            year=args.year,
+            month=args.month,
+            **common_params
+        )
 
-
-if __name__ == '__main__':
-    exit(main())
+    print(json.dumps({"result": result}))

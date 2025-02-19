@@ -8,7 +8,7 @@ def test_runner_basic_functionality():
     """Test that runner works with basic parameters"""
     # Run the scraper with basic parameters
     result = subprocess.run([
-        'python', 'runner.py',
+        'python', '-m', 'ncsoccer.runner',
         '--year', '2024',
         '--month', '3',
         '--day', '1',
