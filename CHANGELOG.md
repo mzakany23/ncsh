@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made build jobs parallel in CI pipeline
 - Added back CHANGELOG.md validation step in deployment workflow
 - Added check to ensure new version entry exists in CHANGELOG.md
+- Fixed scraping module imports by moving runner.py into package
+- Updated tests to use correct module paths
+- Fixed Lambda function imports to use proper package structure
 
 ## [2.0.1] - 2025-02-16
 ### Fixed
