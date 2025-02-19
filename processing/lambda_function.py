@@ -6,33 +6,48 @@ import boto3
 import pandas as pd
 import io
 from datetime import datetime
+from models import GameData, Game
+from typing import List, Dict, Any
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def list_json_files(bucket, prefix):
-    """List all JSON files in the specified S3 location"""
-    logger.info(f"Listing JSON files in s3://{bucket}/{prefix}")
-    s3 = boto3.client("s3")
+def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str, Any]]:
+    """Validate and transform raw data using Pydantic models"""
+    validated_data = []
 
-    try:
-        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        if 'Contents' not in response:
-            logger.warning("No JSON files found")
-            return []
+    for record in raw_data:
+        try:
+            # Handle case where games might be a list
+            games = record.get('games', [])
+            if not isinstance(games, list):
+                games = [games]
 
-        # Filter for .json and .jsonl files
-        json_files = [
-            obj['Key'] for obj in response['Contents']
-            if obj['Key'].endswith(('.json', '.jsonl'))
-        ]
+            # Process each game in the record
+            for game in games:
+                if game is not None:
+                    try:
+                        # Create GameData instance with a single Game
+                        game_data = GameData(
+                            date=record['date'],
+                            games=Game(**game),
+                            url=record.get('url'),
+                            type=record.get('type'),
+                            status=record.get('status'),
+                            headers=record.get('headers'),
+                            timestamp=record.get('timestamp', datetime.utcnow())
+                        )
+                        # Convert to flat dictionary structure
+                        validated_data.append(game_data.to_dict())
+                    except Exception as e:
+                        logger.warning(f"Invalid game data: {str(e)}")
+                        continue
 
-        logger.info(f"Found {len(json_files)} JSON files")
-        return json_files
+        except Exception as e:
+            logger.warning(f"Invalid record: {str(e)}")
+            continue
 
-    except Exception as e:
-        logger.error(f"Error listing JSON files: {str(e)}")
-        raise
+    return validated_data
 
 def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
     """Convert JSON files to Parquet format"""
@@ -41,7 +56,7 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
 
     try:
         # Process each JSON file
-        dataframes = []
+        all_validated_data = []
         for key in files:
             logger.info(f"Processing {key}")
             try:
@@ -51,34 +66,54 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
 
                 # Try reading as JSON Lines first
                 try:
-                    df = pd.read_json(io.BytesIO(data), lines=True)
+                    raw_data = pd.read_json(io.BytesIO(data), lines=True).to_dict('records')
                 except ValueError:
                     # Fallback to standard JSON array
-                    df = pd.read_json(io.BytesIO(data))
+                    raw_data = pd.read_json(io.BytesIO(data)).to_dict('records')
 
-                dataframes.append(df)
-                logger.info(f"Successfully processed {key}, shape: {df.shape}")
+                # Validate and transform the data
+                validated_data = validate_and_transform_data(raw_data)
+                all_validated_data.extend(validated_data)
+                logger.info(f"Successfully processed {key}, valid records: {len(validated_data)}")
 
             except Exception as e:
                 logger.error(f"Error processing {key}: {str(e)}")
                 continue
 
-        if not dataframes:
-            logger.warning("No valid JSON files were processed")
+        if not all_validated_data:
+            logger.warning("No valid records were processed")
             return {
                 "status": "WARNING",
-                "message": "No valid JSON files were processed"
+                "message": "No valid records were processed"
             }
 
-        # Combine all dataframes
-        logger.info("Combining dataframes")
-        combined_df = pd.concat(dataframes, ignore_index=True)
-        logger.info(f"Combined shape: {combined_df.shape}")
+        # Convert to DataFrame
+        logger.info("Creating DataFrame")
+        df = pd.DataFrame(all_validated_data)
+        logger.info(f"DataFrame shape: {df.shape}")
 
         # Convert to Parquet
         logger.info("Converting to Parquet format")
         out_buffer = io.BytesIO()
-        combined_df.to_parquet(out_buffer, index=False)
+        df.to_parquet(
+            out_buffer,
+            index=False,
+            # Specify schema for consistent column types
+            schema={
+                'date': 'timestamp[ns]',
+                'home_team': 'string',
+                'away_team': 'string',
+                'home_score': 'int64',
+                'away_score': 'int64',
+                'league': 'string',
+                'time': 'string',
+                'url': 'string',
+                'type': 'string',
+                'status': 'float64',
+                'headers': 'string',
+                'timestamp': 'timestamp[ns]'
+            }
+        )
         out_buffer.seek(0)
 
         # Create version string based on current UTC time
@@ -98,7 +133,7 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
             "source": f"s3://{src_bucket}",
             "destination": f"s3://{dst_bucket}/{dst_key}",
             "version": version,
-            "rows_processed": len(combined_df)
+            "rows_processed": len(df)
         }
 
     except Exception as e:

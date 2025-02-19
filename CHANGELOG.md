@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-02-19
+### Added
+- Pydantic models for game data schema validation
+- Strict type checking for Parquet file generation
+- Improved error handling for data validation
+
+### Changed
+- Refactored JSON to Parquet conversion to use schema validation
+- Flattened nested game data structure in Parquet files
+- Updated processing Lambda to handle data validation
+
 ## [2.0.4] - 2025-02-19
 ### Changed
 - Enhanced Step Function workflow with visual state tracking
