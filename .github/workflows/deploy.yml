@@ -40,12 +40,10 @@ jobs:
             else
               echo "CHANGELOG.md modified but no new version entry found"
               echo "should_run=false" >> $GITHUB_OUTPUT
-              exit 1
             fi
           else
             echo "CHANGELOG.md not modified"
             echo "should_run=false" >> $GITHUB_OUTPUT
-            exit 1
           fi
 
   build-scraper:
