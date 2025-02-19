@@ -116,11 +116,39 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         )
         out_buffer.seek(0)
 
-        # Create version string based on current UTC time
-        version = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        dst_key = f"{dst_prefix}v{version}/data.parquet"
+        # Use a fixed location for the Parquet file
+        dst_key = f"{dst_prefix}current/data.parquet"
+        backup_key = f"{dst_prefix}backup/data.parquet"
 
-        # Upload Parquet file
+        # Create backup of existing file if it exists
+        try:
+            s3.head_object(Bucket=dst_bucket, Key=dst_key)
+            logger.info("Creating backup of existing Parquet file")
+            s3.copy_object(
+                Bucket=dst_bucket,
+                CopySource={'Bucket': dst_bucket, 'Key': dst_key},
+                Key=backup_key
+            )
+        except s3.exceptions.ClientError as e:
+            if e.response['Error']['Code'] != '404':
+                raise
+            logger.info("No existing Parquet file to backup")
+
+        # Clean up old versioned files
+        try:
+            logger.info("Cleaning up old versioned Parquet files")
+            old_versions = s3.list_objects_v2(
+                Bucket=dst_bucket,
+                Prefix=f"{dst_prefix}v"
+            )
+            if 'Contents' in old_versions:
+                for obj in old_versions['Contents']:
+                    logger.info(f"Deleting old version: {obj['Key']}")
+                    s3.delete_object(Bucket=dst_bucket, Key=obj['Key'])
+        except Exception as e:
+            logger.warning(f"Error cleaning up old versions: {str(e)}")
+
+        # Upload new Parquet file
         logger.info(f"Uploading Parquet file to s3://{dst_bucket}/{dst_key}")
         s3.put_object(
             Bucket=dst_bucket,
@@ -132,7 +160,6 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
             "status": "SUCCESS",
             "source": f"s3://{src_bucket}",
             "destination": f"s3://{dst_bucket}/{dst_key}",
-            "version": version,
             "rows_processed": len(df)
         }
 
