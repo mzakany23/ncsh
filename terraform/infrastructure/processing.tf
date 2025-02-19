@@ -86,6 +86,21 @@ resource "aws_iam_role_policy" "processing_lambda" {
       {
         Effect = "Allow"
         Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:GetObjectVersion",
+          "s3:PutObjectAcl",
+          "s3:GetObjectAcl"
+        ]
+        Resource = [
+          "arn:aws:s3:::ncsh-app-data",
+          "arn:aws:s3:::ncsh-app-data/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "dynamodb:GetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
@@ -153,12 +168,57 @@ resource "aws_sfn_state_machine" "processing" {
   role_arn = aws_iam_role.processing_step_function.arn
 
   definition = jsonencode({
-    StartAt = "ProcessData"
+    Comment = "NC Soccer Data Processing Pipeline",
+    StartAt = "ListJSONFiles",
     States = {
-      ProcessData = {
-        Type     = "Task"
-        Resource = aws_lambda_function.processing.arn
-        End      = true
+      ListJSONFiles = {
+        Type = "Task",
+        Resource = aws_lambda_function.processing.arn,
+        Parameters = {
+          "operation": "list_files",
+          "src_bucket.$": "$.src_bucket",
+          "src_prefix.$": "$.src_prefix"
+        },
+        Next = "ProcessJSONToParquet",
+        Catch = [{
+          ErrorEquals = ["States.ALL"],
+          Next = "HandleError"
+        }]
+      },
+      ProcessJSONToParquet = {
+        Type = "Task",
+        Resource = aws_lambda_function.processing.arn,
+        Parameters = {
+          "operation": "convert",
+          "src_bucket.$": "$.src_bucket",
+          "src_prefix.$": "$.src_prefix",
+          "dst_bucket.$": "$.dst_bucket",
+          "dst_prefix.$": "$.dst_prefix",
+          "files.$": "$.files"
+        },
+        Next = "Success",
+        Catch = [{
+          ErrorEquals = ["States.ALL"],
+          Next = "HandleError"
+        }]
+      },
+      HandleError = {
+        Type = "Pass",
+        Result = {
+          "status": "FAILED",
+          "error.$": "$.error",
+          "cause.$": "$.cause"
+        },
+        End = true
+      },
+      Success = {
+        Type = "Pass",
+        Result = {
+          "status": "SUCCESS",
+          "message": "Successfully converted JSON files to Parquet",
+          "timestamp.$": "$$.Execution.StartTime"
+        },
+        End = true
       }
     }
   })

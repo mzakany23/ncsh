@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2025-02-19
+### Changed
+- Enhanced Step Function workflow with visual state tracking
+- Split processing Lambda into distinct operations for better monitoring
+- Added detailed logging for JSON file discovery and Parquet conversion
+- Improved error handling and state management in processing pipeline
+
 ## [2.0.3] - 2025-02-19
 ### Changed
 - Switched to uv for Python package management
