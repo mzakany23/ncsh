@@ -10,49 +10,39 @@ from datetime import datetime
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def lambda_handler(event, context):
-    """AWS Lambda handler for converting JSON files to Parquet format"""
-    logger.info("Starting JSON to Parquet conversion")
-    logger.info(f"Event: {json.dumps(event)}")
+def list_json_files(bucket, prefix):
+    """List all JSON files in the specified S3 location"""
+    logger.info(f"Listing JSON files in s3://{bucket}/{prefix}")
+    s3 = boto3.client("s3")
 
     try:
-        # Get environment variables with defaults
-        src_bucket = os.environ.get("DATA_BUCKET", "ncsh-app-data")
-        src_prefix = os.environ.get("JSON_PREFIX", "data/json/")
-        dst_bucket = os.environ.get("DATA_BUCKET", "ncsh-app-data")  # Same bucket by default
-        dst_prefix = os.environ.get("PARQUET_PREFIX", "data/parquet/")
-
-        # Extract parameters from event if provided
-        if isinstance(event, dict):
-            src_bucket = event.get('src_bucket', src_bucket)
-            src_prefix = event.get('src_prefix', src_prefix)
-            dst_bucket = event.get('dst_bucket', dst_bucket)
-            dst_prefix = event.get('dst_prefix', dst_prefix)
-
-        # Create version string based on current UTC time
-        version = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-
-        # Initialize S3 client
-        s3 = boto3.client("s3")
-
-        logger.info(f"Listing JSON files in s3://{src_bucket}/{src_prefix}")
-
-        # List all JSON files in the source bucket/prefix
-        response = s3.list_objects_v2(Bucket=src_bucket, Prefix=src_prefix)
+        response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
         if 'Contents' not in response:
             logger.warning("No JSON files found")
-            return {
-                "statusCode": 404,
-                "body": "No JSON files found in source location"
-            }
+            return []
 
+        # Filter for .json and .jsonl files
+        json_files = [
+            obj['Key'] for obj in response['Contents']
+            if obj['Key'].endswith(('.json', '.jsonl'))
+        ]
+
+        logger.info(f"Found {len(json_files)} JSON files")
+        return json_files
+
+    except Exception as e:
+        logger.error(f"Error listing JSON files: {str(e)}")
+        raise
+
+def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
+    """Convert JSON files to Parquet format"""
+    logger.info(f"Converting {len(files)} JSON files to Parquet")
+    s3 = boto3.client("s3")
+
+    try:
         # Process each JSON file
         dataframes = []
-        for obj in response['Contents']:
-            key = obj['Key']
-            if not key.endswith('.json'):
-                continue
-
+        for key in files:
             logger.info(f"Processing {key}")
             try:
                 # Read JSON file from S3
@@ -76,8 +66,8 @@ def lambda_handler(event, context):
         if not dataframes:
             logger.warning("No valid JSON files were processed")
             return {
-                "statusCode": 404,
-                "body": "No valid JSON files were processed"
+                "status": "WARNING",
+                "message": "No valid JSON files were processed"
             }
 
         # Combine all dataframes
@@ -91,7 +81,8 @@ def lambda_handler(event, context):
         combined_df.to_parquet(out_buffer, index=False)
         out_buffer.seek(0)
 
-        # Construct destination key with version
+        # Create version string based on current UTC time
+        version = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
         dst_key = f"{dst_prefix}v{version}/data.parquet"
 
         # Upload Parquet file
@@ -102,26 +93,60 @@ def lambda_handler(event, context):
             Body=out_buffer.getvalue()
         )
 
-        result = {
-            "statusCode": 200,
-            "body": {
-                "message": "Conversion completed successfully",
-                "source": f"s3://{src_bucket}/{src_prefix}",
-                "destination": f"s3://{dst_bucket}/{dst_key}",
-                "version": version,
-                "rows_processed": len(combined_df)
-            }
+        return {
+            "status": "SUCCESS",
+            "source": f"s3://{src_bucket}",
+            "destination": f"s3://{dst_bucket}/{dst_key}",
+            "version": version,
+            "rows_processed": len(combined_df)
         }
-        logger.info(f"Success: {json.dumps(result)}")
-        return result
 
     except Exception as e:
-        error_msg = f"Error in JSON to Parquet conversion: {str(e)}"
-        logger.error(error_msg)
-        return {
-            "statusCode": 500,
-            "body": error_msg
-        }
+        logger.error(f"Error converting to Parquet: {str(e)}")
+        raise
+
+def lambda_handler(event, context):
+    """AWS Lambda handler for the processing pipeline"""
+    logger.info(f"Processing event: {json.dumps(event)}")
+
+    try:
+        # Get operation type
+        operation = event.get('operation', 'convert')  # Default to convert for backward compatibility
+
+        # Get environment variables with defaults
+        src_bucket = event.get('src_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
+        src_prefix = event.get('src_prefix', os.environ.get("JSON_PREFIX", "data/json/"))
+        dst_bucket = event.get('dst_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
+        dst_prefix = event.get('dst_prefix', os.environ.get("PARQUET_PREFIX", "data/parquet/"))
+
+        if operation == "list_files":
+            # List JSON files
+            files = list_json_files(src_bucket, src_prefix)
+            return {
+                "files": files,
+                "src_bucket": src_bucket,
+                "src_prefix": src_prefix,
+                "dst_bucket": dst_bucket,
+                "dst_prefix": dst_prefix
+            }
+
+        elif operation == "convert":
+            # Get files from previous step
+            files = event.get('files', [])
+            if not files:
+                raise ValueError("No files provided for conversion")
+
+            # Convert files to Parquet
+            result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
+            return result
+
+        else:
+            raise ValueError(f"Unknown operation: {operation}")
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error in processing pipeline: {error_msg}")
+        raise Exception(error_msg)
 
 if __name__ == '__main__':
     # Handle command line execution for testing
