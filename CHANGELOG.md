@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.2.2] - 2025-02-20
+## [2.2.4] - 2025-02-20
+### Fixed
+- Fixed analysis Lambda function creation in Terraform
+- Fixed Docker build issues with requirements compilation
+- Added terraform.tfvars.example for required variables
+
+## [2.2.3] - 2025-02-20
 ### Added
 - Analysis Lambda function for querying soccer data using natural language
 - OpenAI-powered SQL query generation for data analysis
