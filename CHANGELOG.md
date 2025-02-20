@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.2.1] - 2025-02-20
+## [2.2.2] - 2025-02-20
 ### Added
 - Analysis Lambda function for querying soccer data using natural language
 - OpenAI-powered SQL query generation for data analysis
