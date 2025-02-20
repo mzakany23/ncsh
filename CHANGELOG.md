@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2025-02-20
+### Changed
+- Simplified Step Function workflow to focus on synchronous queries
+- Removed WebSocket API Gateway and related resources
+- Updated Lambda function environment variables and permissions
+
+### Fixed
+- Fixed OpenAI API key handling in Lambda function
+- Improved error handling and validation in analysis Lambda
+- Added proper result formatting in Step Function responses
+- Fixed JSON serialization in Step Function state machine
+
+### Added
+- New query_analysis.py script for testing analysis queries
+- IAM policy for Step Function access from local development
+
+## [2.2.5] - 2025-02-20
+### Fixed
+- Fixed analysis Lambda function creation in Terraform
+- Fixed Docker build issues with requirements compilation
+- Added terraform.tfvars.example for required variables
+
 ## [2.2.4] - 2025-02-20
 ### Fixed
 - Fixed analysis Lambda function creation in Terraform
