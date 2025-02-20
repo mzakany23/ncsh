@@ -7,7 +7,7 @@ import json
 import argparse
 import subprocess
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from rich.console import Console
 from rich.panel import Panel
 import openai
@@ -25,6 +25,12 @@ DB_PATH = None
 TEMP_DB = None
 
 # Create our list of function tools from our pydantic models
+class QueryResult(BaseModel):
+    sql_query: str
+    raw_result: str
+    formatted_result: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+
 class ListTablesArgs(BaseModel):
     reasoning: str = Field(
         ..., description="Explanation for listing tables relative to the user request"
