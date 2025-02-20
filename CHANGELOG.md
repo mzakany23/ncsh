@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2025-02-20
+### Added
+- Analysis Lambda function for querying soccer data using natural language
+- OpenAI-powered SQL query generation for data analysis
+- WebSocket API for real-time query responses
+- Step Functions workflow for handling analysis requests
+- Support for both synchronous and streaming query modes
+- Team performance analysis and statistics functions
+- DuckDB integration for efficient Parquet file querying
+- Rich formatting options for query results
+
+### Changed
+- Updated deployment workflow to build and push analysis container
+- Consolidated configuration values into single AWS Secrets Manager secret
+- Enhanced infrastructure with WebSocket API Gateway setup
+
 ## [2.1.5] - 2025-02-19
 ### Added
 - Strict schema validation for game data using Pydantic
