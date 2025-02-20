@@ -136,7 +136,7 @@ def process_query(prompt: str, compute_iterations: int = 10) -> QueryResult:
     )
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler supporting both sync and streaming modes."""
+    """Lambda handler for processing analysis queries."""
     try:
         # Check if this is a Step Function execution
         if 'step' in event:
@@ -148,84 +148,57 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     prompt=event['prompt'],
                     compute_iterations=event.get('compute_iterations', 10)
                 )
+                if not result or not result.raw_result:
+                    raise ValueError("No query result produced")
+
                 return {
                     'statusCode': 200,
-                    'result': result.dict()
+                    'result': {
+                        'raw_result': result.raw_result,
+                        'sql_query': result.sql_query,
+                        'metadata': result.metadata
+                    }
                 }
 
             elif step == 'format':
+                # Validate input
+                if not event.get('result') or 'raw_result' not in event['result']:
+                    raise ValueError("Missing raw_result in format step input")
+
                 # Format the query result
                 formatted_result = format_query_result(
                     result=event['result']['raw_result'],
                     format_type=event.get('format_type', 'default'),
                     prompt=event['prompt']
                 )
+
+                if not formatted_result:
+                    raise ValueError("Failed to format result")
+
                 return {
                     'statusCode': 200,
                     'result': {
-                        **event['result'],
-                        'formatted_result': formatted_result
+                        'raw_result': event['result']['raw_result'],
+                        'formatted_result': formatted_result,
+                        'sql_query': event['result'].get('sql_query'),
+                        'metadata': event['result'].get('metadata', {})
                     }
                 }
 
             else:
                 raise ValueError(f"Unknown step: {step}")
 
-        # Handle WebSocket or synchronous API requests
-        request = QueryRequest(**json.loads(event.get('body', '{}')))
-
-        if request.mode == 'stream':
-            # Extract WebSocket details
-            connection_id = event['requestContext']['connectionId']
-            domain_name = event['requestContext']['domainName']
-            stage = event['requestContext']['stage']
-            endpoint_url = f'https://{domain_name}/{stage}'
-
-            # Start step function execution
-            execution = stepfunctions.start_execution(
-                stateMachineArn=os.environ['STEP_FUNCTION_ARN'],
-                input=json.dumps({
-                    'connection_id': connection_id,
-                    'endpoint_url': endpoint_url,
-                    'prompt': request.prompt,
-                    'compute_iterations': request.compute_iterations,
-                    'format_type': request.format_type,
-                    'mode': 'stream'
-                })
-            )
-
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'message': 'Processing started',
-                    'execution_arn': execution.get('executionArn')
-                })
-            }
-
-        else:  # Synchronous mode
-            # Process query
-            result = process_query(
-                prompt=request.prompt,
-                compute_iterations=request.compute_iterations
-            )
-
-            # Format result
-            formatted_result = format_query_result(
-                result=result.raw_result,
-                format_type=request.format_type,
-                prompt=request.prompt
-            )
-
-            result.formatted_result = formatted_result
-
-            return {
-                'statusCode': 200,
-                'body': json.dumps(result.dict())
-            }
+        else:
+            raise ValueError("Missing 'step' parameter in event")
 
     except Exception as e:
+        console.print(f"[red]Lambda error: {str(e)}[/red]")
         error_response = {
             'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            'error': str(e),
+            'details': {
+                'event': event,
+                'error_type': type(e).__name__
+            }
         }
         return error_response
