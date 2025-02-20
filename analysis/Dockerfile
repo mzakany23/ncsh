@@ -1,7 +1,7 @@
 FROM public.ecr.aws/lambda/python:3.11
 
 # Install build dependencies
-RUN dnf install -y gcc gcc-c++ && \
+RUN yum install -y gcc gcc-c++ && \
     pip install uv
 
 # Copy requirements files
