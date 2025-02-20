@@ -60,6 +60,12 @@ Thumbs.db
 .terraformrc
 terraform.rc
 .terraform.lock.hcl
+terraform.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
 *.log
 

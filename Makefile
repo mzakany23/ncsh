@@ -30,11 +30,13 @@ compile-requirements:
 	@echo "Compiling requirements..."
 	cd scraping && uv pip compile requirements.in -o requirements.txt
 	cd processing && uv pip compile requirements.in -o requirements.txt
+	cd analysis && uv pip compile requirements.in -o requirements.txt
 
 install: venv compile-requirements
 	@echo "Installing dependencies..."
 	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
 	cd processing && uv pip install -r requirements.txt
+	cd analysis && uv pip install -r requirements.txt
 
 test: install
 	@echo "Running tests..."
@@ -50,6 +52,7 @@ format: install
 	@echo "Running formatter..."
 	source .venv/bin/activate && cd scraping && ruff format ncsoccer tests
 	source .venv/bin/activate && cd processing && ruff format .
+	source .venv/bin/activate && cd analysis && ruff format .
 
 deploy-scraper: compile-requirements
 	cd terraform/infrastructure && terraform apply -target=aws_lambda_function.ncsoccer_scraper
