@@ -10,6 +10,7 @@ env:
   AWS_REGION: us-east-2
   SCRAPER_REPOSITORY: ncsoccer-scraper
   PROCESSING_REPOSITORY: ncsoccer-processing
+  ANALYSIS_REPOSITORY: ncsoccer-analysis
   ENVIRONMENT: dev
 
 jobs:
@@ -47,7 +48,6 @@ jobs:
 
   build-scraper:
     needs: [validate-changes]
-    # Build on main branch push, pull request, or manual trigger
     if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
@@ -87,7 +87,6 @@ jobs:
 
   build-processing:
     needs: [validate-changes]
-    # Build on main branch push, pull request, or manual trigger
     if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev
@@ -124,3 +123,42 @@ jobs:
         aws lambda update-function-code \
           --function-name ncsoccer-processing \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.PROCESSING_REPOSITORY }}:${{ github.sha }}
+
+  build-analysis:
+    needs: [validate-changes]
+    if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/${{ env.ANALYSIS_REPOSITORY }}:$IMAGE_TAG -f analysis/Dockerfile analysis/
+        docker tag $ECR_REGISTRY/${{ env.ANALYSIS_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.ANALYSIS_REPOSITORY }}:latest
+        docker push $ECR_REGISTRY/${{ env.ANALYSIS_REPOSITORY }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/${{ env.ANALYSIS_REPOSITORY }}:latest
+
+    - name: Update Lambda Function
+      run: |
+        aws lambda update-function-code \
+          --function-name ncsoccer-analysis \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.ANALYSIS_REPOSITORY }}:${{ github.sha }}
