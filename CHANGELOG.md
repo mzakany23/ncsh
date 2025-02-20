@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Simplified Step Function workflow to focus on synchronous queries
+- Removed WebSocket API Gateway and related resources
+- Updated Lambda function environment variables and permissions
+
+### Fixed
+- Fixed OpenAI API key handling in Lambda function
+- Improved error handling and validation in analysis Lambda
+- Added proper result formatting in Step Function responses
+- Fixed JSON serialization in Step Function state machine
+
+### Added
+- New query_analysis.py script for testing analysis queries
+- IAM policy for Step Function access from local development
 
 ## [2.3.0] - 2025-02-20
 ### Fixed
