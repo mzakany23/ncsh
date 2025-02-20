@@ -77,24 +77,6 @@ resource "aws_iam_role_policy" "analysis_lambda" {
       {
         Effect = "Allow"
         Action = [
-          "execute-api:ManageConnections"
-        ]
-        Resource = [
-          "${aws_apigatewayv2_api.websocket.execution_arn}/*/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "states:StartExecution"
-        ]
-        Resource = [
-          aws_sfn_state_machine.analysis.arn
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
           "secretsmanager:GetSecretValue"
         ]
         Resource = [
@@ -130,68 +112,6 @@ resource "aws_lambda_function" "analysis" {
   }
 }
 
-# After the Lambda is created, update its environment with the Step Function ARN
-resource "aws_lambda_function_event_invoke_config" "analysis" {
-  function_name = aws_lambda_function.analysis.function_name
-
-  destination_config {
-    on_success {
-      destination = aws_sfn_state_machine.analysis.arn
-    }
-  }
-}
-
-# WebSocket API Gateway
-resource "aws_apigatewayv2_api" "websocket" {
-  name                       = "ncsoccer-analysis-websocket"
-  protocol_type             = "WEBSOCKET"
-  route_selection_expression = "$request.body.action"
-}
-
-resource "aws_apigatewayv2_stage" "websocket" {
-  api_id = aws_apigatewayv2_api.websocket.id
-  name   = "dev"
-  auto_deploy = true
-}
-
-resource "aws_apigatewayv2_integration" "websocket_lambda" {
-  api_id           = aws_apigatewayv2_api.websocket.id
-  integration_type = "AWS_PROXY"
-
-  connection_type           = "INTERNET"
-  content_handling_strategy = "CONVERT_TO_TEXT"
-  integration_method        = "POST"
-  integration_uri          = aws_lambda_function.analysis.invoke_arn
-  passthrough_behavior     = "WHEN_NO_MATCH"
-}
-
-resource "aws_apigatewayv2_route" "websocket_default" {
-  api_id    = aws_apigatewayv2_api.websocket.id
-  route_key = "$default"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_lambda.id}"
-}
-
-resource "aws_apigatewayv2_route" "websocket_connect" {
-  api_id    = aws_apigatewayv2_api.websocket.id
-  route_key = "$connect"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_lambda.id}"
-}
-
-resource "aws_apigatewayv2_route" "websocket_disconnect" {
-  api_id    = aws_apigatewayv2_api.websocket.id
-  route_key = "$disconnect"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_lambda.id}"
-}
-
-# Lambda permission for WebSocket API
-resource "aws_lambda_permission" "websocket" {
-  statement_id  = "AllowWebSocketAPIInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.analysis.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.websocket.execution_arn}/*/*"
-}
-
 # Step Functions State Machine
 resource "aws_sfn_state_machine" "analysis" {
   name     = "ncsoccer-analysis"
@@ -207,8 +127,10 @@ resource "aws_sfn_state_machine" "analysis" {
         Parameters = {
           "step": "query"
           "prompt.$": "$.prompt"
-          "compute_iterations.$": "$.compute_iterations"
+          "compute_iterations": 10
+          "format_type.$": "$.format_type"
         }
+        ResultPath = "$.result"
         Retry = [
           {
             ErrorEquals = ["States.TaskFailed"]
@@ -221,6 +143,7 @@ resource "aws_sfn_state_machine" "analysis" {
         Catch = [{
           ErrorEquals = ["States.ALL"]
           Next = "HandleError"
+          ResultPath = "$.error"
         }]
       }
       FormatResult = {
@@ -232,6 +155,7 @@ resource "aws_sfn_state_machine" "analysis" {
           "result.$": "$.result"
           "format_type.$": "$.format_type"
         }
+        ResultPath = "$.formatted_result"
         Retry = [
           {
             ErrorEquals = ["States.TaskFailed"]
@@ -240,40 +164,22 @@ resource "aws_sfn_state_machine" "analysis" {
             BackoffRate = 2.0
           }
         ]
-        Next = "SendResponse"
+        Next = "ReturnSyncResponse"
         Catch = [{
           ErrorEquals = ["States.ALL"]
           Next = "HandleError"
+          ResultPath = "$.error"
         }]
-      }
-      SendResponse = {
-        Type = "Choice"
-        Choices = [
-          {
-            Variable = "$.mode"
-            StringEquals = "stream"
-            Next = "SendWebSocketResponse"
-          }
-        ]
-        Default = "ReturnSyncResponse"
-      }
-      SendWebSocketResponse = {
-        Type = "Task"
-        Resource = aws_lambda_function.analysis.arn
-        Parameters = {
-          "step": "send_response"
-          "connection_id.$": "$.connection_id"
-          "endpoint_url.$": "$.endpoint_url"
-          "result.$": "$.result"
-        }
-        End = true
       }
       ReturnSyncResponse = {
         Type = "Pass"
         End = true
         Parameters = {
           "statusCode": 200
-          "body.$": "States.JsonToString($.result)"
+          "body": {
+            "result.$": "States.JsonToString($.result)",
+            "formatted_result.$": "States.JsonToString($.formatted_result)"
+          }
         }
       }
       HandleError = {
@@ -282,8 +188,8 @@ resource "aws_sfn_state_machine" "analysis" {
         Parameters = {
           "statusCode": 500
           "body": {
-            "error.$": "$.Error"
-            "cause.$": "$.Cause"
+            "error.$": "States.JsonToString($.error.Error)",
+            "cause.$": "States.JsonToString($.error.Cause)"
           }
         }
       }
@@ -335,10 +241,26 @@ output "analysis_function_name" {
   value = aws_lambda_function.analysis.function_name
 }
 
-output "websocket_api_endpoint" {
-  value = aws_apigatewayv2_stage.websocket.invoke_url
-}
-
 output "analysis_step_function_arn" {
   value = aws_sfn_state_machine.analysis.arn
+}
+
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
+
+# IAM Policy for Step Function access
+resource "aws_iam_user_policy" "step_function_access" {
+  name = "ncsoccer-analysis-step-function-access"
+  user = "mzakany"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "states:StartExecution"
+        Resource = aws_sfn_state_machine.analysis.arn
+      }
+    ]
+  })
 }

@@ -395,9 +395,6 @@ resource "aws_iam_role_policy" "eventbridge_policy" {
   })
 }
 
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}
-
 # AWS Budget for Cost Monitoring
 resource "aws_budgets_budget" "monthly_cost" {
   name              = "ncsoccer-monthly-budget"

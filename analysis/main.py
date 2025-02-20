@@ -476,6 +476,83 @@ def get_team_stats(reasoning: str, team_name: str) -> str:
         return str(e)
 
 
+def process_query(prompt: str, compute_iterations: int = 10) -> QueryResult:
+    """Processes a query and returns the result."""
+    messages = [{"role": "user", "content": prompt}]
+    final_results = []
+    final_query = None
+
+    for iteration in range(compute_iterations):
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4o",
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+            )
+
+            if response.choices:
+                message = response.choices[0].message
+                if message.tool_calls and len(message.tool_calls) > 0:
+                    tool_call = message.tool_calls[0]
+                    func_call = tool_call.function
+                    func_name = func_call.name
+                    func_args = json.loads(func_call.arguments)
+
+                    if func_name == "RunFinalSQLQuery":
+                        final_query = func_args["sql_query"]
+                        result = run_final_sql_query(**func_args)
+                        if not result:
+                            raise ValueError("Empty result from final SQL query")
+                        final_results.append(result)
+                        break
+                    else:
+                        # Execute other tool calls but don't break
+                        result = None
+                        if func_name == "ListTablesArgs":
+                            result = list_tables(**func_args)
+                        elif func_name == "DescribeTableArgs":
+                            result = describe_table(**func_args)
+                        elif func_name == "SampleTableArgs":
+                            result = sample_table(**func_args)
+                        elif func_name == "RunTestSQLQuery":
+                            result = run_test_sql_query(**func_args)
+                        elif func_name == "AnalyzeTeamPerformance":
+                            result = analyze_team_performance(**func_args)
+                        elif func_name == "GetTeamStats":
+                            result = get_team_stats(**func_args)
+
+                        if result is None:
+                            raise ValueError(f"Tool {func_name} returned no result")
+
+                        messages.extend([
+                            {
+                                "role": "assistant",
+                                "tool_calls": [{"id": tool_call.id, "type": "function", "function": func_call}],
+                            },
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": json.dumps({"result": str(result)})
+                            }
+                        ])
+
+        except Exception as e:
+            console.print(f"[red]Error in iteration {iteration}: {str(e)}[/red]")
+            if iteration == compute_iterations - 1:
+                raise ValueError("Failed to generate a valid query after all iterations") from e
+            continue
+
+    if not final_results:
+        raise ValueError("No final query result produced")
+
+    return QueryResult(
+        sql_query=final_query,
+        raw_result=final_results[0],
+        metadata={"iterations": iteration + 1}
+    )
+
+
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description="DuckDB Agent for querying Parquet data using OpenAI API")
