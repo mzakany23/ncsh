@@ -4,12 +4,11 @@ FROM public.ecr.aws/lambda/python:3.11
 RUN yum install -y gcc gcc-c++ && \
     pip install uv
 
-# Copy requirements files
-COPY requirements.in .
+# Copy requirements file
+COPY requirements.txt .
 
 # Install Python dependencies
-RUN uv pip compile requirements.in -o requirements.txt && \
-    uv pip install -r requirements.txt
+RUN uv pip install --system -r requirements.txt
 
 # Copy function code
 COPY . .
