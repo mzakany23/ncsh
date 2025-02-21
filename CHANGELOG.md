@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New query_analysis.py script for testing analysis queries
 - IAM policy for Step Function access from local development
 
+## [2.4.0] - 2025-02-21
+### Added
+- Removed verbose logging from analysis
+- Made analysis more efficient and better fuzzy matching
+
 ## [2.3.0] - 2025-02-20
 ### Fixed
 - Fixed analysis Lambda function creation in Terraform

@@ -74,6 +74,37 @@ class GetTeamStats(BaseModel):
     team_name: str = Field(..., description="Name of the team to get stats for")
 
 
+class FuzzyTeamNameMatch(BaseModel):
+    reasoning: str = Field(..., description="Reason for fuzzy matching the team name")
+    search_term: str = Field(..., description="The team name to search for")
+
+
+class SummarizeOutput(BaseModel):
+    reasoning: str = Field(
+        ...,
+        description="Reason for summarizing the output"
+    )
+    conversation_json: str = Field(
+        ...,
+        description="The full conversation history to analyze as a JSON string"
+    )
+    user_request: str = Field(
+        ...,
+        description="The original user request"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "required": ["reasoning", "user_request"]
+        }
+    }
+
+
+class ListAvailableTeams(BaseModel):
+    reasoning: str
+    search_term: Optional[str] = None
+
+
 # Create tools list
 tools = [
     pydantic_function_tool(ListTablesArgs),
@@ -83,6 +114,9 @@ tools = [
     pydantic_function_tool(RunFinalSQLQuery),
     pydantic_function_tool(AnalyzeTeamPerformance),
     pydantic_function_tool(GetTeamStats),
+    pydantic_function_tool(FuzzyTeamNameMatch),
+    pydantic_function_tool(SummarizeOutput),
+    pydantic_function_tool(ListAvailableTeams),
 ]
 
 AGENT_PROMPT = """<purpose>
@@ -102,6 +136,8 @@ AGENT_PROMPT = """<purpose>
     <instruction>Think step by step about what information you need.</instruction>
     <instruction>Be sure to specify every parameter for each tool call.</instruction>
     <instruction>Every tool call should have a reasoning parameter which gives you a place to explain why you are calling the tool.</instruction>
+    <instruction>When searching for team names, use the fuzzy_match_team_name tool to find similar matches if the exact name isn't found.</instruction>
+    <instruction>After gathering all information, use the summarize_output tool to provide a clear, concise summary of findings.</instruction>
 </instructions>
 
 <tools>
@@ -199,6 +235,50 @@ AGENT_PROMPT = """<purpose>
             </parameter>
         </parameters>
     </tool>
+
+    <tool>
+        <name>fuzzy_match_team_name</name>
+        <description>Finds team names that closely match the search term using fuzzy matching</description>
+        <parameters>
+            <parameter>
+                <name>reasoning</name>
+                <type>string</type>
+                <description>Why we need to find similar team names</description>
+                <required>true</required>
+            </parameter>
+            <parameter>
+                <name>search_term</name>
+                <type>string</type>
+                <description>The team name to search for</description>
+                <required>true</required>
+            </parameter>
+        </parameters>
+    </tool>
+
+    <tool>
+        <name>summarize_output</name>
+        <description>Analyzes the conversation and provides a clear summary of findings</description>
+        <parameters>
+            <parameter>
+                <name>reasoning</name>
+                <type>string</type>
+                <description>Why we're summarizing the output</description>
+                <required>true</required>
+            </parameter>
+            <parameter>
+                <name>conversation_json</name>
+                <type>string</type>
+                <description>The full conversation history to analyze as a JSON string</description>
+                <required>true</required>
+            </parameter>
+            <parameter>
+                <name>user_request</name>
+                <type>string</type>
+                <description>The original user request</description>
+                <required>true</required>
+            </parameter>
+        </parameters>
+    </tool>
 </tools>
 
 <user-request>
@@ -208,16 +288,7 @@ AGENT_PROMPT = """<purpose>
 
 
 def list_tables(reasoning: str) -> List[str]:
-    """Returns a list of tables in the database.
-
-    The agent uses this to discover available tables and make informed decisions.
-
-    Args:
-        reasoning: Explanation of why we're listing tables relative to user request
-
-    Returns:
-        List of table names as strings
-    """
+    """Returns a list of tables in the database."""
     try:
         result = subprocess.run(
             f'duckdb {TEMP_DB} -c ".tables"',
@@ -225,7 +296,7 @@ def list_tables(reasoning: str) -> List[str]:
             text=True,
             capture_output=True,
         )
-        console.log(f"[blue]List Tables Tool[/blue] - Reasoning: {reasoning}")
+        console.log(f"[blue]Step: Exploring available tables - {reasoning}[/blue]")
         return [x for x in result.stdout.strip().split("\n") if x]
     except Exception as e:
         console.log(f"[red]Error listing tables: {str(e)}[/red]")
@@ -233,17 +304,7 @@ def list_tables(reasoning: str) -> List[str]:
 
 
 def describe_table(reasoning: str, table_name: str) -> str:
-    """Returns schema information about the specified table.
-
-    The agent uses this to understand table structure and available columns.
-
-    Args:
-        reasoning: Explanation of why we're describing this table
-        table_name: Name of table to describe
-
-    Returns:
-        String containing table schema information
-    """
+    """Returns schema information about the specified table."""
     try:
         result = subprocess.run(
             f'duckdb {TEMP_DB} -c "DESCRIBE {table_name};"',
@@ -251,9 +312,7 @@ def describe_table(reasoning: str, table_name: str) -> str:
             text=True,
             capture_output=True,
         )
-        console.log(
-            f"[blue]Describe Table Tool[/blue] - Table: {table_name} - Reasoning: {reasoning}"
-        )
+        console.log(f"[blue]Step: Analyzing '{table_name}' structure - {reasoning}[/blue]")
         return result.stdout
     except Exception as e:
         console.log(f"[red]Error describing table: {str(e)}[/red]")
@@ -261,18 +320,7 @@ def describe_table(reasoning: str, table_name: str) -> str:
 
 
 def sample_table(reasoning: str, table_name: str, row_sample_size: int) -> str:
-    """Returns a sample of rows from the specified table.
-
-    The agent uses this to understand actual data content and patterns.
-
-    Args:
-        reasoning: Explanation of why we're sampling this table
-        table_name: Name of table to sample from
-        row_sample_size: Number of rows to sample aim for 3-5 rows
-
-    Returns:
-        String containing sample rows in readable format
-    """
+    """Returns a sample of rows from the specified table."""
     try:
         result = subprocess.run(
             f'duckdb {TEMP_DB} -c "SELECT * FROM {table_name} LIMIT {row_sample_size};"',
@@ -280,9 +328,7 @@ def sample_table(reasoning: str, table_name: str, row_sample_size: int) -> str:
             text=True,
             capture_output=True,
         )
-        console.log(
-            f"[blue]Sample Table Tool[/blue] - Table: {table_name} - Rows: {row_sample_size} - Reasoning: {reasoning}"
-        )
+        console.log(f"[blue]Step: Sampling {row_sample_size} rows from '{table_name}' - {reasoning}[/blue]")
         return result.stdout
     except Exception as e:
         console.log(f"[red]Error sampling table: {str(e)}[/red]")
@@ -290,18 +336,7 @@ def sample_table(reasoning: str, table_name: str, row_sample_size: int) -> str:
 
 
 def run_test_sql_query(reasoning: str, sql_query: str) -> str:
-    """Executes a test SQL query and returns results.
-
-    The agent uses this to validate queries before finalizing them.
-    Results are only shown to the agent, not the user.
-
-    Args:
-        reasoning: Explanation of why we're running this test query
-        sql_query: The SQL query to test
-
-    Returns:
-        Query results as a string
-    """
+    """Executes a test SQL query and returns results."""
     try:
         result = subprocess.run(
             f'duckdb {TEMP_DB} -c "{sql_query}"',
@@ -309,8 +344,7 @@ def run_test_sql_query(reasoning: str, sql_query: str) -> str:
             text=True,
             capture_output=True,
         )
-        console.log(f"[blue]Test Query Tool[/blue] - Reasoning: {reasoning}")
-        console.log(f"[dim]Query: {sql_query}[/dim]")
+        console.log(f"[blue]Step: Testing query - {reasoning}[/blue]")
         return result.stdout
     except Exception as e:
         console.log(f"[red]Error running test query: {str(e)}[/red]")
@@ -318,17 +352,7 @@ def run_test_sql_query(reasoning: str, sql_query: str) -> str:
 
 
 def run_final_sql_query(reasoning: str, sql_query: str) -> str:
-    """Executes the final SQL query and returns results to user.
-
-    This is the last tool call the agent should make after validating the query.
-
-    Args:
-        reasoning: Final explanation of how this query satisfies user request
-        sql_query: The SQL query to run
-
-    Returns:
-        Query results as a string
-    """
+    """Executes the final SQL query and returns results to user."""
     try:
         result = subprocess.run(
             f'duckdb {TEMP_DB} -c "{sql_query}"',
@@ -336,11 +360,7 @@ def run_final_sql_query(reasoning: str, sql_query: str) -> str:
             text=True,
             capture_output=True,
         )
-        console.log(
-            Panel(
-                f"[green]Final Query Tool[/green]\nReasoning: {reasoning}\nQuery: {sql_query}"
-            )
-        )
+        console.print(Panel(f"[green]Final Analysis[/green]\n{reasoning}"))
         return result.stdout
     except Exception as e:
         console.log(f"[red]Error running final query: {str(e)}[/red]")
@@ -348,24 +368,18 @@ def run_final_sql_query(reasoning: str, sql_query: str) -> str:
 
 
 def analyze_team_performance(reasoning: str, team_name: str, time_period: Optional[str] = None) -> str:
-    """Analyzes a team's performance over a specified time period.
-
-    Args:
-        reasoning: Explanation of why we're analyzing this team
-        team_name: Name of the team to analyze
-        time_period: Optional time period specification
-
-    Returns:
-        Analysis results as a string
-    """
+    """Analyzes a team's performance over a specified time period."""
     try:
         # Build the SQL query based on the time period
-        time_filter = ""
-        if time_period:
-            if "month" in time_period.lower():
-                time_filter = "AND date >= date_trunc('month', current_date)"
-            elif "last 5" in time_period.lower():
-                time_filter = "LIMIT 5"
+        year_filter = ""
+        if time_period and "last year" in time_period.lower():
+            year_filter = "AND EXTRACT(year FROM date) = EXTRACT(year FROM CURRENT_DATE) - 1"
+        elif time_period and "this year" in time_period.lower():
+            year_filter = "AND EXTRACT(year FROM date) = EXTRACT(year FROM CURRENT_DATE)"
+        elif time_period and "month" in time_period.lower():
+            year_filter = "AND date >= date_trunc('month', current_date)"
+        elif time_period and "last 5" in time_period.lower():
+            year_filter = "LIMIT 5"
 
         query = f"""
         WITH team_games AS (
@@ -386,10 +400,11 @@ def analyze_team_performance(reasoning: str, team_name: str, time_period: Option
                 CASE
                     WHEN home_team = '{team_name}' THEN away_team
                     ELSE home_team
-                END as opponent
+                END as opponent,
+                league
             FROM games
-            WHERE home_team = '{team_name}' OR away_team = '{team_name}'
-            {time_filter}
+            WHERE (home_team = '{team_name}' OR away_team = '{team_name}')
+            {year_filter}
             ORDER BY date DESC
         )
         SELECT
@@ -397,9 +412,13 @@ def analyze_team_performance(reasoning: str, team_name: str, time_period: Option
             SUM(CASE WHEN team_score > opponent_score THEN 1 ELSE 0 END) as wins,
             SUM(CASE WHEN team_score < opponent_score THEN 1 ELSE 0 END) as losses,
             SUM(CASE WHEN team_score = opponent_score THEN 1 ELSE 0 END) as draws,
-            AVG(team_score) as avg_goals_scored,
-            AVG(opponent_score) as avg_goals_conceded
-        FROM team_games;
+            SUM(team_score) as total_goals_scored,
+            SUM(opponent_score) as total_goals_conceded,
+            ROUND(AVG(team_score), 2) as avg_goals_scored,
+            ROUND(AVG(opponent_score), 2) as avg_goals_conceded,
+            STRING_AGG(DISTINCT league, ', ') as leagues_played
+        FROM team_games
+        WHERE team_score IS NOT NULL AND opponent_score IS NOT NULL;
         """
 
         result = subprocess.run(
@@ -408,9 +427,7 @@ def analyze_team_performance(reasoning: str, team_name: str, time_period: Option
             text=True,
             capture_output=True,
         )
-        console.log(
-            f"[blue]Team Analysis Tool[/blue] - Team: {team_name} - Reasoning: {reasoning}"
-        )
+        console.log(f"[blue]Step: Analyzing {team_name}'s performance - {reasoning}[/blue]")
         return result.stdout
     except Exception as e:
         console.log(f"[red]Error analyzing team performance: {str(e)}[/red]")
@@ -418,15 +435,7 @@ def analyze_team_performance(reasoning: str, team_name: str, time_period: Option
 
 
 def get_team_stats(reasoning: str, team_name: str) -> str:
-    """Gets detailed statistics for a specific team.
-
-    Args:
-        reasoning: Explanation of why we need these stats
-        team_name: Name of the team to get stats for
-
-    Returns:
-        Team statistics as a string
-    """
+    """Gets detailed statistics for a specific team."""
     try:
         query = f"""
         WITH team_games AS (
@@ -450,7 +459,8 @@ def get_team_stats(reasoning: str, team_name: str) -> str:
                     ELSE home_team
                 END as opponent
             FROM games
-            WHERE home_team = '{team_name}' OR away_team = '{team_name}'
+            WHERE (home_team = '{team_name}' OR away_team = '{team_name}')
+            AND EXTRACT(year FROM date) = EXTRACT(year FROM CURRENT_DATE) - 1
         )
         SELECT
             league,
@@ -463,6 +473,7 @@ def get_team_stats(reasoning: str, team_name: str) -> str:
             ROUND(AVG(team_score), 2) as avg_goals_scored,
             ROUND(AVG(opponent_score), 2) as avg_goals_conceded
         FROM team_games
+        WHERE team_score IS NOT NULL AND opponent_score IS NOT NULL
         GROUP BY league
         ORDER BY games_played DESC;
         """
@@ -473,12 +484,209 @@ def get_team_stats(reasoning: str, team_name: str) -> str:
             text=True,
             capture_output=True,
         )
-        console.log(
-            f"[blue]Team Stats Tool[/blue] - Team: {team_name} - Reasoning: {reasoning}"
-        )
+        console.log(f"[blue]Step: Getting detailed stats for {team_name} - {reasoning}[/blue]")
         return result.stdout
     except Exception as e:
         console.log(f"[red]Error getting team stats: {str(e)}[/red]")
+        return str(e)
+
+
+def fuzzy_match_team_name(reasoning: str, search_term: str) -> str:
+    """Performs fuzzy matching to find team names similar to the search term."""
+    try:
+        # Use DuckDB's string similarity functions to find potential matches
+        query = f"""
+        WITH all_teams AS (
+            SELECT DISTINCT home_team as team_name FROM games
+            UNION
+            SELECT DISTINCT away_team FROM games
+        ),
+        similarity_scores AS (
+            SELECT
+                team_name,
+                jarowinkler_similarity(LOWER(team_name), LOWER('{search_term}')) as similarity,
+                levenshtein(LOWER(team_name), LOWER('{search_term}')) as edit_distance,
+                (
+                    SELECT COUNT(*)
+                    FROM games
+                    WHERE home_team = team_name OR away_team = team_name
+                ) as total_games
+            FROM all_teams
+            WHERE jarowinkler_similarity(LOWER(team_name), LOWER('{search_term}')) > 0.3
+               OR levenshtein(LOWER(team_name), LOWER('{search_term}')) <= 5
+        )
+        SELECT
+            team_name,
+            ROUND(similarity * 100, 2) as similarity_percentage,
+            edit_distance,
+            total_games
+        FROM similarity_scores
+        ORDER BY similarity DESC, total_games DESC
+        LIMIT 10;
+        """
+
+        result = subprocess.run(
+            f'duckdb {TEMP_DB} -c "{query}"',
+            shell=True,
+            text=True,
+            capture_output=True,
+        )
+
+        if not result.stdout.strip():
+            # If no matches found, get a sample of most active teams
+            sample_query = """
+            WITH team_games AS (
+                SELECT team_name, COUNT(*) as games_played
+                FROM (
+                    SELECT home_team as team_name FROM games
+                    UNION ALL
+                    SELECT away_team FROM games
+                ) t
+                GROUP BY team_name
+            )
+            SELECT team_name, games_played
+            FROM team_games
+            ORDER BY games_played DESC
+            LIMIT 5;
+            """
+            sample_result = subprocess.run(
+                f'duckdb {TEMP_DB} -c "{sample_query}"',
+                shell=True,
+                text=True,
+                capture_output=True,
+            )
+            return f"No teams found matching '{search_term}'. Here are the most active teams in the database:\n{sample_result.stdout}"
+
+        console.log(f"[blue]Step: Found teams matching '{search_term}' - {reasoning}[/blue]")
+        return result.stdout
+    except Exception as e:
+        console.log(f"[red]Error in fuzzy team matching: {str(e)}[/red]")
+        return str(e)
+
+
+def summarize_output(reasoning: str, conversation_json: str, user_request: str) -> str:
+    """Uses GPT-4 to analyze the conversation history and provide a clear, concise summary."""
+    try:
+        # Create a prompt for GPT-4 to analyze the conversation
+        summary_prompt = f"""
+        Please analyze this conversation about soccer data and provide a clear, concise summary.
+
+        Original Request: {user_request}
+
+        Conversation History:
+        {conversation_json}
+
+        Please provide:
+        1. A clear answer to the original request, including:
+           - Overall record (wins-losses-draws)
+           - Goals scored and conceded
+           - Performance trends or notable achievements
+           - Leagues participated in
+        2. Key insights from the data
+        3. Any important context or caveats
+        4. If no exact matches were found for team names, explain what was searched for and suggest how the user might refine their search
+        5. Include examples of actual team names from the database if available
+
+        Format the response in a clear, user-friendly way, using bullet points and sections where appropriate.
+        If showing statistics, present them in an easy-to-read format.
+        """
+
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": summary_prompt}],
+            temperature=0.7,
+        )
+
+        summary = response.choices[0].message.content
+        console.print(Panel(f"[green]Summary[/green]\n{summary}"))
+        return summary
+    except Exception as e:
+        console.log(f"[red]Error summarizing output: {str(e)}[/red]")
+        return str(e)
+
+
+def list_available_teams(reasoning: str, search_term: Optional[str] = None) -> str:
+    """Lists available teams in the database, optionally filtered by a search term."""
+    try:
+        if search_term:
+            # First, log all teams for debugging
+            debug_query = """
+            WITH all_teams AS (
+                SELECT DISTINCT home_team as team_name FROM games
+                UNION
+                SELECT DISTINCT away_team FROM games
+            )
+            SELECT team_name
+            FROM all_teams
+            ORDER BY team_name;
+            """
+            debug_result = subprocess.run(
+                f'duckdb {TEMP_DB} -c "{debug_query}"',
+                shell=True,
+                text=True,
+                capture_output=True,
+            )
+            console.log(f"[blue]Step: Available teams in database:[/blue]\n{debug_result.stdout}")
+
+            # Use fuzzy matching if a search term is provided
+            query = f"""
+            WITH all_teams AS (
+                SELECT DISTINCT home_team as team_name FROM games
+                UNION
+                SELECT DISTINCT away_team FROM games
+            ),
+            similarity_scores AS (
+                SELECT
+                    team_name,
+                    jarowinkler_similarity(LOWER(team_name), LOWER('{search_term}')) as similarity,
+                    levenshtein(LOWER(team_name), LOWER('{search_term}')) as edit_distance
+                FROM all_teams
+                WHERE jarowinkler_similarity(LOWER(team_name), LOWER('{search_term}')) > 0.3
+                   OR levenshtein(LOWER(team_name), LOWER('{search_term}')) <= 5
+            )
+            SELECT
+                team_name,
+                ROUND(similarity * 100, 2) as similarity_percentage,
+                edit_distance
+            FROM similarity_scores
+            ORDER BY similarity DESC, edit_distance ASC
+            LIMIT 10;
+            """
+            console.log(f"[blue]Step: Searching for teams similar to '{search_term}' - {reasoning}[/blue]")
+        else:
+            # List all teams if no search term
+            query = """
+            WITH all_teams AS (
+                SELECT DISTINCT home_team as team_name FROM games
+                UNION
+                SELECT DISTINCT away_team FROM games
+            )
+            SELECT
+                team_name,
+                (
+                    SELECT COUNT(*)
+                    FROM games
+                    WHERE home_team = team_name OR away_team = team_name
+                ) as total_games
+            FROM all_teams
+            ORDER BY total_games DESC
+            LIMIT 25;
+            """
+            console.log(f"[blue]Step: Listing top 25 teams by games played - {reasoning}[/blue]")
+
+        result = subprocess.run(
+            f'duckdb {TEMP_DB} -c "{query}"',
+            shell=True,
+            text=True,
+            capture_output=True,
+        )
+
+        if not result.stdout.strip():
+            return "No teams found in the database."
+
+        return result.stdout
+    except Exception as e:
+        console.log(f"[red]Error listing teams: {str(e)}[/red]")
         return str(e)
 
 
@@ -487,9 +695,37 @@ def process_query(prompt: str, compute_iterations: int = 10) -> QueryResult:
     messages = [{"role": "user", "content": prompt}]
     final_results = []
     final_query = None
+    conversation_history = []
+
+    console.print("\n[blue]Starting query processing...[/blue]")
+    console.print(f"[blue]Input: {prompt}[/blue]")
 
     for iteration in range(compute_iterations):
         try:
+            # Create a descriptive step label based on the conversation history and current state
+            step_label = "Initial Search"  # Default for first step
+            if iteration > 0 and conversation_history:
+                last_action = conversation_history[-1].get("action", "")
+                if "Finding similar team names" in last_action:
+                    step_label = "Team Name Refinement"
+                elif "Discovering available" in last_action:
+                    step_label = "Database Exploration"
+                elif "Testing SQL query" in last_action:
+                    step_label = "Query Validation"
+                elif "Executing final analysis" in last_action:
+                    step_label = "Final Analysis"
+                elif "Calculating team performance" in last_action:
+                    step_label = "Performance Analysis"
+                elif "Gathering detailed team statistics" in last_action:
+                    step_label = "Statistics Compilation"
+                elif "Generating result summary" in last_action:
+                    step_label = "Summary Generation"
+                else:
+                    step_label = f"Chain Step {iteration + 1}"
+
+            console.print(f"\n[blue]Step {iteration + 1}/{compute_iterations} - {step_label}:[/blue]")
+            console.print("[blue]→ Sending request to GPT-4 to determine next action...[/blue]")
+
             response = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=messages,
@@ -505,13 +741,57 @@ def process_query(prompt: str, compute_iterations: int = 10) -> QueryResult:
                     func_name = func_call.name
                     func_args = json.loads(func_call.arguments)
 
+                    # Create a more descriptive action based on the tool being used
+                    action_description = {
+                        "ListTablesArgs": "Discovering available database tables",
+                        "DescribeTableArgs": "Examining table structure",
+                        "SampleTableArgs": "Inspecting sample data",
+                        "RunTestSQLQuery": "Testing SQL query",
+                        "RunFinalSQLQuery": "Executing final analysis query",
+                        "AnalyzeTeamPerformance": "Calculating team performance metrics",
+                        "GetTeamStats": "Gathering detailed team statistics",
+                        "ListAvailableTeams": "Searching for available teams",
+                        "FuzzyTeamNameMatch": "Finding similar team names",
+                        "SummarizeOutput": "Generating result summary"
+                    }.get(func_name, "Executing operation")
+
+                    console.print(f"[blue]→ Action: {action_description}[/blue]")
+                    console.print(f"[blue]→ Details: {func_args.get('reasoning', 'No details provided')}[/blue]")
+
+                    # Store the tool call in conversation history
+                    conversation_history.append({
+                        "tool": func_name,
+                        "args": func_args,
+                        "iteration": iteration,
+                        "action": action_description
+                    })
+
                     if func_name == "RunFinalSQLQuery":
+                        console.print("[green]→ Executing final analysis query...[/green]")
                         final_query = func_args["sql_query"]
                         result = run_final_sql_query(**func_args)
                         if not result:
                             raise ValueError("Empty result from final SQL query")
                         final_results.append(result)
-                        break
+
+                        console.print("[green]→ Compiling comprehensive summary of findings...[/green]")
+                        # After getting final results, summarize everything
+                        summary = summarize_output(
+                            reasoning="Providing a clear summary of all findings",
+                            conversation_json=json.dumps(conversation_history, indent=2),
+                            user_request=prompt.replace(AGENT_PROMPT, "").strip()
+                        )
+
+                        return QueryResult(
+                            sql_query=final_query if final_query else "No SQL query was generated for this request.",
+                            raw_result=final_results[0],
+                            formatted_result=summary,
+                            metadata={
+                                "iterations": iteration + 1,
+                                "conversation_history": conversation_history,
+                                "status": "completed_with_final_query"
+                            }
+                        )
                     else:
                         # Execute other tool calls but don't break
                         result = None
@@ -527,9 +807,16 @@ def process_query(prompt: str, compute_iterations: int = 10) -> QueryResult:
                             result = analyze_team_performance(**func_args)
                         elif func_name == "GetTeamStats":
                             result = get_team_stats(**func_args)
+                        elif func_name == "ListAvailableTeams":
+                            result = list_available_teams(**func_args)
+                        elif func_name == "SummarizeOutput":
+                            result = summarize_output(**func_args)
 
                         if result is None:
                             raise ValueError(f"Tool {func_name} returned no result")
+
+                        # Store the result in conversation history
+                        conversation_history[-1]["result"] = str(result)
 
                         messages.extend([
                             {
@@ -546,16 +833,45 @@ def process_query(prompt: str, compute_iterations: int = 10) -> QueryResult:
         except Exception as e:
             console.print(f"[red]Error in iteration {iteration}: {str(e)}[/red]")
             if iteration == compute_iterations - 1:
-                raise ValueError("Failed to generate a valid query after all iterations") from e
+                console.print("[yellow]Reached maximum iterations, generating summary of findings so far...[/yellow]")
+                # If we've hit max iterations, try to provide a summary anyway
+                try:
+                    summary = summarize_output(
+                        reasoning="Summarizing results after reaching maximum iterations",
+                        conversation_json=json.dumps(conversation_history, indent=2),
+                        user_request=prompt.replace(AGENT_PROMPT, "").strip()
+                    )
+                    return QueryResult(
+                        sql_query=final_query if final_query else "No SQL query was generated for this request.",
+                        raw_result="Maximum iterations reached without finding requested information.",
+                        formatted_result=summary,
+                        metadata={
+                            "iterations": iteration + 1,
+                            "conversation_history": conversation_history,
+                            "status": "max_iterations_reached"
+                        }
+                    )
+                except Exception as summarize_error:
+                    raise ValueError("Failed to generate a valid query and summary after all iterations") from e
             continue
 
-    if not final_results:
-        raise ValueError("No final query result produced")
+    console.print("[yellow]Completed all iterations without final query, generating summary...[/yellow]")
+    # If we somehow get here without returning earlier, summarize and return
+    summary = summarize_output(
+        reasoning="Providing a clear summary of all findings",
+        conversation_json=json.dumps(conversation_history, indent=2),
+        user_request=prompt.replace(AGENT_PROMPT, "").strip()
+    )
 
     return QueryResult(
-        sql_query=final_query,
-        raw_result=final_results[0],
-        metadata={"iterations": iteration + 1}
+        sql_query=final_query if final_query else "No SQL query was generated for this request.",
+        raw_result=final_results[0] if final_results else "No final results produced.",
+        formatted_result=summary,
+        metadata={
+            "iterations": iteration + 1,
+            "conversation_history": conversation_history,
+            "status": "completed_without_final_query"
+        }
     )
 
 
@@ -601,17 +917,30 @@ def main():
     # Initialize DuckDB with the Parquet file
     try:
         # Create a database and load the Parquet file
+        # First, create the database
         result = subprocess.run(
             f'duckdb {TEMP_DB} -c "CREATE TABLE games AS SELECT * FROM read_parquet(\'{DB_PATH}\');"',
             shell=True,
             text=True,
             capture_output=True,
         )
-        if result.returncode != 0:
-            console.print(f"[red]Error initializing database: {result.stderr}[/red]")
+
+        # Verify the data was loaded correctly
+        verify_result = subprocess.run(
+            f'duckdb {TEMP_DB} -c "SELECT COUNT(*) FROM games;"',
+            shell=True,
+            text=True,
+            capture_output=True,
+        )
+
+        if result.returncode != 0 or verify_result.returncode != 0:
+            console.print(f"[red]Error initializing database: {result.stderr or verify_result.stderr}[/red]")
             if os.path.exists(TEMP_DB):
                 os.unlink(TEMP_DB)
             sys.exit(1)
+
+        console.print(f"[green]Successfully loaded {verify_result.stdout.strip()} games into database[/green]")
+
     except Exception as e:
         console.print(f"[red]Error initializing database: {str(e)}[/red]")
         if os.path.exists(TEMP_DB):
@@ -619,184 +948,18 @@ def main():
         sys.exit(1)
 
     try:
-        # Create a single combined prompt based on the full template
-        completed_prompt = AGENT_PROMPT.replace("{{user_request}}", args.prompt)
-        messages = [{"role": "user", "content": completed_prompt}]
+        # Process the query
+        result = process_query(args.prompt, args.compute)
 
-        compute_iterations = 0
-        retry_count = 0
-        MAX_RETRIES = 3
+        # Print the results
+        if result.formatted_result:
+            console.print("\n[green]Analysis Complete[/green]")
+            console.print(result.formatted_result)
+        else:
+            console.print("\n[yellow]No formatted results available[/yellow]")
+            if result.raw_result:
+                console.print(result.raw_result)
 
-        # Main agent loop
-        while True:
-            console.rule(
-                f"[yellow]Agent Loop {compute_iterations+1}/{args.compute} (Retry {retry_count}/{MAX_RETRIES})[/yellow]"
-            )
-            compute_iterations += 1
-
-            if compute_iterations >= args.compute:
-                console.print(
-                    "[yellow]Warning: Reached maximum compute loops without final query[/yellow]"
-                )
-                raise Exception(
-                    f"Maximum compute loops reached: {compute_iterations}/{args.compute}"
-                )
-
-            try:
-                # Generate content with tool support
-                response = openai.chat.completions.create(
-                    model="gpt-4o",
-                    messages=messages,
-                    tools=tools,
-                    tool_choice="auto",
-                )
-
-                if response.choices:
-                    assert len(response.choices) == 1
-                    message = response.choices[0].message
-
-                    if message.function_call:
-                        func_call = message.function_call
-                    elif message.tool_calls and len(message.tool_calls) > 0:
-                        # If a tool_calls list is present, use the first call and extract its function details.
-                        tool_call = message.tool_calls[0]
-                        func_call = tool_call.function
-                    else:
-                        func_call = None
-
-                    if func_call:
-                        func_name = func_call.name
-                        func_args_str = func_call.arguments
-
-                        messages.append(
-                            {
-                                "role": "assistant",
-                                "tool_calls": [
-                                    {
-                                        "id": tool_call.id,
-                                        "type": "function",
-                                        "function": func_call,
-                                    }
-                                ],
-                            }
-                        )
-
-                        console.print(
-                            f"[blue]Function Call:[/blue] {func_name}({func_args_str})"
-                        )
-                        try:
-                            # Validate and parse arguments using the corresponding pydantic model
-                            if func_name == "ListTablesArgs":
-                                args_parsed = ListTablesArgs.model_validate_json(
-                                    func_args_str
-                                )
-                                result = list_tables(reasoning=args_parsed.reasoning)
-                            elif func_name == "DescribeTableArgs":
-                                args_parsed = DescribeTableArgs.model_validate_json(
-                                    func_args_str
-                                )
-                                result = describe_table(
-                                    reasoning=args_parsed.reasoning,
-                                    table_name=args_parsed.table_name,
-                                )
-                            elif func_name == "SampleTableArgs":
-                                args_parsed = SampleTableArgs.model_validate_json(
-                                    func_args_str
-                                )
-                                result = sample_table(
-                                    reasoning=args_parsed.reasoning,
-                                    table_name=args_parsed.table_name,
-                                    row_sample_size=args_parsed.row_sample_size,
-                                )
-                            elif func_name == "RunTestSQLQuery":
-                                args_parsed = RunTestSQLQuery.model_validate_json(
-                                    func_args_str
-                                )
-                                result = run_test_sql_query(
-                                    reasoning=args_parsed.reasoning,
-                                    sql_query=args_parsed.sql_query,
-                                )
-                            elif func_name == "RunFinalSQLQuery":
-                                args_parsed = RunFinalSQLQuery.model_validate_json(
-                                    func_args_str
-                                )
-                                result = run_final_sql_query(
-                                    reasoning=args_parsed.reasoning,
-                                    sql_query=args_parsed.sql_query,
-                                )
-                                console.print("\n[green]Final Results:[/green]")
-                                console.print(result)
-                                return
-                            elif func_name == "AnalyzeTeamPerformance":
-                                args_parsed = AnalyzeTeamPerformance.model_validate_json(
-                                    func_args_str
-                                )
-                                result = analyze_team_performance(
-                                    reasoning=args_parsed.reasoning,
-                                    team_name=args_parsed.team_name,
-                                    time_period=args_parsed.time_period,
-                                )
-                            elif func_name == "GetTeamStats":
-                                args_parsed = GetTeamStats.model_validate_json(
-                                    func_args_str
-                                )
-                                result = get_team_stats(
-                                    reasoning=args_parsed.reasoning,
-                                    team_name=args_parsed.team_name,
-                                )
-                            else:
-                                raise Exception(f"Unknown tool call: {func_name}")
-
-                            console.print(
-                                f"[blue]Function Call Result:[/blue] {func_name}(...) ->\n{result}"
-                            )
-
-                            # Reset retry count on successful function call
-                            retry_count = 0
-
-                            # Append the function call result into our messages as a tool response
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call.id,
-                                    "content": json.dumps({"result": str(result)}),
-                                }
-                            )
-
-                        except Exception as e:
-                            error_msg = f"Argument validation failed for {func_name}: {e}"
-                            console.print(f"[red]{error_msg}[/red]")
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call.id,
-                                    "content": json.dumps({"error": error_msg}),
-                                }
-                            )
-                            retry_count += 1
-                            if retry_count >= MAX_RETRIES:
-                                raise Exception(f"Maximum retries ({MAX_RETRIES}) reached")
-                            continue
-                    else:
-                        # No function call in response, try to recover
-                        retry_count += 1
-                        if retry_count >= MAX_RETRIES:
-                            raise Exception(f"Maximum retries ({MAX_RETRIES}) reached")
-
-                        # Add a recovery message to guide the model
-                        messages.append({
-                            "role": "user",
-                            "content": "Please use one of the available tools to help answer the question. "
-                                     "You can list tables, describe them, analyze team performance, or get team statistics."
-                        })
-                        continue
-
-            except Exception as e:
-                console.print(f"[red]Error in agent loop: {str(e)}[/red]")
-                retry_count += 1
-                if retry_count >= MAX_RETRIES:
-                    raise Exception(f"Maximum retries ({MAX_RETRIES}) reached")
-                continue
     finally:
         # Clean up temporary database
         if os.path.exists(TEMP_DB):
