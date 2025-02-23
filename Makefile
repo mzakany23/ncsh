@@ -79,4 +79,4 @@ query-install:
 
 query-run: query-install
 	@echo "Running LlamaIndex query engine..."
-	source .venv/bin/activate && cd llama_query && python query_engine.py
+	source .venv/bin/activate && cd llama_query && python query_engine.py "$(filter-out $@,$(MAKECMDGOALS))"

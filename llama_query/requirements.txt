@@ -193,6 +193,8 @@ pytz==2025.1
     # via pandas
 pyyaml==6.0.2
     # via llama-index-core
+rapidfuzz==3.12.1
+    # via thefuzz
 regex==2024.11.6
     # via
     #   nltk
@@ -220,6 +222,8 @@ striprtf==0.0.26
     # via llama-index-readers-file
 tenacity==8.5.0
     # via llama-index-core
+thefuzz==0.22.1
+    # via -r requirements.in
 tiktoken==0.9.0
     # via llama-index-core
 tqdm==4.67.1
