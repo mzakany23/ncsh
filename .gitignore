@@ -76,3 +76,4 @@ test_data/
 
 # DuckDB database file
 matches.parquet
+conversation_history.db
