@@ -1,12 +1,8 @@
 import streamlit as st
-import sys
-from pathlib import Path
 import os
-
-# Add the parent directory to Python path to import llama_query
-sys.path.append(str(Path(__file__).parent.parent))
-from llama_query.query_engine import run
-from llama_query.memory import ConversationMemory
+from pathlib import Path
+from query_engine import run
+from memory import ConversationMemory
 
 # Page config
 st.set_page_config(
@@ -19,7 +15,9 @@ st.set_page_config(
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "memory_manager" not in st.session_state:
-    st.session_state.memory_manager = ConversationMemory()
+    st.session_state.memory_manager = ConversationMemory(
+        db_path=Path(__file__).parent / "conversation_history.db"
+    )
 if "session_id" not in st.session_state:
     st.session_state.session_id = st.session_state.memory_manager.create_session()
 

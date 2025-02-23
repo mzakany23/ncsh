@@ -8,11 +8,11 @@ from llama_index.core.indices.struct_store import NLSQLTableQueryEngine
 from llama_index.llms.openai import OpenAI
 from thefuzz import fuzz
 import re
-from . import memory
 from llama_index.core.response import Response
+from memory import ConversationMemory
 
 # Initialize conversation memory
-memory_manager = memory.ConversationMemory()
+memory_manager = ConversationMemory()
 
 
 def download_db_if_not_exists():
@@ -348,6 +348,17 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
 
     def query(self, query_str: str, **kwargs):
         """Override to handle query execution and response formatting."""
+        # Check if this is a request for listing all teams
+        if any(keyword in query_str.lower() for keyword in [
+            'what are the teams', 'list all teams', 'show all teams', 'what teams'
+        ]):
+            teams = get_all_teams(self.sql_database._engine)
+            return self._format_response_with_llm({
+                "teams": teams,
+                "query_type": "teams",
+                "is_club_query": False
+            }, query_str)
+
         # First try to identify a team name
         teams = get_all_teams(self.sql_database._engine)
         team_match = find_best_matching_team(query_str, teams)
@@ -382,6 +393,10 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
 
     def _format_response_with_llm(self, data, query_str: str) -> str:
         """Use LLM to format the response based on the query and data."""
+        if data.get("query_type") == "teams":
+            teams_list = "\n".join([f"- {team}" for team in sorted(data.get("teams", []))])
+            return f"Here are all the teams in the database:\n\n{teams_list}"
+
         if (data.get("query_type") == "stats" and not data.get("stats")) or \
            (data.get("query_type") == "matches" and not data.get("matches")):
             return "No results found. Please check your query or try a different team name."

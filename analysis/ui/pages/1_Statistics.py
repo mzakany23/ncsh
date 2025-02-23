@@ -1,14 +1,9 @@
 import streamlit as st
-import sys
-from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 from sqlalchemy import text
 import pandas as pd
-
-# Add the parent directory to Python path to import llama_query
-sys.path.append(str(Path(__file__).parent.parent.parent))
-from llama_query.query_engine import setup_database
+from llama_query import setup_database
 
 # Page config
 st.set_page_config(

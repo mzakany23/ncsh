@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-install query-run ui-install ui-run
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-llama
 
 # Clean up data directories
 clean-data:
@@ -30,17 +30,11 @@ compile-requirements:
 	@echo "Compiling requirements..."
 	cd scraping && uv pip compile requirements.in -o requirements.txt
 	cd processing && uv pip compile requirements.in -o requirements.txt
-	cd analysis && uv pip compile requirements.in -o requirements.txt
-	cd llama_query && uv pip compile requirements.in -o requirements.txt
-	cd ui && uv pip compile requirements.in -o requirements.txt
 
 install: venv compile-requirements
 	@echo "Installing dependencies..."
 	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
-	cd processing && uv pip install -r requirements.txt
-	cd analysis && uv pip install -r requirements.txt
-	cd llama_query && uv pip install -r requirements.txt
-	cd ui && uv pip install -r requirements.txt
+	cd processing && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
 
 test: install
 	@echo "Running tests..."
@@ -51,14 +45,11 @@ lint: install
 	@echo "Running linter..."
 	source .venv/bin/activate && cd scraping && ruff check ncsoccer tests
 	source .venv/bin/activate && cd processing && ruff check .
-	source .venv/bin/activate && cd ui && ruff check .
 
 format: install
 	@echo "Running formatter..."
 	source .venv/bin/activate && cd scraping && ruff format ncsoccer tests
 	source .venv/bin/activate && cd processing && ruff format .
-	source .venv/bin/activate && cd analysis && ruff format .
-	source .venv/bin/activate && cd ui && ruff format .
 
 deploy-scraper: compile-requirements
 	cd terraform/infrastructure && terraform apply -target=aws_lambda_function.ncsoccer_scraper
@@ -77,18 +68,6 @@ process-data:
 	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
 		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-processing
 
-query-install:
-	@echo "Installing LlamaIndex query dependencies..."
-	cd llama_query && uv pip install -r requirements.txt
-
-query-run: query-install
+query-llama:
 	@echo "Running LlamaIndex query engine..."
-	source .venv/bin/activate && cd llama_query && python query_engine.py $(if $(SESSION_ID),--session-id $(SESSION_ID),) "$(filter-out $@,$(MAKECMDGOALS))"
-
-ui-install:
-	@echo "Installing UI dependencies..."
-	cd ui && uv pip install -r requirements.txt
-
-ui-run: ui-install
-	@echo "Running Streamlit UI..."
-	source .venv/bin/activate && cd ui && streamlit run Home.py
+	cd analysis && python query_engine.py "$(query)"
