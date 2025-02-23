@@ -177,12 +177,15 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
         """Override to provide table context."""
         return "Table 'matches' contains soccer match data with columns: date, home_team, away_team, home_score, away_score"
 
-    def _get_team_stats(self, team_name=None):
-        """Get comprehensive team statistics."""
+    def _get_team_stats(self, team_name=None, is_club_query=False):
+        """Get comprehensive team statistics. If is_club_query is True, combines stats for all divisions."""
         sql = """
         WITH team_matches AS (
           SELECT
-            home_team as team,
+            CASE
+              WHEN {is_club} THEN REGEXP_REPLACE(home_team, '\\s*\\(\\d+\\)\\s*$', '')
+              ELSE home_team
+            END as team,
             date,
             home_score as goals_for,
             away_score as goals_against,
@@ -196,7 +199,10 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
           {team_filter_home}
           UNION ALL
           SELECT
-            away_team as team,
+            CASE
+              WHEN {is_club} THEN REGEXP_REPLACE(away_team, '\\s*\\(\\d+\\)\\s*$', '')
+              ELSE away_team
+            END as team,
             date,
             away_score as goals_for,
             home_score as goals_against,
@@ -238,15 +244,20 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
         {order_and_limit}
         """
 
-        # Add team filter if specified
-        team_filter_home = f"AND home_team = '{team_name}'" if team_name else ""
-        team_filter_away = f"AND away_team = '{team_name}'" if team_name else ""
+        # Add team filter based on whether this is a club query or not
+        if is_club_query:
+            team_filter_home = f"AND REGEXP_REPLACE(home_team, '\\s*\\(\\d+\\)\\s*$', '') = '{team_name}'" if team_name else ""
+            team_filter_away = f"AND REGEXP_REPLACE(away_team, '\\s*\\(\\d+\\)\\s*$', '') = '{team_name}'" if team_name else ""
+        else:
+            team_filter_home = f"AND home_team = '{team_name}'" if team_name else ""
+            team_filter_away = f"AND away_team = '{team_name}'" if team_name else ""
 
         # Add ordering and limit
         order_and_limit = "ORDER BY games_played DESC, wins DESC LIMIT 10" if not team_name else ""
 
         # Format the SQL query
         sql = sql.format(
+            is_club=str(is_club_query).lower(),
             team_filter_home=team_filter_home,
             team_filter_away=team_filter_away,
             order_and_limit=order_and_limit
@@ -263,34 +274,77 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
 
         return rows
 
-    def _format_response_with_llm(self, data, query_str: str) -> str:
-        """Use LLM to format the response based on the query and data."""
-        if not data:
-            return "No results found. Please check your query or try a different team name."
+    def _get_team_matches(self, team_name, is_club_query=False, time_filter=""):
+        """Get individual matches for a team or club."""
+        sql = """
+        WITH all_matches AS (
+            SELECT
+                date,
+                home_team,
+                away_team,
+                home_score,
+                away_score,
+                REGEXP_REPLACE(home_team, '\\s*\\(\\d+\\)\\s*$', '') as clean_home_team,
+                REGEXP_REPLACE(away_team, '\\s*\\(\\d+\\)\\s*$', '') as clean_away_team,
+                CASE
+                    WHEN home_team LIKE '%' || :team || '(%' OR
+                         away_team LIKE '%' || :team || '(%' THEN '(Division 2)'
+                    ELSE '(Division 1)'
+                END as division,
+                CASE
+                    WHEN home_team LIKE '%' || :team || '%' THEN 'Home'
+                    ELSE 'Away'
+                END as venue,
+                CASE
+                    WHEN (home_team LIKE '%' || :team || '%' AND home_score > away_score) OR
+                         (away_team LIKE '%' || :team || '%' AND away_score > home_score) THEN 'W'
+                    WHEN home_score = away_score THEN 'D'
+                    ELSE 'L'
+                END as result
+            FROM matches
+            WHERE ({where_clause})
+            AND date >= CURRENT_DATE - INTERVAL '1 month'
+            ORDER BY division, date DESC
+        )
+        SELECT
+            date,
+            home_team,
+            away_team,
+            home_score,
+            away_score,
+            division,
+            venue,
+            result,
+            CASE
+                WHEN home_score IS NOT NULL AND away_score IS NOT NULL
+                THEN home_score || ' - ' || away_score
+                ELSE 'Scheduled'
+            END as score_display
+        FROM all_matches
+        """
 
-        # Create a prompt that includes the query and data
-        prompt = f"""Given the following query and soccer team statistics, generate a natural response that directly answers the query.
-Only include information that is relevant to the query. Format numbers nicely (e.g., percentages with one decimal place).
+        # Construct WHERE clause based on whether this is a club query or not
+        if is_club_query:
+            where_clause = """
+                REGEXP_REPLACE(home_team, '\s*\(\d+\)\s*$', '') = :team OR
+                REGEXP_REPLACE(away_team, '\s*\(\d+\)\s*$', '') = :team
+            """
+        else:
+            where_clause = "home_team = :team OR away_team = :team"
 
-Query: {query_str}
+        # Format the SQL query
+        sql = sql.format(where_clause=where_clause)
 
-Raw Statistics:
-{data}
+        print("\nGenerated SQL:")
+        print(sql)
 
-Instructions:
-1. If the query asks for specific metrics (e.g., "how many games", "win percentage"), focus on those numbers
-2. If the query asks for a general overview or comparison, include relevant statistics
-3. If the query asks for a table, format it in markdown
-4. Keep the response concise but informative
-5. Include context where helpful (e.g., "this year" when talking about games played)
-6. Round percentages to one decimal place
-7. If showing a table, include a brief summary of key points below it
+        # Execute the query
+        with self.sql_database._engine.connect() as conn:
+            result = conn.execute(text(sql), {"team": team_name})
+            columns = result.keys()
+            rows = [dict(zip(columns, row)) for row in result.fetchall()]
 
-Response:"""
-
-        # Get response from LLM
-        response = self.llm.complete(prompt)
-        return response.text
+        return rows
 
     def query(self, query_str: str, **kwargs):
         """Override to handle query execution and response formatting."""
@@ -298,13 +352,70 @@ Response:"""
         teams = get_all_teams(self.sql_database._engine)
         team_match = find_best_matching_team(query_str, teams)
 
-        # Get statistics (either for specific team or top teams)
+        # Get team name if found
         team_name = team_match[1] if team_match else None
-        stats = self._get_team_stats(team_name)
 
-        # Format response using LLM
-        response = self._format_response_with_llm(stats, query_str)
-        return response
+        # Check if this is a club-level query
+        is_club_query = 'club' in query_str.lower()
+
+        # Check if this is a request for individual matches
+        is_match_list_query = any(keyword in query_str.lower() for keyword in [
+            'individual', 'each game', 'all games', 'matches', 'schedule', 'results'
+        ])
+
+        if is_match_list_query and team_name:
+            # Get individual matches
+            matches = self._get_team_matches(team_name, is_club_query)
+            return self._format_response_with_llm({
+                "matches": matches,
+                "query_type": "matches",
+                "is_club_query": is_club_query
+            }, query_str)
+        else:
+            # Get aggregate statistics
+            stats = self._get_team_stats(team_name, is_club_query)
+            return self._format_response_with_llm({
+                "stats": stats,
+                "query_type": "stats",
+                "is_club_query": is_club_query
+            }, query_str)
+
+    def _format_response_with_llm(self, data, query_str: str) -> str:
+        """Use LLM to format the response based on the query and data."""
+        if (data.get("query_type") == "stats" and not data.get("stats")) or \
+           (data.get("query_type") == "matches" and not data.get("matches")):
+            return "No results found. Please check your query or try a different team name."
+
+        # Create a prompt that includes the query and data
+        prompt = f"""Given the following query and soccer data, generate a natural response that directly answers the query.
+Only include information that is relevant to the query. Format numbers nicely (e.g., percentages with one decimal place).
+
+Query: {query_str}
+
+Data Type: {data.get('query_type')}
+Is Club Query: {data.get('is_club_query')}
+Raw Data:
+{data.get('stats') if data.get('query_type') == 'stats' else data.get('matches')}
+
+Instructions:
+1. If showing matches (query_type = matches):
+   - Format as a table with columns: Date, Home Team, Away Team, Score, Result
+   - Use markdown table format
+   - Show matches in chronological order
+   - Include a brief summary below the table
+   - If this is a club query, group matches by division
+2. If showing statistics (query_type = stats):
+   - If this is a club query, mention these are combined stats for all divisions
+   - Follow the previous formatting rules for statistics
+3. Keep the response concise but informative
+4. Include context where helpful (e.g., "this month" when talking about recent matches)
+5. For match results, indicate if it was a home or away game
+
+Response:"""
+
+        # Get response from LLM
+        response = self.llm.complete(prompt)
+        return response.text
 
 
 def setup_query_engine(engine, conversation_history=""):
