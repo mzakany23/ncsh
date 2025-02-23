@@ -1,12 +1,9 @@
 import os
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from llama_index.core import SQLDatabase
 from llama_index.core.indices.struct_store import NLSQLTableQueryEngine
 from llama_index.llms.openai import OpenAI
 
-# Load environment variables
-load_dotenv()
 
 def setup_database():
     """Set up the DuckDB database with a sample table."""

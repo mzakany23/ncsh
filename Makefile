@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-install query-run
 
 # Clean up data directories
 clean-data:
@@ -31,12 +31,14 @@ compile-requirements:
 	cd scraping && uv pip compile requirements.in -o requirements.txt
 	cd processing && uv pip compile requirements.in -o requirements.txt
 	cd analysis && uv pip compile requirements.in -o requirements.txt
+	cd llama_query && uv pip compile requirements.in -o requirements.txt
 
 install: venv compile-requirements
 	@echo "Installing dependencies..."
 	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
 	cd processing && uv pip install -r requirements.txt
 	cd analysis && uv pip install -r requirements.txt
+	cd llama_query && uv pip install -r requirements.txt
 
 test: install
 	@echo "Running tests..."
@@ -70,3 +72,11 @@ scrape-month:
 process-data:
 	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
 		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-processing
+
+query-install:
+	@echo "Installing LlamaIndex query dependencies..."
+	cd llama_query && uv pip install -r requirements.txt
+
+query-run: query-install
+	@echo "Running LlamaIndex query engine..."
+	source .venv/bin/activate && cd llama_query && python query_engine.py
