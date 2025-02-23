@@ -73,3 +73,6 @@ override.tf.json
 test_data/
 !tests/data/html/2024-03-01.html
 .windsurfrules
+
+# DuckDB database file
+matches.parquet
