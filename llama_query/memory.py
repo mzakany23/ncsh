@@ -51,7 +51,7 @@ class ConversationMemory:
                 (session_id, query, response, json.dumps(context) if context else None)
             )
 
-    def get_session_history(self, session_id, limit=5):
+    def get_session_history(self, session_id, limit=10):
         """Get the conversation history for a session."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
@@ -66,33 +66,41 @@ class ConversationMemory:
             )
             return cursor.fetchall()
 
-    def format_context(self, session_id, limit=5):
+    def format_context(self, session_id, limit=3):
         """Format the conversation history as context for the next query."""
         history = self.get_session_history(session_id, limit)
         if not history:
             return ""
 
-        context = ["Previous conversation context:"]
+        context_parts = ["Previous conversation context:"]
 
         # Track the most recently mentioned team
         last_team = None
+        last_query_type = None  # Track if we were discussing matches or stats
 
         for query, response, stored_context in reversed(history):
-            context.append(f"\nQ: {query}")
-            context.append(f"A: {response}")
+            # Add query and response
+            context_parts.append(f"\nUser: {query}")
+            context_parts.append(f"Assistant: {response}")
 
-            # Extract team information from context if available
+            # Extract context information
             if stored_context:
                 try:
                     ctx = json.loads(stored_context)
-                    if ctx.get("matched_team") and ctx["matched_team"] != query:
+                    if ctx.get("matched_team"):
                         last_team = ctx["matched_team"]
+                    if ctx.get("query_type"):
+                        last_query_type = ctx["query_type"]
                 except json.JSONDecodeError:
                     pass
 
-        # Add the last mentioned team as additional context
+        # Add contextual hints
         if last_team:
-            context.append(f"\nMost recently discussed team: {last_team}")
-            context.append("Use this team name for any follow-up questions about 'they' or 'their' performance.")
+            context_parts.append(f"\nMost recently discussed team: {last_team}")
+            context_parts.append("Use this team name for follow-up questions about 'they' or 'their' performance.")
 
-        return "\n".join(context)
+        if last_query_type:
+            context_parts.append(f"Previous query type: {last_query_type}")
+            context_parts.append("Consider this context for interpreting follow-up questions.")
+
+        return "\n".join(context_parts)

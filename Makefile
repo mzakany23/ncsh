@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-install query-run
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-install query-run ui-install ui-run
 
 # Clean up data directories
 clean-data:
@@ -32,6 +32,7 @@ compile-requirements:
 	cd processing && uv pip compile requirements.in -o requirements.txt
 	cd analysis && uv pip compile requirements.in -o requirements.txt
 	cd llama_query && uv pip compile requirements.in -o requirements.txt
+	cd ui && uv pip compile requirements.in -o requirements.txt
 
 install: venv compile-requirements
 	@echo "Installing dependencies..."
@@ -39,6 +40,7 @@ install: venv compile-requirements
 	cd processing && uv pip install -r requirements.txt
 	cd analysis && uv pip install -r requirements.txt
 	cd llama_query && uv pip install -r requirements.txt
+	cd ui && uv pip install -r requirements.txt
 
 test: install
 	@echo "Running tests..."
@@ -49,12 +51,14 @@ lint: install
 	@echo "Running linter..."
 	source .venv/bin/activate && cd scraping && ruff check ncsoccer tests
 	source .venv/bin/activate && cd processing && ruff check .
+	source .venv/bin/activate && cd ui && ruff check .
 
 format: install
 	@echo "Running formatter..."
 	source .venv/bin/activate && cd scraping && ruff format ncsoccer tests
 	source .venv/bin/activate && cd processing && ruff format .
 	source .venv/bin/activate && cd analysis && ruff format .
+	source .venv/bin/activate && cd ui && ruff format .
 
 deploy-scraper: compile-requirements
 	cd terraform/infrastructure && terraform apply -target=aws_lambda_function.ncsoccer_scraper
@@ -80,3 +84,11 @@ query-install:
 query-run: query-install
 	@echo "Running LlamaIndex query engine..."
 	source .venv/bin/activate && cd llama_query && python query_engine.py $(if $(SESSION_ID),--session-id $(SESSION_ID),) "$(filter-out $@,$(MAKECMDGOALS))"
+
+ui-install:
+	@echo "Installing UI dependencies..."
+	cd ui && uv pip install -r requirements.txt
+
+ui-run: ui-install
+	@echo "Running Streamlit UI..."
+	source .venv/bin/activate && cd ui && streamlit run Home.py

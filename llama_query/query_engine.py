@@ -8,7 +8,7 @@ from llama_index.core.indices.struct_store import NLSQLTableQueryEngine
 from llama_index.llms.openai import OpenAI
 from thefuzz import fuzz
 import re
-import memory
+from . import memory
 from llama_index.core.response import Response
 
 # Initialize conversation memory
