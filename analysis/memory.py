@@ -104,3 +104,62 @@ class ConversationMemory:
             context_parts.append("Consider this context for interpreting follow-up questions.")
 
         return "\n".join(context_parts)
+
+    def get_last_team(self, session_id=None):
+        """Get the most recently discussed team."""
+        if session_id is None:
+            # Get the most recent session
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT session_id FROM sessions ORDER BY last_updated DESC LIMIT 1"
+                )
+                result = cursor.fetchone()
+                if not result:
+                    return None
+                session_id = result[0]
+
+        # Get the most recent interaction with a team context
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT context
+                FROM conversations
+                WHERE session_id = ?
+                  AND context IS NOT NULL
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (session_id,)
+            )
+            result = cursor.fetchone()
+            if not result or not result[0]:
+                return None
+
+            try:
+                context = json.loads(result[0])
+                return context.get("matched_team")
+            except json.JSONDecodeError:
+                return None
+
+    def set_last_team(self, team_name, session_id=None):
+        """Set the most recently discussed team."""
+        if session_id is None:
+            # Get the most recent session
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT session_id FROM sessions ORDER BY last_updated DESC LIMIT 1"
+                )
+                result = cursor.fetchone()
+                if not result:
+                    session_id = self.create_session()
+                else:
+                    session_id = result[0]
+
+        # Add a context update
+        context = {"matched_team": team_name}
+        self.add_interaction(
+            session_id=session_id,
+            query="",  # Empty query since this is just a context update
+            response="",  # Empty response since this is just a context update
+            context=context
+        )
