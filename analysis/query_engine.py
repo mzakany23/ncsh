@@ -1007,6 +1007,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                             away_score,
                             'home' as venue,
                             CASE
+                                WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                                 WHEN home_score > away_score THEN 'W'
                                 WHEN home_score = away_score THEN 'D'
                                 ELSE 'L'
@@ -1026,6 +1027,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                             away_score,
                             'away' as venue,
                             CASE
+                                WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                                 WHEN away_score > home_score THEN 'W'
                                 WHEN away_score = home_score THEN 'D'
                                 ELSE 'L'
@@ -1095,6 +1097,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                         home_score as goals_for,
                         away_score as goals_against,
                         CASE
+                            WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                             WHEN home_score > away_score THEN 'W'
                             WHEN home_score = away_score THEN 'D'
                             ELSE 'L'
@@ -1111,6 +1114,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                         away_score as goals_for,
                         home_score as goals_against,
                         CASE
+                            WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                             WHEN away_score > home_score THEN 'W'
                             WHEN away_score = home_score THEN 'D'
                             ELSE 'L'
@@ -1126,10 +1130,11 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                         COUNT(CASE WHEN result = 'W' THEN 1 END) as wins,
                         COUNT(CASE WHEN result = 'D' THEN 1 END) as draws,
                         COUNT(CASE WHEN result = 'L' THEN 1 END) as losses,
-                        SUM(goals_for) as goals_scored,
-                        SUM(goals_against) as goals_conceded,
-                        SUM(goals_for) - SUM(goals_against) as goal_difference,
-                        ROUND(100.0 * COUNT(CASE WHEN result = 'W' THEN 1 END) / NULLIF(COUNT(*), 0), 1) as win_percentage
+                        COUNT(CASE WHEN result = 'N/P' THEN 1 END) as not_played,
+                        SUM(CASE WHEN goals_for IS NOT NULL THEN goals_for ELSE 0 END) as goals_scored,
+                        SUM(CASE WHEN goals_against IS NOT NULL THEN goals_against ELSE 0 END) as goals_conceded,
+                        SUM(CASE WHEN goals_for IS NOT NULL AND goals_against IS NOT NULL THEN goals_for - goals_against ELSE 0 END) as goal_difference,
+                        ROUND(100.0 * COUNT(CASE WHEN result = 'W' THEN 1 END) / NULLIF(COUNT(CASE WHEN result IN ('W', 'D', 'L') THEN 1 END), 0), 1) as win_percentage
                     FROM team_matches
                     GROUP BY team_name
                     HAVING COUNT(*) > 0
@@ -1212,8 +1217,9 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                         REGEXP_REPLACE(away_team, '\\s*\\(\\d+\\)\\s*$', '') as opponent,
                         home_score as goals_for,
                         away_score as goals_against,
-                        home_score - away_score as score_margin,
+                        CASE WHEN home_score IS NOT NULL AND away_score IS NOT NULL THEN home_score - away_score ELSE NULL END as score_margin,
                         CASE
+                            WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                             WHEN home_score > away_score THEN 'W'
                             WHEN home_score = away_score THEN 'D'
                             ELSE 'L'
@@ -1231,8 +1237,9 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                         REGEXP_REPLACE(home_team, '\\s*\\(\\d+\\)\\s*$', '') as opponent,
                         away_score as goals_for,
                         home_score as goals_against,
-                        away_score - home_score as score_margin,
+                        CASE WHEN away_score IS NOT NULL AND home_score IS NOT NULL THEN away_score - home_score ELSE NULL END as score_margin,
                         CASE
+                            WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                             WHEN away_score > home_score THEN 'W'
                             WHEN away_score = home_score THEN 'D'
                             ELSE 'L'
@@ -1248,12 +1255,13 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                         COUNT(CASE WHEN result = 'W' THEN 1 END) as wins,
                         COUNT(CASE WHEN result = 'D' THEN 1 END) as draws,
                         COUNT(CASE WHEN result = 'L' THEN 1 END) as losses,
-                        SUM(goals_for) as goals_scored,
-                        SUM(goals_against) as goals_conceded,
-                        SUM(goals_against) - SUM(goals_for) as goal_difference,
-                        ROUND(AVG(score_margin), 2) as avg_margin,
+                        COUNT(CASE WHEN result = 'N/P' THEN 1 END) as not_played,
+                        SUM(CASE WHEN goals_for IS NOT NULL THEN goals_for ELSE 0 END) as goals_scored,
+                        SUM(CASE WHEN goals_against IS NOT NULL THEN goals_against ELSE 0 END) as goals_conceded,
+                        SUM(CASE WHEN goals_for IS NOT NULL AND goals_against IS NOT NULL THEN goals_against - goals_for ELSE 0 END) as goal_difference,
+                        AVG(CASE WHEN score_margin IS NOT NULL THEN score_margin ELSE NULL END) as avg_margin,
                         ROUND(100.0 * COUNT(CASE WHEN result = 'L' THEN 1 END) /
-                              NULLIF(COUNT(*), 0), 1) as loss_percentage
+                              NULLIF(COUNT(CASE WHEN result IN ('W', 'D', 'L') THEN 1 END), 0), 1) as loss_percentage
                     FROM team_matches
                     GROUP BY opponent
                     HAVING COUNT(*) > 0  -- Ensure at least one match played
@@ -1295,11 +1303,12 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                     -- Matches where the team played as home
                     SELECT
                         date,
-                        home_team,
-                        away_team,
+                        REGEXP_REPLACE(home_team, '\\s*\\(\\d+\\)\\s*$', '') as team,
+                        REGEXP_REPLACE(away_team, '\\s*\\(\\d+\\)\\s*$', '') as opponent,
                         home_score as goals_for,
                         away_score as goals_against,
                         CASE
+                            WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                             WHEN home_score > away_score THEN 'W'
                             WHEN home_score = away_score THEN 'D'
                             ELSE 'L'
@@ -1313,11 +1322,12 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                     -- Matches where the team played as away
                     SELECT
                         date,
-                        home_team,
-                        away_team,
+                        REGEXP_REPLACE(away_team, '\\s*\\(\\d+\\)\\s*$', '') as team,
+                        REGEXP_REPLACE(home_team, '\\s*\\(\\d+\\)\\s*$', '') as opponent,
                         away_score as goals_for,
                         home_score as goals_against,
                         CASE
+                            WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                             WHEN away_score > home_score THEN 'W'
                             WHEN away_score = home_score THEN 'D'
                             ELSE 'L'
@@ -1331,11 +1341,12 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                     COUNT(CASE WHEN result = 'W' THEN 1 END) as wins,
                     COUNT(CASE WHEN result = 'D' THEN 1 END) as draws,
                     COUNT(CASE WHEN result = 'L' THEN 1 END) as losses,
-                    SUM(goals_for) as total_goals_scored,
-                    SUM(goals_against) as total_goals_conceded,
-                    SUM(goals_for) - SUM(goals_against) as goal_difference,
+                    COUNT(CASE WHEN result = 'N/P' THEN 1 END) as not_played,
+                    SUM(CASE WHEN goals_for IS NOT NULL THEN goals_for ELSE 0 END) as total_goals_scored,
+                    SUM(CASE WHEN goals_against IS NOT NULL THEN goals_against ELSE 0 END) as total_goals_conceded,
+                    SUM(CASE WHEN goals_for IS NOT NULL AND goals_against IS NOT NULL THEN goals_for - goals_against ELSE 0 END) as goal_difference,
                     ROUND(100.0 * COUNT(CASE WHEN result = 'W' THEN 1 END) /
-                          NULLIF(COUNT(*), 0), 1) as win_percentage
+                          NULLIF(COUNT(CASE WHEN result IN ('W', 'D', 'L') THEN 1 END), 0), 1) as win_percentage
                 FROM team_matches
                 """
                 return sql.strip()
@@ -1355,6 +1366,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                             away_score as goals_against,
                             'home' as venue,
                             CASE
+                                WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                                 WHEN home_score > away_score THEN 'W'
                                 WHEN home_score = away_score THEN 'D'
                                 ELSE 'L'
@@ -1374,6 +1386,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                             home_score as goals_against,
                             'away' as venue,
                             CASE
+                                WHEN home_score IS NULL OR away_score IS NULL THEN 'N/P'
                                 WHEN away_score > home_score THEN 'W'
                                 WHEN away_score = home_score THEN 'D'
                                 ELSE 'L'
@@ -1462,23 +1475,38 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 venue = match.get('venue', '')
                 result = match.get('result', '')
 
+                # Handle not played games
+                score_display = f"{home_score}-{away_score}" if home_score is not None and away_score is not None else "N/A"
+
                 # Format the match differently based on whether a specific team was queried
                 if team_name:
                     # For specific team queries, highlight their results
                     opponent = away_team if home_team.startswith(team_name) else home_team
-                    scored = home_score if venue == 'home' else away_score
-                    conceded = away_score if venue == 'home' else home_score
 
-                    match_results.append(
-                        f"- {date}: vs {opponent} ({venue})\n"
-                        f"  Score: {scored}-{conceded} ({result})"
-                    )
+                    if result == 'N/P':
+                        match_results.append(
+                            f"- {date}: vs {opponent} ({venue})\n"
+                            f"  Status: Not played (scheduled)"
+                        )
+                    else:
+                        scored = home_score if venue == 'home' else away_score
+                        conceded = away_score if venue == 'home' else home_score
+                        match_results.append(
+                            f"- {date}: vs {opponent} ({venue})\n"
+                            f"  Score: {scored}-{conceded} ({result})"
+                        )
                 else:
                     # For general match listing
-                    match_results.append(
-                        f"- {date}: {home_team} vs {away_team}\n"
-                        f"  Score: {home_score}-{away_score}"
-                    )
+                    if home_score is None or away_score is None:
+                        match_results.append(
+                            f"- {date}: {home_team} vs {away_team}\n"
+                            f"  Status: Not played (scheduled)"
+                        )
+                    else:
+                        match_results.append(
+                            f"- {date}: {home_team} vs {away_team}\n"
+                            f"  Score: {home_score}-{away_score}"
+                        )
 
             # Fix the f-string syntax
             title = f"{team_name}'s matches {time_display}:" if team_name else f"All matches {time_display}:"
@@ -1500,10 +1528,12 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 away_score = match_data.get('away_score', 0)
                 total_goals = match_data.get('total_goals', 0)
 
-                match_results.append(
-                    f"- {date}: {home_team} vs {away_team}\n"
-                    f"  Score: {home_score}-{away_score} (total: {total_goals} goals)"
-                )
+                # Only include games that were actually played
+                if home_score is not None and away_score is not None:
+                    match_results.append(
+                        f"- {date}: {home_team} vs {away_team}\n"
+                        f"  Score: {home_score}-{away_score} (total: {total_goals} goals)"
+                    )
 
             if match_results:
                 base_response = f"Highest scoring games {time_display}:\n\n" + "\n\n".join(match_results)
@@ -1533,6 +1563,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 wins = team_stats.get('wins', 0)
                 draws = team_stats.get('draws', 0)
                 losses = team_stats.get('losses', 0)
+                not_played = team_stats.get('not_played', 0)
                 goals_scored = team_stats.get('goals_scored', 0)
                 win_pct = team_stats.get('win_percentage', 0)
 
@@ -1547,9 +1578,12 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 else:
                     metric_value = matches
 
+                # Calculate played matches (excluding scheduled/not played)
+                played_matches = matches - not_played
+
                 team_results.append(
                     f"{i+1}. {team}: {metric_value} {ranking_metric_display}\n"
-                    f"   Record: {wins}W-{draws}D-{losses}L in {matches} matches\n"
+                    f"   Record: {wins}W-{draws}D-{losses}L in {played_matches} played matches ({not_played} scheduled/not played)\n"
                     f"   Goals: {goals_scored} scored, Win rate: {win_pct}%"
                 )
 
@@ -1620,12 +1654,17 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                     wins = opponent.get('wins', 0)
                     draws = opponent.get('draws', 0)
                     losses = opponent.get('losses', 0)
+                    not_played = opponent.get('not_played', 0)
                     goals_scored = opponent.get('goals_scored', 0)
                     goals_conceded = opponent.get('goals_conceded', 0)
                     loss_pct = opponent.get('loss_percentage', 0)
 
+                    # Calculate played matches
+                    played_matches = games - not_played
+
                     opponent_results.append(
-                        f"- {opp_name}: {team_name} played {games} matches with a record of {wins}W-{draws}D-{losses}L\n"
+                        f"- {opp_name}: {team_name} played {played_matches} matches with a record of {wins}W-{draws}D-{losses}L\n"
+                        f"  ({not_played} scheduled matches not played)\n"
                         f"  Goals: {goals_scored} scored, {goals_conceded} conceded\n"
                         f"  Loss percentage: {loss_pct}%"
                     )
@@ -1640,7 +1679,11 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             # Format match listing
             matches = []
             for match in results:
-                matches.append(f"- {match['date']}: {match['matchup']} ({match['goals_for']}-{match['goals_against']}, {match['result']})")
+                result = match.get('result', '')
+                if result == 'N/P':
+                    matches.append(f"- {match['date']}: {match['matchup']} (Not played)")
+                else:
+                    matches.append(f"- {match['date']}: {match['matchup']} ({match['goals_for']}-{match['goals_against']}, {result})")
 
             base_response = f"{team_name}'s matches {time_display}:\n" + "\n".join(matches)
 
@@ -1701,6 +1744,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             wins = stats.get('wins', 0)
             draws = stats.get('draws', 0)
             losses = stats.get('losses', 0)
+            not_played = stats.get('not_played', 0)
             goals_scored = stats.get('total_goals_scored', 0) or stats.get('goals_scored', 0)
             goals_conceded = stats.get('total_goals_conceded', 0) or stats.get('goals_conceded', 0)
             win_percentage = stats.get('win_percentage', 0)
@@ -1708,8 +1752,11 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             if total_matches == 0:
                 return f"{team_name} has not played any matches {time_display}."
 
+            # Calculate played matches
+            played_matches = total_matches - not_played
+
             base_response = f"{team_name}'s performance {time_display}:\n"
-            base_response += f"- Matches played: {total_matches}\n"
+            base_response += f"- Matches scheduled: {total_matches} total ({played_matches} played, {not_played} not played)\n"
             base_response += f"- Record: {wins}W {draws}D {losses}L\n"
             base_response += f"- Goals: {goals_scored} scored, {goals_conceded} conceded\n"
             base_response += f"- Win percentage: {win_percentage}%"
