@@ -22,6 +22,7 @@ COPY . .
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV OPENAI_API_KEY=""
+ENV ANTHROPIC_API_KEY=""
 
 # Create __init__.py if it doesn't exist
 RUN touch __init__.py

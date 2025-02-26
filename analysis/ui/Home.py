@@ -72,13 +72,17 @@ if prompt := st.chat_input("Ask about soccer matches..."):
                 query_engine, _ = run(conversation_context)
 
                 # Process query and get response
-                response = query_engine.query(prompt)
+                response = query_engine.query(prompt, memory=st.session_state.memory_manager)
 
-                # Store interaction in memory
+                # Store interaction in memory with context
+                # Get memory context if it was set by the query engine
+                memory_context = getattr(query_engine, 'memory_context', None)
+
                 st.session_state.memory_manager.add_interaction(
                     session_id=st.session_state.session_id,
                     query=prompt,
-                    response=str(response)
+                    response=str(response),
+                    context=memory_context
                 )
 
                 # Display response

@@ -180,6 +180,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
         super().__init__(sql_database=sql_database, **kwargs)
         self.sql_database = sql_database
         self.llm = llm
+        self.memory_context = None  # Initialize memory context attribute
 
     def _get_table_context(self) -> str:
         """Get the database schema context."""
@@ -625,10 +626,28 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
         # First try to identify team from memory if query uses pronouns
         remembered_team = memory.get_last_team() if memory else None
 
+        # Check if pronouns are used in the query
+        pronouns = ["they", "their", "them", "it", "its"]
+        has_pronouns = any(pronoun in query_lower.split() for pronoun in pronouns)
+
+        # If pronouns are used and we have a remembered team, use it directly
+        if has_pronouns and remembered_team:
+            print(f"Detected pronouns referring to previously mentioned team: {remembered_team}")
+            query_str = query_str.replace("they", remembered_team).replace("their", f"{remembered_team}'s").replace("them", remembered_team)
+            query_str = query_str.replace("They", remembered_team).replace("Their", f"{remembered_team}'s").replace("Them", remembered_team)
+            query_str = query_str.replace("it", remembered_team).replace("its", f"{remembered_team}'s")
+            query_str = query_str.replace("It", remembered_team).replace("Its", f"{remembered_team}'s")
+            print(f"Rewritten query: {query_str}")
+            query_lower = query_str.lower()
+
         # Try fuzzy matching for team name
         teams = get_all_teams(self.sql_database._engine)
         team_match = find_best_matching_team(query_str, teams)
         matched_team = team_match[1] if team_match else None
+
+        # If we didn't match a team but have pronouns and a remembered team, explicitly use the remembered team
+        if not matched_team and has_pronouns and remembered_team:
+            matched_team = remembered_team
 
         # Get time period using focused prompt
         time_period, time_filter = self._get_time_period(query_str)
@@ -1866,9 +1885,21 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
         # Step 1: Understand the query
         query_context = self._understand_query(query_str, memory)
 
-        # Store team in memory if found
-        if query_context["team"] and memory:
-            memory.set_last_team(query_context["team"])
+        # Print the identified query type and team
+        print(f"\nIdentified query type: {query_context.get('query_type')}")
+        if query_context.get("team"):
+            print(f"Identified team: {query_context['team']}")
+
+        # Store team in memory if found, along with query type
+        if memory:
+            if query_context.get("team"):
+                memory.set_last_team(query_context["team"])
+
+            # Store context for this query to be used when storing the interaction
+            self.memory_context = {
+                "matched_team": query_context.get("team"),
+                "query_type": query_context.get("query_type", "stats")
+            }
 
         # Step 2: Generate and execute SQL
         sql = self._generate_sql(query_context)
@@ -1960,15 +1991,19 @@ def main():
         if processed_query != args.query:
             print(f"Processed query: {processed_query}")
 
-        # Run the query and get the response
-        response = query_engine.query(processed_query)
+        # Run the query and get the response - pass memory to the query engine
+        response = query_engine.query(processed_query, memory=memory_manager)
 
-        # Store the interaction in memory
+        # The team is now stored in memory by the query engine itself
+        # Get memory context if it was stored during query execution
+        memory_context = getattr(query_engine, 'memory_context', None)
+
+        # So we only need to store the interaction
         memory_manager.add_interaction(
             session_id=session_id,
             query=processed_query,
             response=str(response),
-            context={"matched_team": processed_query if processed_query != args.query else None}
+            context=memory_context
         )
 
         print(f"\nResponse: {response}")

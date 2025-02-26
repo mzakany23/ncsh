@@ -61,12 +61,15 @@ make process-data
 
 ### Analyzing Data
 
-The analysis module provides an OpenAI-powered chat interface to query the soccer data using natural language. The data is stored in Parquet format and queried using DuckDB.
+The analysis module provides a smart chat interface to query the soccer data using natural language. The data is stored in Parquet format and queried using DuckDB, with Anthropic's Claude 3.7 Sonnet powering the natural language understanding.
 
 To use the chat interface:
 ```bash
-# Set your OpenAI API key
-export OPENAI_API_KEY='your-api-key-here'
+# Set your Anthropic API key (required)
+export ANTHROPIC_API_KEY='your-anthropic-api-key-here'
+
+# Set your OpenAI API key (optional, for backward compatibility)
+export OPENAI_API_KEY='your-openai-api-key-here'
 
 # Ask questions about the data
 python analysis/main.py -p "Show me all games where Key West scored more than 3 goals"
@@ -93,6 +96,8 @@ python analysis/main.py -p "Show me the teams Key West has played against, order
 python analysis/main.py -p "Find games where both teams scored at least 2 goals"
 python analysis/main.py -p "What's the longest winning streak Key West has had?"
 python analysis/main.py -p "Compare Key West's performance in home vs away games"
+python analysis/main.py -p "What day had the most games played last month?"
+python analysis/main.py -p "Show me game by game results of Key West in table format"
 ```
 
 The chat interface will intelligently:
@@ -101,6 +106,7 @@ The chat interface will intelligently:
 - Generate appropriate SQL queries
 - Test the queries for accuracy
 - Present the results in a readable format
+- Support various formatting options including tables, detailed breakdowns, and summaries
 
 ## Development
 
