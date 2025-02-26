@@ -70,4 +70,4 @@ process-data:
 
 query-llama:
 	@echo "Running LlamaIndex query engine..."
-	cd analysis && python query_engine.py "$(query)" $(if $(session_id),--session-id $(session_id),) $(if $(always_infer),--always-infer,)
+	cd analysis && python query_engine.py "$(query)" $(if $(session_id),--session-id $(session_id),) $(if $(never_infer),--never-infer,)

@@ -225,7 +225,7 @@ class DuckDBSQLDatabase(SQLDatabase):
 class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
     """Custom query engine that uses LLM for flexible query processing and formatting."""
 
-    def __init__(self, sql_database, llm, always_infer=False, **kwargs):
+    def __init__(self, sql_database, llm, always_infer=True, **kwargs):
         """Initialize with SQL database and LLM."""
         super().__init__(sql_database=sql_database, **kwargs)
         self.sql_database = sql_database
@@ -2125,55 +2125,39 @@ def run(conversation_history="", always_infer=False):
 def main():
     """CLI for querying soccer match data using LlamaIndex."""
     parser = argparse.ArgumentParser(description="Query soccer match data using natural language.")
-    parser.add_argument("query", help="The natural language query to run against the database")
+    parser.add_argument("query", help="The natural language query")
     parser.add_argument("--session-id", help="Session ID for conversation continuity")
-    parser.add_argument("--always-infer", action="store_true", help="Force dynamic inference for all queries")
+    parser.add_argument("--never-infer", action="store_true", help="Disable dynamic inference (uses predefined templates)")
     args = parser.parse_args()
 
-    if "ANTHROPIC_API_KEY" not in os.environ:
-        raise ValueError("Please set the ANTHROPIC_API_KEY environment variable")
+    # Set up session
+    session_id = args.session_id
+    if not session_id:
+        session_id = memory_manager.create_session()
 
-    try:
-        # Get or create session ID
-        session_id = args.session_id or memory_manager.create_session()
-        if not args.session_id:
-            print(f"Created new session: {session_id}")
+    # Get conversation history
+    conversation_history = memory_manager.format_context(session_id)
 
-        # Get conversation history
-        conversation_history = memory_manager.format_context(session_id)
+    # Initialize the query engine
+    query_engine, engine = run(conversation_history, always_infer=not args.never_infer)
 
-        # Compose the system and get the query engine
-        query_engine, engine = run(conversation_history, args.always_infer)
+    # Process the query
+    response = query_engine.query(args.query, memory=memory_manager)
 
-        # Preprocess the query to handle team names
-        processed_query = preprocess_query(args.query, engine)
-        if processed_query != args.query:
-            print(f"Processed query: {processed_query}")
+    # Print response
+    print()
+    print(response)
+    print()
+    print(f"Session ID: {session_id}")
+    print("Use --session-id argument to continue this conversation")
 
-        # Run the query and get the response - pass memory to the query engine
-        response = query_engine.query(processed_query, memory=memory_manager)
-
-        # The team is now stored in memory by the query engine itself
-        # Get memory context if it was stored during query execution
-        memory_context = getattr(query_engine, 'memory_context', None)
-
-        # So we only need to store the interaction
-        memory_manager.add_interaction(
-            session_id=session_id,
-            query=processed_query,
-            response=str(response),
-            context=memory_context
-        )
-
-        print(f"\nResponse: {response}")
-
-        # Print session ID for continuing the conversation
-        print(f"\nSession ID: {session_id}")
-        print("Use --session-id argument to continue this conversation")
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        if os.getenv("DEBUG"):
-            raise
+    # Add interaction to memory
+    memory_manager.add_interaction(
+        session_id,
+        args.query,
+        str(response),
+        query_engine.memory_context
+    )
 
 
 if __name__ == "__main__":
