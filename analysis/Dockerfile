@@ -24,8 +24,9 @@ ENV PYTHONPATH=/app
 ENV OPENAI_API_KEY=""
 ENV ANTHROPIC_API_KEY=""
 
-# Create __init__.py if it doesn't exist
-RUN touch __init__.py
+# Create necessary __init__.py files to make directories importable
+RUN touch __init__.py && \
+    touch ui/__init__.py
 
 # Expose Streamlit port
 EXPOSE 8501

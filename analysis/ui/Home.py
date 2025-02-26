@@ -1,6 +1,13 @@
 import streamlit as st
 import os
+import sys
 from pathlib import Path
+
+# Add parent directory to Python path to correctly import modules
+parent_dir = str(Path(__file__).parent.parent)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
 from query_engine import run
 from memory import ConversationMemory
 

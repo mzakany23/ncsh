@@ -1,165 +1,193 @@
-import sqlite3
+import os
+import json
+import uuid
 from datetime import datetime
 from pathlib import Path
-import json
+import re
 
 class ConversationMemory:
-    def __init__(self, db_path="conversation_history.db"):
-        self.db_path = Path(db_path)
-        self._init_db()
+    """Store and manage conversation history for multi-turn interactions."""
 
-    def _init_db(self):
-        """Initialize the SQLite database with necessary tables."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    session_id TEXT PRIMARY KEY,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS conversations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT,
-                    query TEXT,
-                    response TEXT,
-                    context JSON,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (session_id) REFERENCES sessions(session_id)
-                )
-            """)
+    def __init__(self, storage_dir=None, db_path=None):
+        """
+        Initialize the conversation memory.
+
+        Args:
+            storage_dir: Directory to store conversation files (new style)
+            db_path: Path to SQLite database (for backward compatibility)
+        """
+        # Handle backward compatibility - if db_path is provided, convert it to a storage_dir
+        if db_path is not None:
+            print(f"⚠️ Deprecated: Using db_path ({db_path}) is deprecated, please use storage_dir instead")
+            # Convert the db_path to a directory path by using its parent directory
+            if isinstance(db_path, str):
+                storage_dir = os.path.dirname(db_path)
+            else:
+                # Assume it's a Path object
+                storage_dir = str(db_path.parent)
+
+        self.storage_dir = storage_dir or Path("./conversations")
+        self.sessions = {}
+        self.ensure_storage_dir()
+
+        # Print info about storage location
+        print(f"📝 Conversation memory using directory: {self.storage_dir}")
+
+    def ensure_storage_dir(self):
+        """Ensure the storage directory exists."""
+        if not os.path.exists(self.storage_dir):
+            os.makedirs(self.storage_dir)
 
     def create_session(self):
-        """Create a new session and return the session ID."""
+        """Create a new session ID."""
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("INSERT INTO sessions (session_id) VALUES (?)", (session_id,))
+        self.sessions[session_id] = []
         return session_id
 
     def add_interaction(self, session_id, query, response, context=None):
-        """Add a new interaction to the conversation history."""
-        with sqlite3.connect(self.db_path) as conn:
-            # Update session last_updated timestamp
-            conn.execute(
-                "UPDATE sessions SET last_updated = CURRENT_TIMESTAMP WHERE session_id = ?",
-                (session_id,)
-            )
-            # Add the interaction
-            conn.execute(
-                "INSERT INTO conversations (session_id, query, response, context) VALUES (?, ?, ?, ?)",
-                (session_id, query, response, json.dumps(context) if context else None)
-            )
+        """Add an interaction to the session history."""
+        if session_id not in self.sessions:
+            self.sessions[session_id] = []
 
-    def get_session_history(self, session_id, limit=10):
-        """Get the conversation history for a session."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                SELECT query, response, context
-                FROM conversations
-                WHERE session_id = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-                """,
-                (session_id, limit)
-            )
-            return cursor.fetchall()
+        interaction = {
+            "timestamp": datetime.now().isoformat(),
+            "query": query,
+            "response": response,
+            "context": context or {}
+        }
 
-    def format_context(self, session_id, limit=3):
-        """Format the conversation history as context for the next query."""
-        history = self.get_session_history(session_id, limit)
-        if not history:
-            return ""
+        self.sessions[session_id].append(interaction)
+        self._save_session(session_id)
 
-        context_parts = ["Previous conversation context:"]
+        # Extract entities from query and response
+        self._extract_entities(session_id, query, response, context)
 
-        # Track the most recently mentioned team
-        last_team = None
-        last_query_type = None  # Track if we were discussing matches or stats
+    def _extract_entities(self, session_id, query, response, context):
+        """Extract entities like team names from query and response for future context."""
+        # Check context first for team info
+        extracted_context = {}
 
-        for query, response, stored_context in reversed(history):
-            # Add query and response
-            context_parts.append(f"\nUser: {query}")
-            context_parts.append(f"Assistant: {response}")
+        if context:
+            # If context already has team/division info, use it
+            if 'team' in context:
+                extracted_context['last_team'] = context['team']
 
-            # Extract context information
-            if stored_context:
-                try:
-                    ctx = json.loads(stored_context)
-                    if ctx.get("matched_team"):
-                        last_team = ctx["matched_team"]
-                    if ctx.get("query_type"):
-                        last_query_type = ctx["query_type"]
-                except json.JSONDecodeError:
-                    pass
+            if 'division' in context:
+                extracted_context['last_division'] = context['division']
 
-        # Add contextual hints
-        if last_team:
-            context_parts.append(f"\nMost recently discussed team: {last_team}")
-            context_parts.append("Use this team name for follow-up questions about 'they' or 'their' performance.")
+            # Store the full query context for multi-turn conversations
+            extracted_context['query_context'] = context
 
-        if last_query_type:
-            context_parts.append(f"Previous query type: {last_query_type}")
-            context_parts.append("Consider this context for interpreting follow-up questions.")
-
-        return "\n".join(context_parts)
+        # Update the session with extracted context
+        if extracted_context and session_id in self.sessions:
+            self.sessions[session_id].append({
+                "type": "context",
+                "data": extracted_context
+            })
 
     def get_last_team(self, session_id=None):
-        """Get the most recently discussed team."""
-        if session_id is None:
-            # Get the most recent session
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT session_id FROM sessions ORDER BY last_updated DESC LIMIT 1"
-                )
-                result = cursor.fetchone()
-                if not result:
-                    return None
-                session_id = result[0]
+        """Get the most recently mentioned team."""
+        if not session_id or session_id not in self.sessions:
+            return None
 
-        # Get the most recent interaction with a team context
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                SELECT context
-                FROM conversations
-                WHERE session_id = ?
-                  AND context IS NOT NULL
-                ORDER BY timestamp DESC
-                LIMIT 1
-                """,
-                (session_id,)
-            )
-            result = cursor.fetchone()
-            if not result or not result[0]:
+        for interaction in reversed(self.sessions[session_id]):
+            if interaction.get("type") == "context" and "last_team" in interaction.get("data", {}):
+                return interaction["data"]["last_team"]
+
+        return None
+
+    def get_last_division(self, session_id=None):
+        """Get the most recently mentioned division."""
+        if not session_id or session_id not in self.sessions:
+            return None
+
+        for interaction in reversed(self.sessions[session_id]):
+            if interaction.get("type") == "context" and "last_division" in interaction.get("data", {}):
+                return interaction["data"]["last_division"]
+
+        return None
+
+    def get_last_query_context(self, session_id=None):
+        """Get the context from the most recent query for multi-turn conversations."""
+        if not session_id or session_id not in self.sessions:
+            # Try to get the most recent session if none specified
+            if self.sessions:
+                session_id = sorted(self.sessions.keys())[-1]
+            else:
                 return None
 
-            try:
-                context = json.loads(result[0])
-                return context.get("matched_team")
-            except json.JSONDecodeError:
-                return None
+        for interaction in reversed(self.sessions[session_id]):
+            if interaction.get("type") == "context" and "query_context" in interaction.get("data", {}):
+                return interaction["data"]["query_context"]
 
-    def set_last_team(self, team_name, session_id=None):
-        """Set the most recently discussed team."""
-        if session_id is None:
-            # Get the most recent session
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT session_id FROM sessions ORDER BY last_updated DESC LIMIT 1"
-                )
-                result = cursor.fetchone()
-                if not result:
-                    session_id = self.create_session()
-                else:
-                    session_id = result[0]
+        return None
 
-        # Add a context update
-        context = {"matched_team": team_name}
-        self.add_interaction(
-            session_id=session_id,
-            query="",  # Empty query since this is just a context update
-            response="",  # Empty response since this is just a context update
-            context=context
-        )
+    def _save_session(self, session_id):
+        """Save the session to disk."""
+        filename = os.path.join(self.storage_dir, f"{session_id}.json")
+        with open(filename, 'w') as f:
+            json.dump(self.sessions[session_id], f, indent=2)
+
+    def load_session(self, session_id):
+        """Load a session from disk."""
+        filename = os.path.join(self.storage_dir, f"{session_id}.json")
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
+                self.sessions[session_id] = json.load(f)
+            return True
+        return False
+
+    def format_context(self, session_id):
+        """Format the conversation history as context for queries."""
+        context = []
+
+        if session_id not in self.sessions:
+            if not self.load_session(session_id):
+                return ""
+
+        for interaction in self.sessions[session_id]:
+            # Only include actual query/response pairs, not context metadata
+            if "query" in interaction and "response" in interaction:
+                context.append(f"User: {interaction['query']}")
+                context.append(f"System: {interaction['response']}")
+
+        return "\n".join(context)
+
+    def get_session_history(self, session_id):
+        """
+        Get the conversation history for a session in the format expected by the UI.
+        Returns a list of (query, response, timestamp) tuples.
+        """
+        # Make sure the session is loaded
+        if session_id not in self.sessions:
+            if not self.load_session(session_id):
+                return []
+
+        history = []
+
+        # Process the session data to extract query/response pairs
+        for item in self.sessions[session_id]:
+            # Skip metadata/context entries
+            if isinstance(item, dict) and 'type' in item and item['type'] == 'context':
+                continue
+
+            # Handle interaction entries
+            if isinstance(item, dict) and 'query' in item and 'response' in item:
+                query = item.get('query', '')
+                response = item.get('response', '')
+                timestamp = item.get('timestamp', datetime.now().isoformat())
+                history.append((query, response, timestamp))
+
+        return history
+
+    # For backward compatibility
+    def get_last_query(self, session_id=None):
+        """Get the most recent user query."""
+        if not session_id or session_id not in self.sessions:
+            return None
+
+        for interaction in reversed(self.sessions[session_id]):
+            if isinstance(interaction, dict) and 'query' in interaction:
+                return interaction['query']
+
+        return None
