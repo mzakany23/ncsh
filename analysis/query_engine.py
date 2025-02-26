@@ -414,6 +414,8 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 "ranking_metric": "total_goals",
                 "limit": 5,
                 "format": "summary",
+                "format_requested": detected_format,
+                "format_explanation": format_explanation,
                 "explanation": "Find matches with the highest combined scores"
             }
 
@@ -517,6 +519,8 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 "ranking_metric": ranking_metric,
                 "limit": 10,
                 "format": "summary",
+                "format_requested": detected_format,
+                "format_explanation": format_explanation,
                 "explanation": f"Rank teams by {ranking_metric}"
             }
 
@@ -562,6 +566,8 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 "ranking_metric": "total_goals",
                 "limit": 5,
                 "format": "summary",
+                "format_requested": detected_format,
+                "format_explanation": format_explanation,
                 "explanation": "Find matches with the highest combined scores"
             }
 
@@ -608,6 +614,8 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 "ranking_metric": "matches_count",
                 "limit": 10,
                 "format": "summary",
+                "format_requested": detected_format,
+                "format_explanation": format_explanation,
                 "explanation": "Calculate statistics aggregated by day"
             }
 
@@ -705,6 +713,8 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 "ranking_metric": ranking_metrics[0] if ranking_metrics else "matches_played",
                 "limit": 10,
                 "format": "summary",
+                "format_requested": detected_format,
+                "format_explanation": format_explanation,
                 "explanation": f"Rank teams by {ranking_metrics[0] if ranking_metrics else 'matches_played'}"
             }
 
@@ -907,6 +917,8 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 "ranking_metric": ranking_metrics[0] if ranking_metrics else None,
                 "limit": 5,
                 "format": "summary",
+                "format_requested": detected_format,
+                "format_explanation": format_explanation,
                 "explanation": "Fallback query understanding"
             }
 
@@ -1428,10 +1440,9 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
         # Format team name
         team_name = query_context.get('team', None)
 
-        # Generate basic response using existing logic
+        # Handle different query types with appropriate formatting
         query_type = query_context.get('query_type', 'stats')
 
-        # Generate the base response using existing logic
         base_response = ""
 
         # For match listing
@@ -1471,8 +1482,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
 
             # Fix the f-string syntax
             title = f"{team_name}'s matches {time_display}:" if team_name else f"All matches {time_display}:"
-            response = f"{title}\n\n" + "\n\n".join(match_results)
-            return response
+            base_response = f"{title}\n\n" + "\n\n".join(match_results)
 
         # For highest scoring games
         elif query_type == 'highest_scoring_games':
@@ -1496,8 +1506,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 )
 
             if match_results:
-                response = f"Highest scoring games {time_display}:\n\n" + "\n\n".join(match_results)
-                return response
+                base_response = f"Highest scoring games {time_display}:\n\n" + "\n\n".join(match_results)
             else:
                 return f"No match data found {time_display}."
 
@@ -1545,8 +1554,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 )
 
             if team_results:
-                response = f"Teams ranked by {ranking_metric_display} {time_display}:\n\n" + "\n\n".join(team_results)
-                return response
+                base_response = f"Teams ranked by {ranking_metric_display} {time_display}:\n\n" + "\n\n".join(team_results)
             else:
                 return f"No team ranking data found {time_display}."
 
@@ -1571,8 +1579,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 )
 
             if day_results:
-                response = f"Days with most matches {time_display}:\n\n" + "\n\n".join(day_results)
-                return response
+                base_response = f"Days with most matches {time_display}:\n\n" + "\n\n".join(day_results)
             else:
                 return f"No match data found {time_display}."
 
@@ -1590,15 +1597,13 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             highest_scoring = stats.get('highest_scoring_match', 0)
             teams_played = stats.get('teams_played', 0)
 
-            response = f"Aggregate statistics {time_display}:\n\n"
-            response += f"- Total matches played: {total_matches}\n"
-            response += f"- Days with matches: {days_with_matches}\n"
-            response += f"- Teams that played: {teams_played}\n"
-            response += f"- Total goals scored: {total_goals}\n"
-            response += f"- Average goals per match: {avg_goals}\n"
-            response += f"- Highest scoring match: {highest_scoring} goals"
-
-            return response
+            base_response = f"Aggregate statistics {time_display}:\n\n"
+            base_response += f"- Total matches played: {total_matches}\n"
+            base_response += f"- Days with matches: {days_with_matches}\n"
+            base_response += f"- Teams that played: {teams_played}\n"
+            base_response += f"- Total goals scored: {total_goals}\n"
+            base_response += f"- Average goals per match: {avg_goals}\n"
+            base_response += f"- Highest scoring match: {highest_scoring} goals"
 
         # For hardest opponent analysis
         elif query_type == 'hardest_opponent':
@@ -1626,8 +1631,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                     )
 
             if opponent_results:
-                response = f"{team_name}'s hardest opponents {time_display}:\n\n" + "\n\n".join(opponent_results)
-                return response
+                base_response = f"{team_name}'s hardest opponents {time_display}:\n\n" + "\n\n".join(opponent_results)
             else:
                 return f"No clear 'hardest opponent' found for {team_name} {time_display}."
 
@@ -1638,7 +1642,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             for match in results:
                 matches.append(f"- {match['date']}: {match['matchup']} ({match['goals_for']}-{match['goals_against']}, {match['result']})")
 
-            return f"{team_name}'s matches {time_display}:\n" + "\n".join(matches)
+            base_response = f"{team_name}'s matches {time_display}:\n" + "\n".join(matches)
 
         # For best performance
         elif query_type == 'best_performance':
@@ -1661,8 +1665,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                     )
 
             if performances:
-                response = f"{team_name}'s best performances {time_display}:\n" + "\n".join(performances)
-                return response
+                base_response = f"{team_name}'s best performances {time_display}:\n" + "\n".join(performances)
             else:
                 return f"No standout performances found for {team_name} {time_display}."
 
@@ -1686,8 +1689,7 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
                 )
 
             comparison_team = query_context.get('comparison_team', 'specified opponent')
-            response = f"{team_name}'s matches against {comparison_team} {time_display}:\n" + "\n".join(matches)
-            return response
+            base_response = f"{team_name}'s matches against {comparison_team} {time_display}:\n" + "\n".join(matches)
 
         # Default team statistics formatting
         else:
@@ -1706,13 +1708,109 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             if total_matches == 0:
                 return f"{team_name} has not played any matches {time_display}."
 
-            response = f"{team_name}'s performance {time_display}:\n"
-            response += f"- Matches played: {total_matches}\n"
-            response += f"- Record: {wins}W {draws}D {losses}L\n"
-            response += f"- Goals: {goals_scored} scored, {goals_conceded} conceded\n"
-            response += f"- Win percentage: {win_percentage}%"
+            base_response = f"{team_name}'s performance {time_display}:\n"
+            base_response += f"- Matches played: {total_matches}\n"
+            base_response += f"- Record: {wins}W {draws}D {losses}L\n"
+            base_response += f"- Goals: {goals_scored} scored, {goals_conceded} conceded\n"
+            base_response += f"- Win percentage: {win_percentage}%"
 
-            return response
+        # Check for format_requested and apply special formatting if needed
+        if query_context.get('format_requested') and query_context.get('format_requested') != 'default':
+            return self._apply_custom_formatting(base_response, results, query_context)
+
+        return base_response
+
+    def _apply_custom_formatting(self, base_response: str, results: list, query_context: dict) -> str:
+        """Use Claude to apply custom formatting to the response."""
+        format_type = query_context.get('format_requested', 'default')
+        query_type = query_context.get('query_type', 'stats')
+
+        # Provide specific instructions based on query type and format type
+        format_instructions = ""
+        if format_type == "table":
+            if query_type == "match_listing":
+                format_instructions = """
+                For match listing data, create a well-formatted table with these columns:
+                - Date
+                - Opponent
+                - Venue (Home/Away)
+                - Score
+                - Result (W/L/D)
+
+                Make sure the table is neatly aligned with proper headers and separators.
+                """
+            elif query_type == "highest_scoring_games":
+                format_instructions = """
+                For highest scoring games, create a table with:
+                - Date
+                - Home Team
+                - Away Team
+                - Score (Home-Away)
+                - Total Goals
+                """
+            elif query_type == "team_rankings":
+                format_instructions = """
+                For team rankings, create a table with:
+                - Rank
+                - Team Name
+                - Matches Played
+                - Record (W-D-L)
+                - Goals Scored
+                - Win %
+                """
+            elif query_type == "daily_stats":
+                format_instructions = """
+                For daily statistics, create a table with:
+                - Date
+                - Matches Count
+                - Teams Involved
+                - Total Goals
+                - Avg Goals/Match
+                """
+            else:
+                format_instructions = """
+                Create a neatly formatted table from the data, with appropriate columns
+                based on the data provided. Use clear headers and ensure alignment.
+                """
+        elif format_type == "markdown":
+            format_instructions = """
+            Format the response using proper markdown:
+            - Use ## for the main title
+            - Use ### for subtitles if needed
+            - Use bullet points or numbered lists as appropriate
+            - For tabular data, create a proper markdown table with | and - characters
+            - Use **bold** for important information
+            """
+
+        # Prepare the formatting prompt for Claude
+        prompt = f"""
+        The following is a response about soccer match data:
+
+        {base_response}
+
+        Please reformat this response in a {format_type} format. The data is about {query_type} for soccer matches.
+
+        {format_instructions}
+
+        General formatting guidelines:
+        - If format is "table", create a neatly formatted ASCII or markdown table.
+        - If format is "chart", describe how the data would look in a chart format.
+        - If format is "summary", create a concise summary of just the key points.
+        - If format is "detailed", add more detailed explanations and analysis.
+        - If format is "markdown", format using proper markdown with headers, lists, etc.
+
+        Make the output clean, professional and highly readable while preserving all the important information.
+        """
+
+        # Use Claude to format the response
+        response = self.llm.complete(prompt)
+        formatted_response = response.text.strip()
+
+        # If the response looks empty or invalid, fall back to the base response
+        if not formatted_response or len(formatted_response) < 10:
+            return base_response
+
+        return formatted_response
 
     def query(self, query_str: str, **kwargs):
         """Execute the query pipeline: understand -> generate SQL -> format response."""
@@ -1737,7 +1835,13 @@ class CustomNLSQLTableQueryEngine(NLSQLTableQueryEngine):
             rows = [dict(zip(columns, row)) for row in result.fetchall()]
 
         # Step 3: Format the response
-        return self._format_response(rows, query_context)
+        formatted_response = self._format_response(rows, query_context)
+
+        # Print the identified format if it was requested
+        if query_context.get('format_requested') and query_context.get('format_requested') != 'default':
+            print(f"\nDetected format request: {query_context.get('format_requested')}")
+
+        return formatted_response
 
 
 def setup_query_engine(engine, conversation_history=""):
