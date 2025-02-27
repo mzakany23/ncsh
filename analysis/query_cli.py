@@ -71,15 +71,27 @@ def interactive_mode(args):
     # Create a properly structured memory manager using ConversationMemory
     memory_manager = ConversationMemory()
 
+    # Ensure the conversations directory exists
+    os.makedirs(memory_manager.storage_dir, exist_ok=True)
+
     # Create a session ID if not provided
     session_id = args.session
     if not session_id:
         session_id = memory_manager.create_session()
+        print(f"Created new session: {session_id}")
     else:
         # Try to load existing session if provided
-        if not memory_manager.load_session(session_id):
-            print(f"Session {session_id} not found. Creating new session.")
-            session_id = memory_manager.create_session()
+        # First check if the session file exists
+        session_file = os.path.join(memory_manager.storage_dir, f"{session_id}.json")
+        if os.path.exists(session_file):
+            memory_manager.load_session(session_id)
+            print(f"Loaded existing session: {session_id}")
+        else:
+            # For custom session IDs, we'll create a new session with exactly that ID
+            # This is different from the default behavior that generates timestamp-based IDs
+            memory_manager.sessions[session_id] = []
+            memory_manager._save_session(session_id)
+            print(f"Created new custom session: {session_id}")
 
     print(f"Session ID: {session_id}")
 
@@ -157,15 +169,26 @@ def main():
 
     # For single queries, create a memory manager just for this query
     memory_manager = ConversationMemory()
-    session_id = args.session
 
+    # Ensure the conversations directory exists
+    os.makedirs(memory_manager.storage_dir, exist_ok=True)
+
+    # Handle session ID
+    session_id = args.session
     if not session_id:
         session_id = memory_manager.create_session()
+        print(f"Created new session: {session_id}")
     else:
         # Try to load existing session if provided
-        if not memory_manager.load_session(session_id):
-            print(f"Session {session_id} not found. Creating new session.")
-            session_id = memory_manager.create_session()
+        session_file = os.path.join(memory_manager.storage_dir, f"{session_id}.json")
+        if os.path.exists(session_file):
+            memory_manager.load_session(session_id)
+            print(f"Loaded existing session: {session_id}")
+        else:
+            # For custom session IDs, create a new session with exactly that ID
+            memory_manager.sessions[session_id] = []
+            memory_manager._save_session(session_id)
+            print(f"Created new custom session: {session_id}")
 
     # Run a single query with memory context
     response = run_query(

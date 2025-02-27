@@ -47,10 +47,15 @@ class ConversationMemory:
         if not os.path.exists(self.storage_dir):
             os.makedirs(self.storage_dir)
 
-    def create_session(self):
+    def create_session(self, custom_id=None):
         """Create a new session ID."""
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if custom_id:
+            session_id = custom_id
+        else:
+            session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
         self.sessions[session_id] = []
+        self._save_session(session_id)
         return session_id
 
     def add_interaction(self, session_id, query, response, context=None):
@@ -159,6 +164,10 @@ class ConversationMemory:
                 return interaction["data"]["query_context"]
 
         return None
+
+    def save_session(self, session_id):
+        """Save the session to disk (public method)."""
+        return self._save_session(session_id)
 
     def _save_session(self, session_id):
         """Save the session to disk."""
