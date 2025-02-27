@@ -69,5 +69,5 @@ process-data:
 		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-processing
 
 query-llama:
-	@echo "Running LlamaIndex query engine..."
-	cd analysis && python query_engine.py "$(query)" $(if $(session_id),--session-id $(session_id),) $(if $(never_infer),--never-infer,)
+	@echo "Running Soccer Query Engine..."
+	python analysis/query_cli.py "$(query)" $(if $(session_id),--session=$(session_id),) $(if $(verbose),--verbose,) --db analysis/matches.parquet

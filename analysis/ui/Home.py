@@ -8,7 +8,7 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from query_engine import run
+from query.core.setup import setup_query_engine
 from memory import ConversationMemory
 
 # Page config
@@ -76,7 +76,13 @@ if prompt := st.chat_input("Ask about soccer matches..."):
             try:
                 # Initialize query engine with conversation history
                 conversation_context = st.session_state.memory_manager.format_context(st.session_state.session_id)
-                query_engine, _ = run(conversation_context)
+
+                # Setup the query engine with appropriate parameters
+                db_path = "matches.parquet"
+                query_engine = setup_query_engine(
+                    db_path=db_path,
+                    verbose=True
+                )
 
                 # Process query and get response
                 response = query_engine.query(prompt, memory=st.session_state.memory_manager)
