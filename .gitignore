@@ -73,3 +73,15 @@ override.tf.json
 test_data/
 !tests/data/html/2024-03-01.html
 .windsurfrules
+
+# Chat history and user data
+conversations/
+conversation_history.db
+*_chat_history.db
+*.chat.history*
+*.history.*
+analysis/ui/*.json
+analysis/ui/[0-9]*.json
+
+# DuckDB database file
+matches.parquet

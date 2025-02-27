@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ncsoccer-analysis"
+version = "0.1.0"
+description = "Analysis tools for NC Soccer data including query engine with LlamaIndex"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Michael Zakany" },
+]
+dependencies = [
+    "llama-index>=0.9.0",
+    "llama-index-llms-anthropic>=0.1.0",
+    "anthropic>=0.8.0",
+    "duckdb>=0.10.0",
+    "pandas>=2.0.0",
+    "fuzzywuzzy>=0.18.0",
+    "python-levenshtein>=0.12.0",  # For faster fuzzy matching
+    "streamlit>=1.26.0",           # For the UI
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.0.290",
+    "black>=23.9.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["analysis"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = ["E", "F", "I"]
+ignore = []
+
+[tool.black]
+line-length = 100
+target-version = ["py38"]
+
+[tool.pytest]
+testpaths = ["tests"]
+
+[project.scripts]
+query-cli = "analysis.query_cli:main"

@@ -1,0 +1,21 @@
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AWS_PROFILE=mzakany
+    volumes:
+      # Mount data files to persist between restarts
+      - ./conversation_history.db:/app/conversation_history.db
+      - ./conversations:/app/conversations
+      - ./matches.parquet:/app/matches.parquet
+      # Mount AWS credentials
+      - ~/.aws:/root/.aws:ro
+      # Mount source code for development
+      - .:/app
+    command: ["streamlit", "run", "ui/Home.py", "--server.address", "0.0.0.0", "--server.port", "8501"]

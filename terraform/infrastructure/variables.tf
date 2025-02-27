@@ -4,12 +4,6 @@ variable "aws_region" {
   default     = "us-east-2"
 }
 
-variable "analysis_repository" {
-  description = "Name of the ECR repository for the analysis Lambda function"
-  type        = string
-  default     = "ncsoccer-analysis"
-}
-
 variable "openai_api_key" {
   description = "OpenAI API key for GPT-4 access"
   type        = string

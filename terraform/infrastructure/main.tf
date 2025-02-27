@@ -19,6 +19,9 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
+
 # S3 Bucket for Application Data
 resource "aws_s3_bucket" "app_data" {
   bucket = "ncsh-app-data"

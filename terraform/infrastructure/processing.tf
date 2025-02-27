@@ -160,6 +160,11 @@ resource "aws_lambda_function" "processing" {
 
   package_type = "Image"
   image_uri    = "${aws_ecr_repository.processing.repository_url}:latest"
+
+  # Ignore image_uri changes since they are managed by CI/CD
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 }
 
 # State Machine for processing workflow

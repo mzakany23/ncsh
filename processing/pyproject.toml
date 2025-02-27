@@ -15,7 +15,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["ncsoccer_processing"]
+py-modules = ["models", "lambda_function"]
 
 [tool.ruff]
 line-length = 100
