@@ -80,6 +80,8 @@ conversation_history.db
 *_chat_history.db
 *.chat.history*
 *.history.*
+analysis/ui/*.json
+analysis/ui/[0-9]*.json
 
 # DuckDB database file
 matches.parquet
