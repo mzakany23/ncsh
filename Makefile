@@ -1,4 +1,4 @@
-.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-llama
 
 # Clean up data directories
 clean-data:
@@ -30,13 +30,11 @@ compile-requirements:
 	@echo "Compiling requirements..."
 	cd scraping && uv pip compile requirements.in -o requirements.txt
 	cd processing && uv pip compile requirements.in -o requirements.txt
-	cd analysis && uv pip compile requirements.in -o requirements.txt
 
 install: venv compile-requirements
 	@echo "Installing dependencies..."
 	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
-	cd processing && uv pip install -r requirements.txt
-	cd analysis && uv pip install -r requirements.txt
+	cd processing && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
 
 test: install
 	@echo "Running tests..."
@@ -52,7 +50,6 @@ format: install
 	@echo "Running formatter..."
 	source .venv/bin/activate && cd scraping && ruff format ncsoccer tests
 	source .venv/bin/activate && cd processing && ruff format .
-	source .venv/bin/activate && cd analysis && ruff format .
 
 deploy-scraper: compile-requirements
 	cd terraform/infrastructure && terraform apply -target=aws_lambda_function.ncsoccer_scraper
@@ -70,3 +67,7 @@ scrape-month:
 process-data:
 	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
 		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-processing
+
+query-llama:
+	@echo "Running Soccer Query Engine..."
+	python analysis/query_cli.py "$(query)" $(if $(session_id),--session=$(session_id),) $(if $(verbose),--verbose,) --db analysis/matches.parquet
