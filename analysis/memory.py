@@ -26,7 +26,16 @@ class ConversationMemory:
                 # Assume it's a Path object
                 storage_dir = str(db_path.parent)
 
-        self.storage_dir = storage_dir or Path("./conversations")
+        # Make sure storage_dir is an absolute path
+        if storage_dir:
+            if not os.path.isabs(storage_dir):
+                # Convert relative path to absolute
+                storage_dir = os.path.abspath(storage_dir)
+        else:
+            # Default to './conversations' but make it absolute
+            storage_dir = os.path.abspath("./conversations")
+
+        self.storage_dir = storage_dir
         self.sessions = {}
         self.ensure_storage_dir()
 
@@ -57,10 +66,12 @@ class ConversationMemory:
         }
 
         self.sessions[session_id].append(interaction)
-        self._save_session(session_id)
 
         # Extract entities from query and response
         self._extract_entities(session_id, query, response, context)
+
+        # Save session to disk
+        self._save_session(session_id)
 
     def _extract_entities(self, session_id, query, response, context):
         """Extract entities like team names from query and response for future context."""
@@ -68,22 +79,49 @@ class ConversationMemory:
         extracted_context = {}
 
         if context:
+            # Debug logging for context
+            print(f"📝 Context received in _extract_entities: {context}")
+
             # If context already has team/division info, use it
             if 'team' in context:
                 extracted_context['last_team'] = context['team']
+                print(f"📝 Stored team context: {context['team']}")
 
             if 'division' in context:
                 extracted_context['last_division'] = context['division']
+                print(f"📝 Stored division context: {context['division']}")
 
             # Store the full query context for multi-turn conversations
             extracted_context['query_context'] = context
 
+        # If no team in context, try to extract from query using regex
+        if 'last_team' not in extracted_context:
+            # Simple regex to extract team names mentioned in the query or response
+            team_pattern = r'(?i)(Key West FC|FC United|Spartak Cleveland|Cleveland Force FC|Boston Braves FC)'
+            team_match = re.search(team_pattern, query)
+            if team_match:
+                team_name = team_match.group(1)
+                extracted_context['last_team'] = team_name
+                print(f"📝 Extracted team from query: {team_name}")
+
+        # If no division in context, try to extract from query using regex
+        if 'last_division' not in extracted_context:
+            # Simple regex to extract division numbers
+            division_pattern = r'(?i)division\s*(\d+)|league\s*(\d+)'
+            division_match = re.search(division_pattern, query)
+            if division_match:
+                division = division_match.group(1) or division_match.group(2)
+                extracted_context['last_division'] = division
+                print(f"📝 Extracted division from query: {division}")
+
         # Update the session with extracted context
         if extracted_context and session_id in self.sessions:
-            self.sessions[session_id].append({
+            context_record = {
                 "type": "context",
                 "data": extracted_context
-            })
+            }
+            self.sessions[session_id].append(context_record)
+            print(f"📝 Added context record to session: {extracted_context}")
 
     def get_last_team(self, session_id=None):
         """Get the most recently mentioned team."""
@@ -191,3 +229,13 @@ class ConversationMemory:
                 return interaction['query']
 
         return None
+
+    def list_sessions(self):
+        """List all available session files in the storage directory."""
+        sessions = []
+        if os.path.exists(self.storage_dir):
+            for filename in os.listdir(self.storage_dir):
+                if filename.endswith('.json'):
+                    session_id = filename.replace('.json', '')
+                    sessions.append(session_id)
+        return sessions
