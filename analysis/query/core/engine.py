@@ -410,7 +410,7 @@ SQL QUERY:"""
         self.memory = memory
 
         # Initialize query context
-        query_context = {"memory": memory}
+        query_context = {}  # Don't store memory object directly in context
 
         # If memory exists, try to get previous context (for follow-up queries)
         if memory:
@@ -448,7 +448,7 @@ SQL QUERY:"""
                     # This preserves the current query information
                     for key, value in last_context.items():
                         # Don't update these fields from previous context
-                        if key not in ['sql', 'query']:
+                        if key not in ['sql', 'query', 'memory']:
                             query_context[key] = value
                     print(f"📝 Retrieved additional context from memory: {last_context}")
 
@@ -503,11 +503,18 @@ SQL QUERY:"""
             # Save interaction to memory if available
             if memory and hasattr(memory, 'add_interaction'):
                 try:
+                    # Create a serializable copy of the context
+                    serializable_context = {}
+                    for key, value in query_context.items():
+                        # Skip non-serializable objects
+                        if key != 'memory' and isinstance(value, (str, int, float, bool, list, dict, type(None))):
+                            serializable_context[key] = value
+
                     memory.add_interaction(
                         session_id=getattr(memory, 'session_id', None),
                         query=clean_query,
                         response=inferred_response,
-                        context=query_context
+                        context=serializable_context
                     )
                 except Exception as e:
                     print(f"⚠️ Error saving to memory: {str(e)}")
