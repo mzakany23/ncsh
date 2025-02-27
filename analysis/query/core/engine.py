@@ -222,168 +222,100 @@ class QueryEngine(NLSQLTableQueryEngine):
         """
         print("🧠 Generating SQL with LLM")
 
-        # First, see if the query mentions a division
-        division_pattern = r'\b(?:division|league|div|d)[\s.]*([\dIVXC]+|one|two|three|four|five|1st|2nd|3rd|4th|5th|c)\b'
-        division_match = re.search(division_pattern, query, re.IGNORECASE)
-
-        division_context = ""
-        # Check for division in the current query
-        if division_match:
-            division_text = division_match.group(1).lower()
-            print(f"📝 Detected division reference: {division_match.group(0)}")
-
-            # Map text divisions to numbers
-            division_mapping = {
-                'one': '1', '1st': '1', 'c': '1',  # Map 'c' to division 1 based on your conversation example
-                'two': '2', '2nd': '2',
-                'three': '3', '3rd': '3',
-                'four': '4', '4th': '4',
-                'five': '5', '5th': '5',
-            }
-
-            # Try to map the detected division to a number
-            division_number = division_mapping.get(division_text, division_text)
-
-            # Handle roman numerals if needed
-            if division_text.upper() in ['I', 'II', 'III', 'IV', 'V']:
-                roman_mapping = {'I': '1', 'II': '2', 'III': '3', 'IV': '4', 'V': '5'}
-                division_number = roman_mapping.get(division_text.upper(), division_text)
-
-            # Get available divisions for context
-            available_divisions = get_available_divisions(self.sql_database)
-            if available_divisions:
-                division_context = f"Available divisions in the database are: {', '.join(available_divisions)}.\n"
-                division_context += f"The query mentions division {division_number}.\n"
-                # Add division to context
-                query_context["division"] = division_number
-        # Check for division in previous context if not in current query
-        elif "division" in query_context:
-            division_number = query_context["division"]
-            print(f"📝 Using division from previous context: {division_number}")
-            division_context = f"The user previously asked about division {division_number}.\n"
-            division_context += f"This is a follow-up question about division {division_number}.\n"
+        # Add table schema context
+        table_context = self._get_table_context()
 
         # Get team/division information for context
         team_info = get_teams_by_division(self.sql_database)
         team_division_context = team_info.get("division_context", "")
 
-        # Check if the query mentions a specific team
-        team_context = ""
-        team_match = find_best_matching_team(query, self.teams)
+        # Retrieve conversation history if memory is available
+        conversation_history = ""
+        if hasattr(self, 'memory') and self.memory:
+            if hasattr(self.memory, 'format_context'):
+                # Get formatted conversation history
+                formatted_history = self.memory.format_context(getattr(self.memory, 'session_id', None))
+                if formatted_history:
+                    # Limit history size if needed
+                    if len(formatted_history) > 4000:
+                        print("📝 Conversation history is large, truncating to recent exchanges")
+                        # Get individual exchanges
+                        exchanges = formatted_history.split("\n")
+                        # Keep only the most recent exchanges (last 3-5 turns)
+                        recent_exchanges = exchanges[-10:]  # Adjust number as needed
+                        formatted_history = "\n".join(recent_exchanges)
 
-        # First check for team in the current query
-        if team_match:
-            matched_phrase, team_name = team_match
-            print(f"📝 Detected team reference: '{matched_phrase}' matched to '{team_name}'")
-            team_context = f"The query mentions the team '{team_name}'.\n"
+                    conversation_history = f"""
+                    CONVERSATION HISTORY (Most recent exchanges):
+                    {formatted_history}
+
+                    Based on this conversation history, the user is continuing the conversation.
+                    If there are references to teams, divisions, or time periods in the history,
+                    make sure to maintain that context in the current query.
+                    """
+                    print("📝 Including conversation history for context")
+
+        # Detect if current query explicitly mentions divisions or teams
+        # This helps prioritize explicit mentions over implied context
+        explicit_division = re.search(r'\b(?:division|league|div|d)[\s.]*([\dIVXC]+|one|two|three|four|five|1st|2nd|3rd|4th|5th|c)\b', query, re.IGNORECASE)
+        explicit_team = find_best_matching_team(query, self.teams)
+
+        # Create context summary string based on the current query and conversation history
+        context_summary = "QUERY CONTEXT SUMMARY:\n"
+
+        # Add explicit mentions from current query first (highest priority)
+        if explicit_division:
+            division_text = explicit_division.group(1).lower()
+            # Map text divisions to numbers (simplified mapping logic here)
+            division_mapping = {
+                'one': '1', '1st': '1', 'c': '1',
+                'two': '2', '2nd': '2',
+                'three': '3', '3rd': '3',
+                'four': '4', '4th': '4',
+                'five': '5', '5th': '5',
+            }
+            division_number = division_mapping.get(division_text, division_text)
+            context_summary += f"- The current query explicitly mentions division {division_number}\n"
+            query_context["division"] = division_number
+
+        if explicit_team:
+            matched_phrase, team_name = explicit_team
+            context_summary += f"- The current query explicitly mentions team '{team_name}'\n"
             query_context["team"] = team_name
-        # Otherwise check if we have a team from previous context
-        elif "team" in query_context:
+
+        # Add previous context if not overridden by explicit mentions
+        if not explicit_team and "team" in query_context:
             team_name = query_context["team"]
-            print(f"📝 Using team from previous context: {team_name}")
-            team_context = f"The user previously asked about the team '{team_name}'.\n"
-            team_context += f"This is a follow-up question about '{team_name}'.\n"
+            context_summary += f"- Previous context indicates this is about team '{team_name}'\n"
+            # Check if we have follow-up indicators
+            follow_up_pronouns = ['they', 'their', 'them', 'these', 'those', 'it', 'its', 'who']
+            if any(pronoun in query.lower().split() for pronoun in follow_up_pronouns):
+                context_summary += f"- The query uses pronouns that likely refer to '{team_name}'\n"
 
-            # Special handling for ambiguous follow-up questions like "show me the games they haven't played"
-            follow_up_patterns = [
-                r'\b(their|they|them|these|those)\b',
-                r'\b(games|matches)\s+not\s+played\b',
-                r'\b(games|matches)\s+(they|their)\b',
-                r'\bnot\s+played\s+yet\b',
-                r'\bupcoming\s+(games|matches)\b',
-                r'\bstill\s+have\s+not\s+played\b'
-            ]
+        if not explicit_division and "division" in query_context:
+            division_number = query_context["division"]
+            context_summary += f"- Previous context indicates this is about division {division_number}\n"
 
-            for pattern in follow_up_patterns:
-                if re.search(pattern, query, re.IGNORECASE):
-                    print(f"📝 Detected follow-up reference pattern: '{pattern}'")
-                    team_context += f"This appears to be a follow-up about '{team_name}', even though they aren't explicitly mentioned.\n"
-                    team_context += f"Apply team filters for '{team_name}' in the SQL query.\n"
-                    break
-
-        # Check if the query mentions time periods
-        time_context = ""
-        if re.search(r'\b(this|current|present)\s+(month|year|week)\b', query, re.IGNORECASE):
+        # Check if query mentions time periods
+        time_period_match = re.search(r'\b(this|current|present)\s+(month|year|week)\b', query, re.IGNORECASE)
+        if time_period_match:
             time_period = re.search(r'\b(month|year|week)\b', query, re.IGNORECASE).group(1).lower()
-            time_context = f"The query asks about the current {time_period}.\n"
-            time_context += f"Current date function to use: CURRENT_DATE\n"
-            time_context += f"For current {time_period}, use: date >= DATE_TRUNC('{time_period}', CURRENT_DATE) AND date < DATE_TRUNC('{time_period}', CURRENT_DATE) + INTERVAL '1 {time_period}'\n"
+            context_summary += f"- The query mentions the current {time_period}\n"
             query_context["time_period"] = time_period
         elif "time_period" in query_context:
             time_period = query_context["time_period"]
-            time_context = f"The user previously asked about the current {time_period}.\n"
-            time_context += f"This is a follow-up question that likely still refers to the current {time_period}.\n"
-            time_context += f"Use: date >= DATE_TRUNC('{time_period}', CURRENT_DATE) AND date < DATE_TRUNC('{time_period}', CURRENT_DATE) + INTERVAL '1 {time_period}'\n"
+            context_summary += f"- Previous context indicates this is about the current {time_period}\n"
 
-        # Add table schema context
-        table_context = self._get_table_context()
-
-        # For follow-up questions about games not played yet, add special context
-        not_played_context = ""
+        # Check for upcoming/not played matches
         not_played_patterns = [
             r'\bnot\s+played\b', r'\bhaven\'t\s+played\b', r'\bstill\s+have\s+to\s+play\b',
             r'\bupcoming\b', r'\bscheduled\b', r'\bfuture\b', r'\bhave\s+left\b', r'\bnext\s+(game|match)\b',
             r'\bplay\s+against\s+next\b', r'\bwho\s+do\s+they\s+play\b'
         ]
 
-        is_upcoming_match_query = False
-        for pattern in not_played_patterns:
-            if re.search(pattern, query, re.IGNORECASE):
-                is_upcoming_match_query = True
-                not_played_context = """
-                The user is asking about matches that haven't been played yet.
-                Use conditions like: WHERE (home_score IS NULL OR away_score IS NULL)
-                AND date >= CURRENT_DATE
-                NULL scores indicate matches that haven't been played yet.
-                Order results by date in ascending order to show the next upcoming match first.
-                """
-                break
-
-        # Special context for follow-up questions
-        follow_up_context = ""
-        if "team" in query_context:
-            team_name = query_context["team"]
-            # Check if this is likely a follow-up question that doesn't explicitly mention the team
-            follow_up_pronouns = ['they', 'their', 'them', 'these', 'those', 'it', 'its', 'who']
-            follow_up_keywords = ['games', 'matches', 'play', 'playing', 'schedule', 'upcoming', 'next', 'results', 'score']
-
-            # Check for pronouns that indicate a follow-up about the same team
-            has_pronouns = any(pronoun in query.lower().split() for pronoun in follow_up_pronouns)
-
-            # Check for keywords that indicate match-related follow-up
-            has_keywords = any(keyword in query.lower() for keyword in follow_up_keywords)
-
-            # Determine if it's a follow-up about matches/teams
-            is_likely_follow_up = has_pronouns or has_keywords
-
-            if is_likely_follow_up:
-                # This is a strong follow-up indicator
-                follow_up_context = f"""
-                IMPORTANT FOLLOW-UP CONTEXT: This is a follow-up question about the team "{team_name}".
-                Even though the team isn't explicitly mentioned in this query, you MUST include filters for {team_name}.
-
-                ALWAYS include this condition in your SQL WHERE clause:
-                (home_team LIKE '%{team_name}%' OR away_team LIKE '%{team_name}%')
-
-                If the query asks about upcoming matches, combine it with:
-                AND (home_score IS NULL OR away_score IS NULL)
-                AND date >= CURRENT_DATE
-                ORDER BY date ASC
-
-                The user is asking about {team_name}, even though they used pronouns like "they/their/them".
-                """
-
-                # If this is both a follow-up AND an upcoming match query, make the context even more explicit
-                if is_upcoming_match_query:
-                    not_played_context = f"""
-                    The user is asking about UPCOMING matches for {team_name} that haven't been played yet.
-                    You MUST use these conditions:
-                    WHERE (home_team LIKE '%{team_name}%' OR away_team LIKE '%{team_name}%')
-                    AND (home_score IS NULL OR away_score IS NULL)
-                    AND date >= CURRENT_DATE
-                    ORDER BY date ASC
-                    LIMIT 1  -- To show only the next match
-                    """
+        is_upcoming_match_query = any(re.search(pattern, query, re.IGNORECASE) for pattern in not_played_patterns)
+        if is_upcoming_match_query:
+            context_summary += "- The query is about upcoming matches that haven't been played yet\n"
 
         # Instructions for LLM
         sql_generation_prompt = f"""You are a helpful database assistant with expertise in soccer matches that translates questions into SQL queries for a DuckDB database.
@@ -391,13 +323,14 @@ class QueryEngine(NLSQLTableQueryEngine):
 DATABASE SCHEMA:
 {table_context}
 
-IMPORTANT CONTEXT AND INSTRUCTIONS:
-{division_context}
+{conversation_history}
+
+{context_summary}
+
+TEAM DIVISION INFO:
 {team_division_context}
-{team_context}
-{time_context}
-{not_played_context}
-{follow_up_context}
+
+IMPORTANT INSTRUCTIONS:
 
 1. DIVISION HANDLING:
 - When a query references a division (like "division 3", "league 2", or "C league"), you MUST include filters for both home_team and away_team to include teams from that division.
@@ -413,20 +346,17 @@ IMPORTANT CONTEXT AND INSTRUCTIONS:
 - ALWAYS include the month filter when a query mentions "this month".
 
 3. TEAM HANDLING:
-- When a query mentions a specific team like "Key West", use LIKE pattern matching for both home_team and away_team:
-  WHERE (home_team LIKE '%Key West%' OR away_team LIKE '%Key West%')
-- For follow-up questions about a team mentioned in previous context, ALWAYS include team filters even if the team isn't explicitly mentioned.
+- When a query is about a specific team (whether mentioned explicitly or implied through conversation history):
+  * ALWAYS use LIKE pattern matching for both home_team and away_team:
+    WHERE (home_team LIKE '%Team Name%' OR away_team LIKE '%Team Name%')
+  * For follow-up questions using pronouns like "they" or "their", apply appropriate team filters based on context
+  * If the conversation context mentions a specific team, make sure to filter for that team
 
 4. NULL SCORE HANDLING:
 - Some matches have NULL scores because they haven't been played yet.
 - When calculating win/loss/draw records, treat NULL scores as "upcoming" or "not played" matches.
 - Use IS NULL checks to identify upcoming matches: WHERE home_score IS NULL OR away_score IS NULL
-- For match result classifications, include a case for upcoming matches:
-  CASE
-    WHEN home_score IS NULL OR away_score IS NULL THEN 'Upcoming'
-    WHEN home_team LIKE '%Team%' AND home_score > away_score THEN 'Win'
-    ... (other cases)
-  END AS result
+- For match result classifications, include a case for upcoming matches
 
 5. SQL FORMATTING:
 - Ensure the SQL is valid DuckDB syntax
@@ -435,13 +365,6 @@ IMPORTANT CONTEXT AND INSTRUCTIONS:
 - Order results appropriately based on the query (e.g., by points, goals, dates)
 - Limit results to a reasonable number (e.g., 10-20) unless specifically asked for more
 - Include a LIMIT clause at the end of any query that may return many rows
-
-6. CALCULATIONS:
-- For standings or league tables:
-  * Calculate matches_played as count of matches with non-NULL scores
-  * Calculate wins, draws, and losses based on results
-  * Calculate points as 3*wins + 1*draws
-  * Calculate goal difference (GD) as (goals_for - goals_against)
 
 YOUR TASK:
 1. Translate the following query into a SQL query for DuckDB
@@ -475,107 +398,115 @@ SQL QUERY:"""
 
     def query(self, query_str: str, memory=None) -> str:
         """
-        Process a user query and return a natural language response.
+        Process a natural language query and return a response.
 
         Args:
-            query_str: The user query
-            memory: Optional memory object for conversation context
+            query_str: The natural language query string
+            memory: Optional ConversationMemory instance for context
 
         Returns:
-            Natural language response as a string
+            Natural language response
         """
-        print(f"📥 Processing query: '{query_str}'")
+        print("\n🔍 Processing query:", query_str)
+
+        # Clean query
+        clean_query = self._clean_query(query_str)
 
         # Store memory for later use
         self.memory = memory
-
-        # Use clean_query to remove formatting requests for LLM processing
-        clean_query = self._clean_query(query_str)
-        if clean_query != query_str:
-            print(f"Cleaned query (formatting requests removed): '{clean_query}'")
+        self.memory_context = {}
 
         # Initialize query context
         query_context = {}
 
-        # Check if we have memory context from previous interactions
+        # If memory exists, try to get previous context (for follow-up queries)
         if memory:
-            print("📝 Checking for context from previous queries...")
+            session_id = getattr(memory, 'session_id', None)
+            if not session_id:
+                # Get the session ID from memory if it's available
+                if hasattr(memory, 'sessions') and memory.sessions:
+                    # Take the most recent session if multiple exist
+                    session_id = list(memory.sessions.keys())[0]
 
-            # Try to get team context from memory
-            last_team = None
+            # Store the session ID for later reference
+            memory.session_id = session_id
+
+            print(f"📝 Using memory session: {session_id}")
+
+            # Try to load last team and division from memory
             if hasattr(memory, 'get_last_team'):
-                last_team = memory.get_last_team(getattr(memory, 'session_id', None))
+                last_team = memory.get_last_team(session_id)
                 if last_team:
-                    print(f"📝 Found previous team context: {last_team}")
                     query_context["team"] = last_team
+                    print(f"📝 Retrieved last team from memory: {last_team}")
 
-                    # If query contains "their", "they", or other pronouns, ensure we treat it as a follow-up
-                    follow_up_pronouns = ['they', 'their', 'them', 'these', 'those', 'it', 'its']
-                    if any(pronoun in clean_query.lower().split() for pronoun in follow_up_pronouns):
-                        print(f"📝 Detected follow-up pronoun - treating as question about {last_team}")
-                        # No need to modify query, just make sure we pass the team context
-                        # We'll let the SQL generator handle the appropriate filtering
-
-            # Try to get division context from memory
-            last_division = None
             if hasattr(memory, 'get_last_division'):
-                last_division = memory.get_last_division(getattr(memory, 'session_id', None))
+                last_division = memory.get_last_division(session_id)
                 if last_division:
-                    print(f"📝 Found previous division context: {last_division}")
                     query_context["division"] = last_division
+                    print(f"📝 Retrieved last division from memory: {last_division}")
 
-            # Try to get full query context from memory
+            # Get previous query context if available (for multi-turn conversations)
             if hasattr(memory, 'get_last_query_context'):
-                last_query_context = memory.get_last_query_context(getattr(memory, 'session_id', None))
-                if last_query_context:
-                    print(f"📝 Found previous query context: {last_query_context}")
-                    # Only update specific fields to avoid overwriting current query info
-                    for k, v in last_query_context.items():
-                        if k not in query_context and k in ['team', 'division', 'time_period']:
-                            query_context[k] = v
+                last_context = memory.get_last_query_context(session_id)
+                if last_context:
+                    # Only update specific fields, don't override the whole context
+                    # This preserves the current query information
+                    for key, value in last_context.items():
+                        # Don't update these fields from previous context
+                        if key not in ['sql', 'query']:
+                            query_context[key] = value
+                    print(f"📝 Retrieved additional context from memory: {last_context}")
 
+        # Try to infer the SQL query
         try:
-            # Generate SQL from the query
-            inferred_sql, updated_context = self._infer_query_and_generate_sql(clean_query, query_context)
+            sql_query, updated_context = self._infer_query_and_generate_sql(clean_query, query_context)
+            query_context.update(updated_context)
+            query_context["sql"] = sql_query
+        except Exception as e:
+            print(f"❌ Error generating SQL query: {str(e)}")
+            return f"I encountered an error generating the SQL query: {str(e)}"
 
-            # Execute the SQL
-            print(f"🔍 Executing SQL: {inferred_sql}")
+        # Store the original query in context
+        query_context["query"] = clean_query
 
-            # Check if SQL contains error message
-            if inferred_sql and ("SELECT 'Failed to generate" in inferred_sql or "SELECT 'Error" in inferred_sql):
-                error_msg = inferred_sql.replace("SELECT '", "").replace("' AS error;", "")
-                return f"I'm sorry, I couldn't generate a valid SQL query for that question. {error_msg}"
+        # Store context for potential follow-up queries
+        self.memory_context = query_context
 
-            # Execute the SQL query
-            results = self.sql_database.run_sql(inferred_sql)
+        # Run the query
+        try:
+            results = self.sql_database.run_sql(sql_query)
 
-            # Check for empty results
+            # Check for empty/unrealistic results
             if is_empty_result(results):
-                print("⚠️ Warning: Query returned empty results")
+                print("⚠️ Query returned empty results")
+                # If the query mentions "not played" but doesn't correctly filter for NULL scores,
+                # try modifying the query to handle this case
+                if (
+                    "not played" in clean_query.lower()
+                    or "upcoming" in clean_query.lower()
+                    or "next" in clean_query.lower()
+                ) and "IS NULL" not in sql_query:
+                    print("🔄 Attempting to modify query to handle unplayed matches...")
+                    modified_sql = sql_query.replace(";", " AND (home_score IS NULL OR away_score IS NULL);")
+                    query_context["sql"] = modified_sql
+                    results = self.sql_database.run_sql(modified_sql)
 
-            # Check for unrealistic values
             if has_unrealistic_values(results):
-                print("⚠️ Warning: Query returned potentially unrealistic values for soccer statistics")
-                # Add a warning flag to the context for the response generation
-                updated_context['unrealistic_values'] = True
-
-            # Add debugging for the results
-            print(f"\n--- SQL Results Debug ---")
-            print(f"Results type: {type(results)}")
-            print(f"Results content (sample): {str(results)[:500] if results else 'No results'}")
-            print(f"--- End SQL Results Debug ---\n")
-
-            # Store memory context
-            self.memory_context = updated_context
-
-            # Use LLM to infer and format the response
-            response = self._infer_response(query_str, results, updated_context)
-            return response
+                print("⚠️ Query returned potentially unrealistic values (like too many goals)")
 
         except Exception as e:
-            error_message = f"An error occurred while processing your query: {str(e)}"
-            print(f"❌ {error_message}")
-            return error_message
+            print(f"❌ Error executing SQL query: {str(e)}")
+            return f"I encountered an error executing the SQL query: {str(e)}"
+
+        # Infer a natural language response
+        try:
+            inferred_response = self._infer_response(clean_query, results, query_context)
+            return inferred_response
+        except Exception as e:
+            print(f"❌ Error inferring response: {str(e)}")
+            # Fallback response with the raw results
+            return f"I found some results but couldn't generate a proper explanation. Here are the raw results:\n\n{results}"
 
     def reset_memory(self):
         """Reset the conversation memory."""

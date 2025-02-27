@@ -185,20 +185,184 @@ class ConversationMemory:
         return False
 
     def format_context(self, session_id):
-        """Format the conversation history as context for queries."""
-        context = []
+        """
+        Format the conversation history as context for queries.
 
-        if session_id not in self.sessions:
+        Returns a structured representation of the conversation history
+        that can be used in prompts for follow-up queries.
+
+        Args:
+            session_id: The session ID to get history from
+
+        Returns:
+            A formatted string with the conversation history
+        """
+        if not session_id or session_id not in self.sessions:
+            # Try to load the session if it exists
+            if session_id and not self.load_session(session_id):
+                return ""
+            # If still no session, check if we have any sessions
+            if not self.sessions:
+                return ""
+            # Take the first session if none specified
+            if not session_id:
+                session_id = list(self.sessions.keys())[0]
+
+        # Get session data
+        session_data = self.sessions[session_id]
+
+        # Format conversation turns
+        conversation = []
+
+        # Keep track of mentions to build a summary
+        mentioned_teams = set()
+        mentioned_divisions = set()
+
+        for i, interaction in enumerate(session_data):
+            # Include query/response pairs
+            if interaction.get("type") == "interaction":
+                query = interaction.get("query", "")
+                response = interaction.get("response", "")
+
+                # Add turn number for clarity
+                turn_num = i//2 + 1
+                conversation.append(f"Turn {turn_num}:")
+                conversation.append(f"User: {query}")
+                conversation.append(f"System: {response}")
+                conversation.append("")  # Empty line for readability
+
+                # Track potential entities mentioned
+                team_match = re.search(r'(?i)(Key West FC|FC United|Spartak Cleveland|Cleveland Force FC|Boston Braves FC)', query)
+                if team_match:
+                    mentioned_teams.add(team_match.group(1))
+
+                division_match = re.search(r'(?i)division\s*(\d+)|league\s*(\d+)', query)
+                if division_match:
+                    div_num = division_match.group(1) or division_match.group(2)
+                    mentioned_divisions.add(div_num)
+
+            # Include context entries for better understanding
+            elif interaction.get("type") == "context":
+                context_data = interaction.get("data", {})
+
+                # Track mentioned entities from context
+                if "last_team" in context_data:
+                    mentioned_teams.add(context_data["last_team"])
+
+                if "last_division" in context_data:
+                    mentioned_divisions.add(context_data["last_division"])
+
+        # Add a summary of key entities if any were mentioned
+        summary = []
+        if mentioned_teams:
+            teams_str = ", ".join(mentioned_teams)
+            summary.append(f"Teams mentioned: {teams_str}")
+
+        if mentioned_divisions:
+            divisions_str = ", ".join(mentioned_divisions)
+            summary.append(f"Divisions mentioned: {divisions_str}")
+
+        # Build the final context string
+        context_str = ""
+
+        # Add summary at the top if available
+        if summary:
+            context_str += "CONVERSATION SUMMARY:\n"
+            context_str += "\n".join(summary)
+            context_str += "\n\n"
+
+        # Add conversation history
+        context_str += "CONVERSATION HISTORY:\n"
+        context_str += "\n".join(conversation)
+
+        return context_str
+
+    def summarize_context(self, session_id, max_length=1000):
+        """
+        Create a summarized version of the conversation context.
+
+        If the conversation history is too long, this creates a shorter version
+        by keeping the most recent exchanges verbatim and summarizing earlier ones.
+
+        Args:
+            session_id: The session ID to summarize
+            max_length: Maximum desired length for the summary
+
+        Returns:
+            Summarized context string
+        """
+        full_context = self.format_context(session_id)
+
+        # If context is already within limits, return as is
+        if len(full_context) <= max_length:
+            return full_context
+
+        # Get session data
+        if not session_id or session_id not in self.sessions:
             if not self.load_session(session_id):
                 return ""
 
-        for interaction in self.sessions[session_id]:
-            # Only include actual query/response pairs, not context metadata
-            if "query" in interaction and "response" in interaction:
-                context.append(f"User: {interaction['query']}")
-                context.append(f"System: {interaction['response']}")
+        session_data = self.sessions[session_id]
 
-        return "\n".join(context)
+        # Keep track of important entities
+        teams = set()
+        divisions = set()
+        time_periods = set()
+
+        # Extract all entities from the conversation
+        for interaction in session_data:
+            if interaction.get("type") == "context":
+                context_data = interaction.get("data", {})
+                if "last_team" in context_data:
+                    teams.add(context_data["last_team"])
+                if "last_division" in context_data:
+                    divisions.add(context_data["last_division"])
+                if "query_context" in context_data:
+                    query_ctx = context_data["query_context"]
+                    if "team" in query_ctx:
+                        teams.add(query_ctx["team"])
+                    if "division" in query_ctx:
+                        divisions.add(query_ctx["division"])
+                    if "time_period" in query_ctx:
+                        time_periods.add(query_ctx["time_period"])
+
+        # Build a concise summary
+        summary = ["CONVERSATION SUMMARY:"]
+
+        if teams:
+            summary.append(f"Teams discussed: {', '.join(teams)}")
+        if divisions:
+            summary.append(f"Divisions discussed: {', '.join(divisions)}")
+        if time_periods:
+            summary.append(f"Time periods discussed: {', '.join(time_periods)}")
+
+        # Get only recent interactions for verbatim inclusion
+        recent_turns = []
+        interaction_count = 0
+
+        for interaction in reversed(session_data):
+            if interaction.get("type") == "interaction":
+                if interaction_count < 4:  # Keep last 2 complete turns (4 interactions)
+                    recent_turns.insert(0, interaction)
+                    interaction_count += 1
+                else:
+                    break
+
+        # Format recent turns
+        recent_context = []
+        for i, interaction in enumerate(recent_turns):
+            query = interaction.get("query", "")
+            response = interaction.get("response", "")
+
+            recent_context.append(f"User: {query}")
+            recent_context.append(f"System: {response}")
+
+        # Combine summary and recent interactions
+        result = "\n".join(summary)
+        result += "\n\nMOST RECENT EXCHANGES:\n"
+        result += "\n".join(recent_context)
+
+        return result
 
     def get_session_history(self, session_id):
         """
