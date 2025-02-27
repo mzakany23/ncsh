@@ -35,6 +35,8 @@ install: venv compile-requirements
 	@echo "Installing dependencies..."
 	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
 	cd processing && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
+	@echo "Installing analysis dependencies..."
+	cd analysis && uv pip install -r requirements.txt && uv pip install -e .
 
 test: install
 	@echo "Running tests..."
