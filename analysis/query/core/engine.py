@@ -227,6 +227,7 @@ class QueryEngine(NLSQLTableQueryEngine):
         division_match = re.search(division_pattern, query, re.IGNORECASE)
 
         division_context = ""
+        # Check for division in the current query
         if division_match:
             division_text = division_match.group(1).lower()
             print(f"📝 Detected division reference: {division_match.group(0)}")
@@ -255,6 +256,12 @@ class QueryEngine(NLSQLTableQueryEngine):
                 division_context += f"The query mentions division {division_number}.\n"
                 # Add division to context
                 query_context["division"] = division_number
+        # Check for division in previous context if not in current query
+        elif "division" in query_context:
+            division_number = query_context["division"]
+            print(f"📝 Using division from previous context: {division_number}")
+            division_context = f"The user previously asked about division {division_number}.\n"
+            division_context += f"This is a follow-up question about division {division_number}.\n"
 
         # Get team/division information for context
         team_info = get_teams_by_division(self.sql_database)
@@ -263,11 +270,36 @@ class QueryEngine(NLSQLTableQueryEngine):
         # Check if the query mentions a specific team
         team_context = ""
         team_match = find_best_matching_team(query, self.teams)
+
+        # First check for team in the current query
         if team_match:
             matched_phrase, team_name = team_match
             print(f"📝 Detected team reference: '{matched_phrase}' matched to '{team_name}'")
             team_context = f"The query mentions the team '{team_name}'.\n"
             query_context["team"] = team_name
+        # Otherwise check if we have a team from previous context
+        elif "team" in query_context:
+            team_name = query_context["team"]
+            print(f"📝 Using team from previous context: {team_name}")
+            team_context = f"The user previously asked about the team '{team_name}'.\n"
+            team_context += f"This is a follow-up question about '{team_name}'.\n"
+
+            # Special handling for ambiguous follow-up questions like "show me the games they haven't played"
+            follow_up_patterns = [
+                r'\b(their|they|them|these|those)\b',
+                r'\b(games|matches)\s+not\s+played\b',
+                r'\b(games|matches)\s+(they|their)\b',
+                r'\bnot\s+played\s+yet\b',
+                r'\bupcoming\s+(games|matches)\b',
+                r'\bstill\s+have\s+not\s+played\b'
+            ]
+
+            for pattern in follow_up_patterns:
+                if re.search(pattern, query, re.IGNORECASE):
+                    print(f"📝 Detected follow-up reference pattern: '{pattern}'")
+                    team_context += f"This appears to be a follow-up about '{team_name}', even though they aren't explicitly mentioned.\n"
+                    team_context += f"Apply team filters for '{team_name}' in the SQL query.\n"
+                    break
 
         # Check if the query mentions time periods
         time_context = ""
@@ -277,9 +309,81 @@ class QueryEngine(NLSQLTableQueryEngine):
             time_context += f"Current date function to use: CURRENT_DATE\n"
             time_context += f"For current {time_period}, use: date >= DATE_TRUNC('{time_period}', CURRENT_DATE) AND date < DATE_TRUNC('{time_period}', CURRENT_DATE) + INTERVAL '1 {time_period}'\n"
             query_context["time_period"] = time_period
+        elif "time_period" in query_context:
+            time_period = query_context["time_period"]
+            time_context = f"The user previously asked about the current {time_period}.\n"
+            time_context += f"This is a follow-up question that likely still refers to the current {time_period}.\n"
+            time_context += f"Use: date >= DATE_TRUNC('{time_period}', CURRENT_DATE) AND date < DATE_TRUNC('{time_period}', CURRENT_DATE) + INTERVAL '1 {time_period}'\n"
 
         # Add table schema context
         table_context = self._get_table_context()
+
+        # For follow-up questions about games not played yet, add special context
+        not_played_context = ""
+        not_played_patterns = [
+            r'\bnot\s+played\b', r'\bhaven\'t\s+played\b', r'\bstill\s+have\s+to\s+play\b',
+            r'\bupcoming\b', r'\bscheduled\b', r'\bfuture\b', r'\bhave\s+left\b', r'\bnext\s+(game|match)\b',
+            r'\bplay\s+against\s+next\b', r'\bwho\s+do\s+they\s+play\b'
+        ]
+
+        is_upcoming_match_query = False
+        for pattern in not_played_patterns:
+            if re.search(pattern, query, re.IGNORECASE):
+                is_upcoming_match_query = True
+                not_played_context = """
+                The user is asking about matches that haven't been played yet.
+                Use conditions like: WHERE (home_score IS NULL OR away_score IS NULL)
+                AND date >= CURRENT_DATE
+                NULL scores indicate matches that haven't been played yet.
+                Order results by date in ascending order to show the next upcoming match first.
+                """
+                break
+
+        # Special context for follow-up questions
+        follow_up_context = ""
+        if "team" in query_context:
+            team_name = query_context["team"]
+            # Check if this is likely a follow-up question that doesn't explicitly mention the team
+            follow_up_pronouns = ['they', 'their', 'them', 'these', 'those', 'it', 'its', 'who']
+            follow_up_keywords = ['games', 'matches', 'play', 'playing', 'schedule', 'upcoming', 'next', 'results', 'score']
+
+            # Check for pronouns that indicate a follow-up about the same team
+            has_pronouns = any(pronoun in query.lower().split() for pronoun in follow_up_pronouns)
+
+            # Check for keywords that indicate match-related follow-up
+            has_keywords = any(keyword in query.lower() for keyword in follow_up_keywords)
+
+            # Determine if it's a follow-up about matches/teams
+            is_likely_follow_up = has_pronouns or has_keywords
+
+            if is_likely_follow_up:
+                # This is a strong follow-up indicator
+                follow_up_context = f"""
+                IMPORTANT FOLLOW-UP CONTEXT: This is a follow-up question about the team "{team_name}".
+                Even though the team isn't explicitly mentioned in this query, you MUST include filters for {team_name}.
+
+                ALWAYS include this condition in your SQL WHERE clause:
+                (home_team LIKE '%{team_name}%' OR away_team LIKE '%{team_name}%')
+
+                If the query asks about upcoming matches, combine it with:
+                AND (home_score IS NULL OR away_score IS NULL)
+                AND date >= CURRENT_DATE
+                ORDER BY date ASC
+
+                The user is asking about {team_name}, even though they used pronouns like "they/their/them".
+                """
+
+                # If this is both a follow-up AND an upcoming match query, make the context even more explicit
+                if is_upcoming_match_query:
+                    not_played_context = f"""
+                    The user is asking about UPCOMING matches for {team_name} that haven't been played yet.
+                    You MUST use these conditions:
+                    WHERE (home_team LIKE '%{team_name}%' OR away_team LIKE '%{team_name}%')
+                    AND (home_score IS NULL OR away_score IS NULL)
+                    AND date >= CURRENT_DATE
+                    ORDER BY date ASC
+                    LIMIT 1  -- To show only the next match
+                    """
 
         # Instructions for LLM
         sql_generation_prompt = f"""You are a helpful database assistant with expertise in soccer matches that translates questions into SQL queries for a DuckDB database.
@@ -292,6 +396,8 @@ IMPORTANT CONTEXT AND INSTRUCTIONS:
 {team_division_context}
 {team_context}
 {time_context}
+{not_played_context}
+{follow_up_context}
 
 1. DIVISION HANDLING:
 - When a query references a division (like "division 3", "league 2", or "C league"), you MUST include filters for both home_team and away_team to include teams from that division.
@@ -309,6 +415,7 @@ IMPORTANT CONTEXT AND INSTRUCTIONS:
 3. TEAM HANDLING:
 - When a query mentions a specific team like "Key West", use LIKE pattern matching for both home_team and away_team:
   WHERE (home_team LIKE '%Key West%' OR away_team LIKE '%Key West%')
+- For follow-up questions about a team mentioned in previous context, ALWAYS include team filters even if the team isn't explicitly mentioned.
 
 4. NULL SCORE HANDLING:
 - Some matches have NULL scores because they haven't been played yet.
@@ -389,6 +496,43 @@ SQL QUERY:"""
 
         # Initialize query context
         query_context = {}
+
+        # Check if we have memory context from previous interactions
+        if memory:
+            print("📝 Checking for context from previous queries...")
+
+            # Try to get team context from memory
+            last_team = None
+            if hasattr(memory, 'get_last_team'):
+                last_team = memory.get_last_team(getattr(memory, 'session_id', None))
+                if last_team:
+                    print(f"📝 Found previous team context: {last_team}")
+                    query_context["team"] = last_team
+
+                    # If query contains "their", "they", or other pronouns, ensure we treat it as a follow-up
+                    follow_up_pronouns = ['they', 'their', 'them', 'these', 'those', 'it', 'its']
+                    if any(pronoun in clean_query.lower().split() for pronoun in follow_up_pronouns):
+                        print(f"📝 Detected follow-up pronoun - treating as question about {last_team}")
+                        # No need to modify query, just make sure we pass the team context
+                        # We'll let the SQL generator handle the appropriate filtering
+
+            # Try to get division context from memory
+            last_division = None
+            if hasattr(memory, 'get_last_division'):
+                last_division = memory.get_last_division(getattr(memory, 'session_id', None))
+                if last_division:
+                    print(f"📝 Found previous division context: {last_division}")
+                    query_context["division"] = last_division
+
+            # Try to get full query context from memory
+            if hasattr(memory, 'get_last_query_context'):
+                last_query_context = memory.get_last_query_context(getattr(memory, 'session_id', None))
+                if last_query_context:
+                    print(f"📝 Found previous query context: {last_query_context}")
+                    # Only update specific fields to avoid overwriting current query info
+                    for k, v in last_query_context.items():
+                        if k not in query_context and k in ['team', 'division', 'time_period']:
+                            query_context[k] = v
 
         try:
             # Generate SQL from the query
