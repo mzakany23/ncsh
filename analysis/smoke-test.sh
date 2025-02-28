@@ -27,7 +27,7 @@ run_query() {
     CURRENT_DIR=$(pwd)
     # Change to the root directory and run the command
     cd $(dirname $CURRENT_DIR)
-    make query-llama query="$query" session_id=$SESSION_ID
+    make query-llama query="$query" session_id=$SESSION_ID verbose=true
     # Return to the original directory
     cd $CURRENT_DIR
     echo "--------------------------------------------"

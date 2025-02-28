@@ -962,11 +962,11 @@ SQL QUERY:"""
 
         try:
             # Validate if the query is specific enough for SQL generation
-            is_specific, reason = self._validate_query(query_str)
+            is_valid, reason = self._validate_query(query_str, query_context)
 
             # If the query isn't specific enough and doesn't have helpful context,
             # use the ambiguity handler to provide guidance
-            if not is_specific:
+            if not is_valid:
                 logger.info(f"Query validation failed: {reason}")
                 return self._handle_ambiguous_query(query_str, f"Query lacks specificity: {reason}")
 
@@ -1279,15 +1279,17 @@ SQL QUERY:"""
 
         return entities
 
-    def _validate_query(self, query_str: str) -> tuple[bool, str]:
+    def _validate_query(self, query_str: str, query_context: dict = None) -> tuple[bool, str]:
         """
         Use the LLM to validate if a query meets the minimal standard for SQL generation.
 
         This method sends the query to the LLM along with examples of good and bad queries,
         asking it to determine if the query is specific enough to generate meaningful SQL.
+        If query_context is provided, it will be used to help validate follow-up queries.
 
         Args:
             query_str: The user's query to validate
+            query_context: Optional context from previous interactions, including team references
 
         Returns:
             Tuple of (is_valid, reason)
@@ -1295,6 +1297,16 @@ SQL QUERY:"""
             - reason: Explanation of why the query is or isn't valid
         """
         logger.info(f"Validating query specificity: {query_str}")
+
+        # Add context information if available
+        context_section = ""
+        if query_context:
+            context_section = "CONVERSATION CONTEXT:\n"
+            if 'team_context' in query_context:
+                context_section += f"- Previously mentioned team: {query_context['team_context']}\n"
+            if 'entity_mappings_from_memory' in query_context and query_context['entity_mappings_from_memory'].get('last_team'):
+                context_section += f"- Last discussed team: {query_context['entity_mappings_from_memory']['last_team']}\n"
+            context_section += "\n"
 
         # Create a prompt with examples of good and bad queries
         prompt = f"""
@@ -1306,6 +1318,7 @@ SQL QUERY:"""
         - "How many goals did Sleigh All Day score in away games in February 2025?"
         - "List the top 10 teams by total goals scored"
         - "What teams are in Division 3?"
+        - "How is their win percentage this month?" (when 'their' clearly refers to a specific team from context)
 
         EXAMPLES OF BAD QUERIES (too vague):
         - "Tell me about soccer"
@@ -1318,7 +1331,9 @@ SQL QUERY:"""
         1. Reference specific entities (teams, divisions, players) OR specific metrics (goals, wins, etc.)
         2. Have clear intent that could be translated to SQL (listing, counting, comparing, etc.)
         3. Not be so vague that it could be interpreted in many different ways
+        4. If it uses pronouns like "they" or "their", the context should make it clear what entity is being referenced
 
+        {context_section}
         User query: "{query_str}"
 
         First, determine if this query is specific enough to generate meaningful SQL (YES or NO).
