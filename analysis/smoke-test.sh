@@ -38,10 +38,7 @@ echo -e "\n${BOLD}${BLUE}Basic Queries${NC}"
 echo "=============================================="
 
 # Test 1: Basic team query
-run_query "How is key west doing these days?"
-
-# Test 2: Follow-up query
-run_query "ok, how is their win/loss percentage this month"
+run_query "giv eme a breakdown table of keywests games in february"
 
 echo -e "\n${BOLD}${BLUE}Error Handling${NC}"
 echo "=============================================="

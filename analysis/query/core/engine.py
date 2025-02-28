@@ -7,9 +7,9 @@ to provide specialized functionality for querying soccer match data.
 import re
 import json
 import logging
-import datetime
 from typing import Dict, List, Optional, Tuple, Any, Union
 from copy import deepcopy
+from datetime import datetime, date, timedelta
 
 from llama_index.core.indices.struct_store import NLSQLTableQueryEngine
 from ..utils import (
@@ -23,6 +23,31 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
+class TeamMatch:
+    """
+    Class to represent a team match with confidence score.
+    This class is used for fuzzy matching of team names.
+    """
+    def __init__(self, team_name, confidence, uncertain=False):
+        self.team_name = team_name
+        self.confidence = confidence
+        self.uncertain = uncertain
+
+    def __str__(self):
+        return f"{self.team_name}" + (" (uncertain)" if self.uncertain else "")
+
+    def __repr__(self):
+        return self.__str__()
+
+    def to_dict(self):
+        """Convert the TeamMatch object to a dictionary for JSON serialization."""
+        return {
+            "team_name": self.team_name,
+            "confidence": self.confidence,
+            "uncertain": self.uncertain
+        }
+
+
 class QueryEngine(NLSQLTableQueryEngine):
     """Extended query engine for soccer data.
 
@@ -31,12 +56,12 @@ class QueryEngine(NLSQLTableQueryEngine):
     match histories, etc.
     """
 
-    def __init__(self, sql_database, llm, always_infer=True, **kwargs):
+    def __init__(self, sql_database, llm, always_infer=False, **kwargs):
         """
-        Initialize with SQL database and LLM.
+        Initialize the QueryEngine.
 
         Args:
-            sql_database: SQL database connection
+            sql_database: SQL database to query
             llm: Language model for query generation and response formatting
             always_infer: Always use inference for SQL generation
             **kwargs: Additional arguments to pass to the parent class
@@ -47,6 +72,9 @@ class QueryEngine(NLSQLTableQueryEngine):
         self.memory_context = None  # Initialize memory context attribute
         self.always_infer = always_infer  # Flag to force using dynamic inference for all queries
         print(f"Query engine initialized with always_infer={self.always_infer}")
+
+        # Enable fuzzy team matching by default
+        self.use_fuzzy_team_matching = True
 
         # Load teams for context
         self.teams = get_all_teams(self.sql_database)
@@ -335,7 +363,7 @@ class QueryEngine(NLSQLTableQueryEngine):
             print(f"📝 Stored team context: {team}")
 
         # Get current date info
-        today = datetime.date.today()
+        today = date.today()
         current_date_str = today.strftime("%Y-%m-%d")
         current_month_str = today.strftime("%B %Y")
 
@@ -443,153 +471,183 @@ class QueryEngine(NLSQLTableQueryEngine):
 
     def _infer_response(self, query_str: str, results, query_context: dict) -> str:
         """
-        Generate a natural language response based on the query and results.
-
-        Args:
-            query_str: The original user query
-            results: The query results
-            query_context: Additional context including metadata about the query
-
-        Returns:
-            Natural language response as a string
+        Generate a natural language response from the SQL results.
         """
-        print("🧠 Generating response with LLM")
+        # Extract context
+        entity_mappings = query_context.get("entity_mappings", {})
+        team_context = query_context.get("team_context")
+        follow_up_context = query_context.get("follow_up_context", False)
+        time_filter_context = query_context.get("time_filter_context", False)
+        generated_sql = query_context.get("generated_sql", "")
 
-        # Determine the query type for better context
-        query_type = query_context.get('query_type', 'general')
+        # Check for uncertain team match
+        uncertain_team_match = query_context.get("uncertain_team_match", False)
+        uncertain_team = query_context.get("uncertain_team", None)
 
-        # Extract date information from context
-        current_date = query_context.get('current_date', 'Unknown')
-        current_year = query_context.get('current_year', 'Unknown')
-        current_month = query_context.get('current_month', 'Unknown')
+        # Convert results to JSON string for LLM
+        results_str = "No results found."
+        if results is not None:
+            if hasattr(results, "to_json"):
+                try:
+                    results_str = results.to_json(orient="records")
+                except Exception as e:
+                    results_str = str(results)
+            else:
+                results_str = str(results)
 
-        # Format the results for the prompt
-        # Truncate if too long to avoid prompt size issues
-        result_str = str(results)
-        if len(result_str) > 3000:
-            result_str = result_str[:3000] + "... [truncated due to length]"
+        # Count the number of results
+        num_results = 0
+        if hasattr(results, "__len__"):
+            num_results = len(results)
 
-        # Add system context to keep responses focused on NC soccer
-        system_context = """
-        SYSTEM CONTEXT - IMPORTANT INSTRUCTIONS:
-        - You are a specialized assistant focused ONLY on North Coast soccer statistics.
-        - ALL team names mentioned in queries refer to soccer teams in North Coast, never to people or other entities.
-        - This is a soccer statistics database - NEVER interpret queries as being about anything other than soccer.
-        - Always maintain context that we are discussing North Coast soccer teams and matches.
-        - If a team name is mentioned (e.g., "Key West", "Durham", "Charlotte"), it ALWAYS refers to a soccer team.
-        - If asked about a team, provide soccer statistics only, never general information about cities, regions, or people.
-        - Do not speculate about whether team names might refer to other entities - they are always soccer teams.
-        """
+        # Prepare base system message
+        system_message = f"""You are an expert soccer data analyst providing insights in response to user questions about soccer matches.
 
-        # Add specialized instructions based on query context
-        specialized_instructions = ""
+USER QUERY: "{query_str}"
 
-        if is_empty_result(results):
-            specialized_instructions += """
-            IMPORTANT: The query returned no results. You should:
-            1. Clearly state that no data was found
-            2. Suggest possible reasons for the lack of results
-            3. Recommend alternative queries that might yield results
-            4. DO NOT make up data that doesn't exist in the results
-            """
+SQL QUERY USED:
+{generated_sql}
 
-        # Add time context instructions
-        time_context_instructions = f"""
-        IMPORTANT DATE CONTEXT:
-        - Today's date is {current_date}
-        - Current year is {current_year}
-        - Current month is {current_month}
+RESULT SET:
+{results_str}
 
-        When interpreting results:
-        - Matches with dates in the future (after {current_date}) and NULL scores are upcoming matches
-        - Matches with dates in the past (before {current_date}) but NULL scores may be postponed or canceled
-        - Matches with dates in the past (before {current_date}) with recorded scores are completed matches
+Number of results: {num_results}
 
-        Make sure to clearly indicate which matches are upcoming vs. completed.
-        """
+CONTEXT:
+- This is a soccer database for the North Coast Soccer League
+- You should provide a comprehensive but concise natural language answer to the user's query
+- Reference specific data from the result set when applicable
+- Always interpret team names as soccer teams, never as people or other entities"""
 
-        # Add format instructions based on query context
-        format_instructions = """
-        Format your response in a conversational and helpful manner. If the results include:
-        - Rankings: Present as a numbered list
-        - Statistics: Include the most important metrics
-        - Match results: Organize them clearly with proper formatting
-        - Upcoming matches: Group them by date and clearly indicate they haven't been played yet
-        """
+        # Add team context if available
+        if team_context:
+            system_message += f"""
+- The user is specifically asking about the team: {team_context}
+- Make sure to center your response around this team's data"""
 
-        # Add data validity instructions
-        data_validity_instructions = ""
-        if query_context.get("unrealistic_values", False):
-            data_validity_instructions = """
-            WARNING: The query results contain unrealistically high values for soccer statistics.
-            In real soccer matches, a typical team scores between 0-7 goals per game, and total goals
-            for a team over a month might range from 0-30. Please mention this anomaly in your response
-            and suggest that the user verify the data or refine their query.
-            """
+        # Add uncertain match context if applicable
+        if uncertain_team_match and uncertain_team:
+            system_message += f"""
+IMPORTANT NOTE ABOUT TEAM MATCHING:
+- The system detected a potential reference to the team "{uncertain_team}" in the query: "{query_str}"
+- This match is uncertain, so we searched broadly using the pattern '%{uncertain_team}%'
+- If this is incorrect, include a note in your response asking the user to specify the team name more precisely"""
 
-        # Build the prompt for the LLM
-        prompt = f"""
-        I need you to create a natural language response to summarize the results of a database query.
+        # Give guidance based on results
+        system_message += """
 
-        {system_context}
+FORMAT YOUR RESPONSE:
+1. First, provide a direct answer to the question using data from the result set
+2. Include relevant statistics, win/loss records, or match information depending on the query
+3. If no results were found, explain why there might be no data and suggest alternative queries
+4. For team-specific queries with no results, confirm if this is the team they're looking for and suggest similar team names
+5. Keep your response friendly and conversational
+6. Do not mention the SQL query or that you're querying a database
 
-        USER QUERY: "{query_str}"
+Your response should sound like a knowledgeable soccer analyst, not a database query result."""
 
-        QUERY TYPE: {query_type}
+        # Generate the response with the LLM
+        try:
+            # For empty results, provide a more helpful message
+            if num_results == 0:
+                # Special handling for no results but uncertain team match
+                if uncertain_team_match and uncertain_team:
+                    team_options = self._find_similar_teams(uncertain_team)
+                    team_suggestions = ", ".join([f'"{team}"' for team in team_options[:5]])
 
-        QUERY RESULTS:
-        {result_str}
+                    no_results_prompt = f"""You need to inform the user that no matches were found for "{uncertain_team}".
 
-        {specialized_instructions}
+The system is uncertain if "{uncertain_team}" is the correct team name the user is looking for.
 
-        {time_context_instructions}
+Here are some similar team names in our database: {team_suggestions}
 
-        {format_instructions}
+Please generate a helpful response that:
+1. Informs the user no matches were found for their query
+2. Suggests they might have meant one of the similar teams listed
+3. Asks them to clarify which team they're interested in
+4. Provides suggestions for better search terms"""
 
-        {data_validity_instructions}
+                    response = self.llm.complete(no_results_prompt)
+                    # Extract content from response object
+                    if hasattr(response, 'content'):
+                        return response.content
+                    elif hasattr(response, 'text'):
+                        return response.text
+                    else:
+                        return str(response)
 
-        INSTRUCTIONS:
-        1. Analyze the query results and create a natural, informative response that directly answers the user's question
-        2. Format your response according to any format preferences detected in the query
-        3. Make sure your response is accurate based on the data provided
-        4. If the results are empty or contain an error message, acknowledge this and explain what might be missing
-        5. Keep your response concise but complete
-        6. Include key statistics and insights that would be most relevant to the user's question
-        7. Do not include technical details about SQL or internal processing
-        8. When discussing upcoming matches, always mention the current date for reference
-        9. Maintain context that all queries are about North Coast soccer
+                # Standard no results handling
+                no_results_prompt = f"""You need to inform the user that no results were found for their query: "{query_str}".
 
-        IMPORTANT MATCH RESULT INSTRUCTIONS:
-        - When reporting match results, ALWAYS use the correct winning team based on the score.
-        - For home games (where the team appears as home_team), a WIN is when home_score > away_score.
-        - For away games (where the team appears as away_team), a WIN is when away_score > home_score.
-        - NEVER report a loss when a team scored more goals than their opponent.
-        - When describing match results, double-check if the team played home or away to correctly label the outcome.
+Generate a helpful response that:
+1. Clearly states that no matches or data were found
+2. Suggests possible reasons why (e.g., no matches in that date range, team name misspelled, etc.)
+3. Recommends alternative queries they might try
+4. Maintains a helpful and constructive tone"""
 
-        Your response should read as if you're directly answering the user's original question.
-        """
+                response = self.llm.complete(no_results_prompt)
+                # Extract content from response object
+                if hasattr(response, 'content'):
+                    return response.content
+                elif hasattr(response, 'text'):
+                    return response.text
+                else:
+                    return str(response)
 
-        # Get the response from Claude
-        response = self.llm.complete(prompt)
-        response_text = response.text.strip() if response and hasattr(response, 'text') else "No response generated"
+            # Standard response for results
+            response = self.llm.complete(system_message)
+            # Extract content from response object
+            if hasattr(response, 'content'):
+                return response.content
+            elif hasattr(response, 'text'):
+                return response.text
+            else:
+                return str(response)
 
-        # Post-process response to catch any remaining out-of-context responses
-        if response_text and "person" in response_text.lower() and "team" in response_text.lower():
-            # If response is trying to disambiguate between person and team, correct it
-            response_text = response_text.replace(
-                "I don't have specific information about who",
-                "Based on the North Coast soccer database, ")
-            response_text = re.sub(
-                r"If you're looking for information about .* as a person",
-                "This is information about the soccer team",
-                response_text)
+        except Exception as e:
+            print(f"❌ Error generating response: {str(e)}")
+            return f"I'm sorry, I encountered an error while generating a response: {str(e)}"
 
-        # Final verification that response is about soccer
-        if response_text and "soccer" not in response_text.lower() and "team" not in response_text.lower() and "match" not in response_text.lower():
-            response_text += "\n\nNote: This information is from the North Coast soccer database and refers to soccer teams and matches."
+    def _find_similar_teams(self, team_name):
+        """Find teams with similar names to help users when uncertain matches occur."""
+        similar_teams = []
 
-        # Return the formatted response
-        return response_text
+        # Convert to lowercase for matching
+        team_name_lower = team_name.lower()
+
+        # Try with spaces for cases like "KeyWest" -> "Key West"
+        # Insert spaces between capital letters: "KeyWest" -> "Key West"
+        spaced_team_name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', team_name).lower()
+
+        for team in self.teams:
+            team_lower = team.lower()
+
+            # Check for partial match
+            if team_name_lower in team_lower or team_lower in team_name_lower:
+                similar_teams.append(team)
+                continue
+
+            # Check for match with spaced version
+            if spaced_team_name in team_lower or team_lower in spaced_team_name:
+                similar_teams.append(team)
+                continue
+
+            # Check for similarity using longest common substring
+            s1, s2 = team_name_lower, team_lower
+            if len(s1) > len(s2):
+                s1, s2 = s2, s1
+
+            match_length = 0
+            for i in range(len(s1)):
+                if s1[i:] in s2:
+                    match_length = len(s1) - i
+                    break
+
+            similarity = match_length / len(s1) if len(s1) > 0 else 0
+            if similarity > 0.5:
+                similar_teams.append(team)
+
+        return similar_teams
 
     def _handle_ambiguous_query(self, query_str: str, error_message: str = None) -> str:
         """
@@ -605,7 +663,7 @@ class QueryEngine(NLSQLTableQueryEngine):
         Returns:
             A user-friendly response with guidance
         """
-        logger.info(f"🤔 Handling ambiguous query: {query_str}")
+        print(f"🤔 Handling ambiguous query: {query_str}")
 
         # Extract potential entities from the query to provide more relevant examples
         potential_entities = self._extract_entities_from_query(query_str)
@@ -693,14 +751,19 @@ class QueryEngine(NLSQLTableQueryEngine):
         """
 
         # Get response from LLM
-        response = self.llm.complete(prompt)
-        response_text = response.text.strip() if response and hasattr(response, 'text') else (
-            f"I'm not sure I understand your question about '{query_str}'. Could you please provide more details? "
-            f"For example, you could ask about a specific team like '{sample_team}', or ask about match results, "
-            f"team statistics, or performance during a specific time period."
-        )
+        try:
+            response = self.llm.complete(prompt)
 
-        return response_text
+            # Get the text from the response
+            if hasattr(response, 'content'):
+                return response.content
+            elif hasattr(response, 'text'):
+                return response.text
+            else:
+                return str(response)
+        except Exception as e:
+            print(f"Error in _handle_ambiguous_query: {str(e)}")
+            return f"I'm not sure I understand your question about '{query_str}'. Could you please provide more details about which soccer team or match information you're looking for?"
 
     def _execute_sql(self, sql: str):
         """
@@ -726,211 +789,156 @@ class QueryEngine(NLSQLTableQueryEngine):
             # Re-raise the exception to be caught by the caller
             raise
 
-    def _infer_query_and_generate_sql(self, query: str, query_context: dict) -> Tuple[str, dict]:
+    def _infer_query_and_generate_sql(self, query_str: str, query_context: dict) -> tuple:
         """
-        Infer SQL query from user query using LLM.
-        Returns the SQL query and additional context information.
+        Infer SQL from natural language query using LLM.
+
+        Returns:
+            tuple: (sql_str, updated_context)
         """
-        # Add current date to context
-        today = datetime.date.today()
-        current_date_str = today.strftime("%Y-%m-%d")
-        query_context["current_date"] = current_date_str
-        query_context["current_year"] = today.year
-        query_context["current_month"] = today.month
-        query_context["current_day"] = today.day
+        # Check for entity mappings that can be used for the SQL
+        entity_mappings = query_context.get("entity_mappings", {})
 
-        # Get prompt components
-        prompt_context = self._get_table_context()
-        cleaned_query = self._clean_query(query)
+        # Get team context information
+        team_context = query_context.get("team_context")
+        follow_up_context = query_context.get("follow_up_context", False)
+        time_filter_context = query_context.get("time_filter_context", False)
 
-        # Get conversation history if available
-        conversation_history = ""
-        conversation_summary = ""
-        if "memory" in query_context and query_context["memory"]:
-            memory = query_context["memory"]
-            session_id = query_context.get("session_id")
-            if session_id and hasattr(memory, "format_context"):
-                try:
-                    conversation_history = memory.format_context(session_id)
-                    if hasattr(memory, "summarize_context"):
-                        conversation_summary = memory.summarize_context(session_id)
-                except Exception as e:
-                    print(f"⚠️ Error getting conversation history: {str(e)}")
+        # Check for uncertain team matches
+        uncertain_team_match = False
+        uncertain_team = None
 
-        # Identify team context
-        team_context = None
-        if "team" in query_context:
-            team_context = query_context["team"]
-        elif "memory" in query_context and query_context["memory"]:
-            memory = query_context["memory"]
-            session_id = query_context.get("session_id")
-            if session_id and hasattr(memory, "get_last_team"):
-                try:
-                    team_context = memory.get_last_team(session_id)
-                except Exception as e:
-                    print(f"⚠️ Error getting team context: {str(e)}")
+        # If we have entity mappings, use them to set the team context
+        if entity_mappings:
+            # Get the first team from entity mappings if team_context is not set
+            if not team_context:
+                for entity, mapping in entity_mappings.items():
+                    # For string mappings
+                    if isinstance(mapping, str):
+                        team_context = mapping
+                        break
+                    # For TeamMatch objects
+                    elif hasattr(mapping, 'team_name'):
+                        team_context = mapping.team_name
+                        break
 
-        # Check for follow-up questions about team
-        follow_up_pronouns = ["they", "them", "their", "it", "its"]
-        follow_up_keywords = ["recent", "last", "next", "upcoming", "schedule",
-                             "against", "versus", "vs", "play", "match", "score",
-                             "performance", "record", "standing"]
+            for entity, mapping in entity_mappings.items():
+                # Check if the entity confidence indicates uncertainty
+                if hasattr(mapping, 'uncertain') and mapping.uncertain:
+                    uncertain_team_match = True
+                    uncertain_team = entity
+                    break
+                # For string mappings (backward compatibility)
+                elif isinstance(mapping, str) and entity in query_str.lower():
+                    # Already set team_context above
+                    pass
 
-        # Check if this is likely a follow-up question
-        likely_follow_up = False
-        if team_context:
-            # Check if query contains follow-up pronouns
-            if any(pronoun in query.lower().split() for pronoun in follow_up_pronouns):
-                likely_follow_up = True
+        # Add uncertainty flags to context
+        query_context["uncertain_team_match"] = uncertain_team_match
+        if uncertain_team_match and uncertain_team:
+            query_context["uncertain_team"] = uncertain_team
 
-            # Check if query contains follow-up keywords without mentioning "team"
-            if any(keyword in query.lower() for keyword in follow_up_keywords) and "team" not in query.lower():
-                likely_follow_up = True
+        # Prepare system prompt
+        system_prompt = f"""You are an assistant that translates natural language queries about soccer matches into SQL.
 
-        # Set follow-up context if this seems like a follow-up question about the team
-        follow_up_context = ""
-        if (likely_follow_up or query_context.get("is_follow_up", False)) and team_context:
-            follow_up_context = f"""IMPORTANT: This appears to be a follow-up question about {team_context}.
-Even though the team name is not explicitly mentioned in this query,
-you MUST include filters for {team_context} in your SQL query.
-If the query uses pronouns like 'they', 'them', or 'their', these refer to {team_context}.
-The query type has been classified as a follow-up, so ALWAYS include team filters in your SQL.
-When generating statistics aggregations or performance metrics, ensure you're only including data for {team_context}.
-Your SQL MUST include WHERE conditions to filter for this team (e.g., WHERE home_team = '{team_context}' OR away_team = '{team_context}')."""
+USER QUERY: "{query_str}"
 
-        # Check for queries asking for team statistics or performance metrics
-        stats_pattern = r'\b(?:stat(?:s|istic[s]?)?|performance|record|standing[s]?|goals?|win[s]?|los[s]?(?:es)?|draw[s]?)\b'
-        stats_match = re.search(stats_pattern, query.lower())
+DATABASE SCHEMA:
+- Table: matches
+- Columns:
+  - date: date of the match (YYYY-MM-DD)
+  - home_team: name of the home team
+  - away_team: name of the away team
+  - home_score: goals scored by home team (NULL if match hasn't been played)
+  - away_score: goals scored by away team (NULL if match hasn't been played)
+  - league: league/division name
+  - time: time of the match
+  - url: URL to match details
+  - type: type of match (e.g., regular season, tournament)
+  - status: match status code
+  - headers: additional match information
 
-        stats_context = ""
-        if stats_match and "team" in query_context:
-            team_filter = query_context["team"]
-            stats_context = f"""IMPORTANT: This query is asking about statistics or performance metrics for {team_filter}.
-Make sure to filter all matches for this team using:
-WHERE (home_team = '{team_filter}' OR away_team = '{team_filter}')
-
-For performance statistics queries:
-1. Create a Common Table Expression (CTE) to identify all matches involving the team
-2. Calculate wins, losses, draws, goals scored, goals conceded, etc.
-3. Only include completed matches (non-NULL scores) in statistics calculations
-4. If aggregating by time period, include appropriate date filters
-5. NEVER use ORDER BY on columns not included in GROUP BY when doing aggregations."""
-
-        # Check for follow-up time queries
-        time_pattern = r'\b(?:this|last|next|current|previous|upcoming)\s+(?:month|year|week|day|season|quarter)\b'
-        time_query_match = re.search(time_pattern, query.lower())
-
-        time_follow_up_context = ""
-        if time_query_match and "team" in query_context:
-            team_context = query_context["team"]
-            time_phrase = time_query_match.group(0)
-            time_follow_up_context = f"""IMPORTANT: This query is asking about {time_phrase} for {team_context}.
-When generating SQL for time-specific queries like "{time_phrase}", you MUST also filter for the team {team_context}.
-Always include team filters in your SQL, such as:
-WHERE (home_team = '{team_context}' OR away_team = '{team_context}')
-AND date filters for {time_phrase}
-
-This is a follow-up query about a specific time period FOR THIS TEAM, not for all teams.
-Do not generate SQL that returns data for all teams - it must be filtered for {team_context} specifically."""
-
-        # Check for questions about matches that haven't been played yet
-        not_played_pattern = r'\b(?:not played|unplayed|upcoming|scheduled|future|next|coming|soon)\b'
-        not_played_match = re.search(not_played_pattern, query.lower())
-
-        not_played_context = ""
-        if not_played_match or "upcoming" in query.lower():
-            not_played_context = f"""IMPORTANT: This query is asking about matches that haven't been played yet.
-Make sure to filter for matches where scores are NULL and the match date is greater than or equal to {current_date_str}.
-Use conditions like: WHERE (home_score IS NULL OR away_score IS NULL) AND match_date >= '{current_date_str}'"""
-
-        # Format the time context for the LLM
-        time_context = f"""
-CURRENT DATE CONTEXT:
-- Today's date: {current_date_str}
-- Current year: {today.year}
-- Current month: {today.month}
-- Current day: {today.day}
-
-When determining "upcoming" or "scheduled" matches:
-- Upcoming matches should have: match_date >= '{current_date_str}' AND (home_score IS NULL OR away_score IS NULL)
-- Past matches should have: match_date < '{current_date_str}' OR (home_score IS NOT NULL AND away_score IS NOT NULL)
+{f"TEAM CONTEXT: The query is specifically about the team '{team_context}'" if team_context else ""}
+{f"FOLLOW-UP CONTEXT: This is a follow-up query that continues the conversation about previously mentioned teams or match details." if follow_up_context else ""}
+{f"TIME FILTER CONTEXT: The query involves filtering by time periods like months, seasons, or specific date ranges." if time_filter_context else ""}
 """
 
-        # Build the final prompt
-        prompt = f"""You are a SQL query generator for a soccer match database. Given the user's question, generate a SQL query that will answer it.
+        # Add specific instructions for uncertain team matches
+        if uncertain_team_match and uncertain_team:
+            system_prompt += f"""
+IMPORTANT - UNCERTAIN TEAM MATCH:
+The user mentioned "{uncertain_team}" which doesn't exactly match any team name.
+When generating SQL, use LIKE patterns with wildcards on both sides:
+  WHERE home_team LIKE '%{uncertain_team}%' OR away_team LIKE '%{uncertain_team}%'
+This will help catch fuzzy matches for "{uncertain_team}".
+"""
+        # Add specific instructions for the team name when we have a mapped team
+        elif team_context:
+            system_prompt += f"""
+IMPORTANT - TEAM NAME:
+Use the exact team name '{team_context}' in the SQL query:
+  WHERE home_team = '{team_context}' OR away_team = '{team_context}'
+"""
 
-{prompt_context}
+        # Add conversation history context if available
+        if query_context.get("conversation_history"):
+            system_prompt += f"\nCONVERSATION HISTORY:\n{query_context['conversation_history']}\n"
 
-{time_context}
+        # Add additional query context
+        today = date.today()
+        current_date_str = today.strftime("%Y-%m-%d")
+        current_year = today.year
+        current_month = today.strftime('%B')
 
-{conversation_summary if conversation_summary else ""}
+        system_prompt += f"""
+ADDITIONAL CONTEXT:
+- Today's date is {current_date_str}
+- Current year is {current_year}
+- Current month is {current_month}
+- Matches with NULL scores that are in the future haven't been played yet
+- When filtering for time periods, use appropriate date functions/formats
+- Ensure proper handling of NULL values in the score columns
 
-{conversation_history if conversation_history else ""}
+INSTRUCTIONS:
+1. Generate valid SQL that answers the user's query
+2. Use proper SQL syntax for the database schema provided
+3. Include appropriate WHERE clauses that map to the user's intent
+4. If ordering results, include ORDER BY clauses in a logical way (e.g., by date, score)
+5. If the query implies a limit on results, include a LIMIT clause
+6. Ensure proper handling of NULL values (e.g., for matches not yet played)
+7. Output ONLY the SQL query, with no additional text or explanation
+"""
 
-{follow_up_context if follow_up_context else ""}
-
-{stats_context if stats_context else ""}
-
-{time_follow_up_context if time_follow_up_context else ""}
-
-{not_played_context if not_played_context else ""}
-
-SYSTEM CONTEXT:
-- This database contains North Coast soccer match statistics ONLY
-- All team names refer to soccer teams, never to people, places, or other entities
-- Always maintain the context that we are discussing soccer teams and their match statistics
-
-USER QUERY: {cleaned_query}
-
-Based on the user query and all available context, generate a SQL query that will correctly answer the question.
-If the query is about a specific team, make sure to filter for that team.
-If it's a follow-up question, be sure to maintain context from previous interactions.
-Remember to check whether matches should be filtered by date, division, or scores.
-
-The SQL query should:
-1. Be valid DuckDB SQL syntax
-2. Only include tables and columns that exist in the schema
-3. Filter appropriately based on all context
-4. Aliased columns when appropriate
-5. Be formatted for readability
-6. IMPORTANT: When doing aggregations with COUNT, SUM, etc., avoid using ORDER BY on columns not in GROUP BY
-
-SQL QUERY:"""
-
-        # Call the LLM to generate the SQL
-        print(f"🔍 Generating SQL for query: {cleaned_query}")
-
-        # Store context for future reference
-        result_context = {
-            "team": team_context,
-            "is_follow_up": likely_follow_up or query_context.get("is_follow_up", False),
-            "not_played_context": bool(not_played_context),
-            "stats_context": bool(stats_context),
-            "time_filter_context": bool(time_follow_up_context),
-            "current_date": current_date_str,
-        }
-
-        # Call LLM to generate SQL
-        response = None
         try:
-            response = self.llm.complete(prompt)
-            if response and hasattr(response, "text"):
-                inferred_sql = response.text
+            print(f"🔍 Generating SQL for query: {query_str}")
+            # Generate SQL with the LLM
+            response = self.llm.complete(system_prompt)
+
+            # Get the SQL from the response
+            # For compatibility with different LLM response formats
+            if hasattr(response, 'content'):
+                sql = response.content
+            elif hasattr(response, 'text'):
+                sql = response.text
             else:
-                inferred_sql = str(response)
+                sql = str(response)
 
-            # Clean up SQL - remove markdown syntax
-            inferred_sql = re.sub(r'^```sql\n', '', inferred_sql)
-            inferred_sql = re.sub(r'^```\n', '', inferred_sql)
-            inferred_sql = re.sub(r'\n```$', '', inferred_sql)
+            # Clean up the SQL
+            sql = sql.strip()
 
-            # Store the generated SQL in the context
-            result_context["generated_sql"] = inferred_sql
+            # Remove any markdown code block formatting
+            sql = re.sub(r'^```sql\s*', '', sql)
+            sql = re.sub(r'^```\s*', '', sql)
+            sql = re.sub(r'\s*```$', '', sql)
 
-            return inferred_sql, result_context
+            # Update context with generated SQL for response generation
+            query_context["generated_sql"] = sql
+
+            return sql, query_context
         except Exception as e:
-            print(f"⚠️ Error generating SQL: {str(e)}")
-            return f"SELECT 'Error generating SQL: {str(e)}' as error_message;", result_context
+            error_msg = f"Error generating SQL: {str(e)}"
+            print(f"❌ {error_msg}")
+            raise ValueError(error_msg)
 
     def query(self, query_str: str, memory=None) -> str:
         """
@@ -1196,35 +1204,228 @@ SQL QUERY:"""
         # Default to new query if we can't determine
         return "new_query"
 
-    def _extract_entities_from_query(self, query):
+    def _extract_entities_from_query(self, query_str: str, context=None) -> Dict[str, object]:
         """
-        Extract entity mappings from the query.
-        Maps partial team names to full team names.
+        Extract entities (like team names) from the query.
+
+        Returns a dictionary mapping entity tokens to their canonical forms.
+        """
+        print(f"📝 Extracted entity mappings from query: {self._extract_team_names(query_str)}")
+
+        # Check if we should use the updated fuzzy matching system
+        if hasattr(self, 'use_fuzzy_team_matching') and self.use_fuzzy_team_matching:
+            return self._extract_team_names_fuzzy(query_str.lower())
+        else:
+            return self._extract_team_names(query_str)
+
+    def _extract_team_names(self, query_str: str) -> Dict[str, str]:
+        """
+        Extract team names using basic pattern matching.
+
+        Args:
+            query_str: The user query string
+
+        Returns:
+            Dictionary mapping team name tokens to their canonical forms
         """
         entity_mappings = {}
+        query_lower = query_str.lower()
 
-        # Convert to lowercase for matching
-        query_lower = query.lower()
-
-        # Look for team names in the query
+        # First try exact matches
         for team in self.teams:
             team_lower = team.lower()
-
-            # Check for exact match
+            # Check if team name is in the query (basic substring match)
             if team_lower in query_lower:
-                entity_mappings[team_lower] = team
-                continue
+                # Use the team name without spaces as the key (e.g., "keywest" -> "Key West")
+                entity_mappings[team_lower.replace(" ", "")] = team
 
-            # Check for partial matches (without FC, United, numbers, etc.)
-            # Split by common separators and check each part
-            team_parts = re.split(r'\s+|\(|\)|-|FC|United', team_lower)
-            team_parts = [part.strip() for part in team_parts if part.strip()]
+        # If no exact matches, try partial matches (e.g., "Key West" -> "Key West FC")
+        if not entity_mappings:
+            for team in self.teams:
+                team_lower = team.lower()
+                team_parts = team_lower.split()
 
-            # Check each substantial part (more than 2 chars)
-            for part in team_parts:
-                if len(part) > 2 and part in query_lower:
-                    entity_mappings[part] = team
-                    break
+                # Try to match the base name without suffixes like "FC", "United", etc.
+                base_name = " ".join(part for part in team_parts if part not in ["fc", "united", "(1)", "(2)", "(3)", "sc"])
+                if base_name and base_name in query_lower:
+                    # Use the base name without spaces as the key
+                    entity_mappings[base_name.replace(" ", "")] = team
+
+                # For teams with multiple words, try matching just the first two words
+                if len(team_parts) > 2 and " ".join(team_parts[:2]) in query_lower:
+                    entity_mappings[" ".join(team_parts[:2]).replace(" ", "")] = team
+
+        return entity_mappings
+
+    def _extract_team_names_fuzzy(self, query: str) -> Dict[str, object]:
+        """
+        Extract team names using fuzzy matching. Returns both exact and partial matches with confidence scores.
+        """
+        entity_mappings = {}
+        uncertain_matches = {}  # Dictionary to store matches that are not certain
+
+        # Break the query into lowercase words and filter out common words
+        words = re.findall(r'\b\w+\b', query.lower())
+        common_words = {'the', 'team', 'club', 'soccer', 'football', 'fc', 'sc', 'united', 'show', 'me', 'all', 'matches', 'games', 'played', 'by', 'against', 'with', 'vs', 'versus', 'and', 'or', 'in', 'for', 'how', 'did', 'do', 'perform', 'performance', 'this', 'last', 'next', 'year', 'month', 'week', 'tomorrow', 'yesterday', 'today', 'season', 'recent'}
+        filtered_words = [word for word in words if word not in common_words and len(word) > 2]
+
+        # First, check for exact matches in team names
+        for team in self.teams:
+            team_lower = team.lower()
+            if team_lower in query:
+                # Create a TeamMatch object with high confidence score
+                # Use the team name without spaces as the key (e.g., "keywest" -> "Key West")
+                key = team_lower.replace(" ", "")
+                entity_mappings[key] = TeamMatch(team, 0.95, False)
+                return entity_mappings
+
+        # Special check for combined words like "KeyWest" that should match "Key West"
+        combined_word_matches = {}
+        for potential_combined in words:
+            if len(potential_combined) > 4:  # Only check longer words
+                # Insert spaces between lowercase and uppercase letters
+                spaced_word = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', potential_combined).lower()
+
+                # Only if it actually has a space when separated
+                if spaced_word != potential_combined.lower() and len(spaced_word.split()) > 1:
+                    best_match = None
+                    best_score = 0.0
+
+                    for team in self.teams:
+                        team_lower = team.lower()
+                        # If the spaced word is in the team name
+                        if spaced_word in team_lower:
+                            score = 0.8 + (len(spaced_word) / len(team_lower))
+                            if score > best_score:
+                                best_score = score
+                                best_match = team
+                        # Also check if the words appear in sequence
+                        elif all(part in team_lower for part in spaced_word.split()):
+                            score = 0.7
+                            if score > best_score:
+                                best_score = score
+                                best_match = team
+
+                    if best_match and best_score > 0.7:
+                        combined_word_matches[potential_combined] = (best_match, best_score)
+
+        # If we found any combined word matches, use the best one
+        if combined_word_matches:
+            best_combined = max(combined_word_matches.items(), key=lambda x: x[1][1])
+            combined_word, (team_name, score) = best_combined
+            entity_mappings[combined_word.lower()] = TeamMatch(team_name, score, False)
+            return entity_mappings
+
+        # If no exact matches, try partial matches
+        for word in filtered_words:
+            best_match = None
+            best_score = 0.0
+
+            for team in self.teams:
+                team_lower = team.lower()
+                team_parts = team_lower.split()
+
+                # First, check if the word is simply part of the team name
+                if word in team_lower:
+                    # Calculate how much of the word is part of the team name
+                    # by creating a similarity score between 0-1
+                    score = len(word) / len(team_lower)
+                    if score > best_score:
+                        best_score = score
+                        best_match = team
+
+                # Next, check for similarity using team name parts
+                for team_part in team_parts:
+                    # Simple similarity calculation based on longest common substring
+                    common_length = 0
+                    for i in range(min(len(word), len(team_part))):
+                        if word[i] == team_part[i]:
+                            common_length += 1
+                        else:
+                            break
+
+                    if common_length > 2:  # Only consider if at least 3 characters match
+                        score = common_length / max(len(word), len(team_part))
+                        if score > best_score:
+                            best_score = score
+                            best_match = team
+
+                # Try pattern like "KeyWest" which should match "Key West"
+                if len(word) > 4:  # Only try for longer words
+                    # Insert spaces between lowercase and uppercase letters
+                    spaced_word = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', word).lower()
+
+                    # If the word with added spaces is in the team name
+                    if spaced_word != word and spaced_word in team_lower:
+                        score = 0.6 + (len(spaced_word) / len(team_lower))
+                        if score > best_score:
+                            best_score = score
+                            best_match = team
+
+                    # Try joining words in team name
+                    if len(team_parts) > 1:
+                        joined_team = ''.join(team_parts)
+                        if word in joined_team:
+                            score = 0.6 + (len(word) / len(joined_team))
+                            if score > best_score:
+                                best_score = score
+                                best_match = team
+
+            # If we found a reasonable match
+            if best_match and best_score > 0.3:
+                # Set uncertain flag if the confidence is below threshold
+                uncertain = best_score < 0.7
+
+                # Add team to mappings with confidence score
+                if uncertain:
+                    uncertain_matches[word] = TeamMatch(best_match, best_score, uncertain)
+                else:
+                    entity_mappings[word] = TeamMatch(best_match, best_score, uncertain)
+
+        # Special handling for combined tokens like "KeyWest" that should match "Key West"
+        # This is a more general approach in case the first combined word check didn't find matches
+        if not entity_mappings:
+            for word in words:
+                if len(word) > 5 and word not in entity_mappings:  # Only try for longer words
+                    # Insert spaces between lowercase and uppercase letters
+                    spaced_word = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', word).lower()
+
+                    if spaced_word != word.lower():  # Only if it actually has a space when separated
+                        best_match = None
+                        best_score = 0.0
+
+                        for team in self.teams:
+                            team_lower = team.lower()
+                            # Calculate similarity between the spaced word and team name
+                            if spaced_word in team_lower:
+                                score = 0.7 + (len(spaced_word) / len(team_lower))
+                                if score > best_score:
+                                    best_score = score
+                                    best_match = team
+
+                            # Also try with team name parts joined
+                            team_parts = team_lower.split()
+                            if len(team_parts) > 1:
+                                joined_parts = ''.join(team_parts)
+                                if word.lower() in joined_parts:
+                                    score = 0.7
+                                    if score > best_score:
+                                        best_score = score
+                                        best_match = team
+
+                        if best_match and best_score > 0.4:
+                            uncertain = best_score < 0.7
+                            if uncertain:
+                                uncertain_matches[word] = TeamMatch(best_match, best_score, uncertain)
+                            else:
+                                entity_mappings[word] = TeamMatch(best_match, best_score, uncertain)
+
+        # If we didn't find any certain matches but we have uncertain matches,
+        # return the best uncertain match
+        if not entity_mappings and uncertain_matches:
+            # Get the match with the highest confidence score
+            best_match_word = max(uncertain_matches.items(), key=lambda x: x[1].confidence)[0]
+            entity_mappings[best_match_word] = uncertain_matches[best_match_word]
 
         return entity_mappings
 

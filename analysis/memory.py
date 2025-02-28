@@ -4,6 +4,19 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 import re
+import logging
+from typing import Dict, List, Optional, Any
+
+logger = logging.getLogger(__name__)
+
+# Custom JSON encoder to handle TeamMatch objects
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        # Handle TeamMatch objects
+        if hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
+            return obj.to_dict()
+        # Let the base class default method raise the TypeError
+        return json.JSONEncoder.default(self, obj)
 
 class ConversationMemory:
     """Store and manage conversation history for multi-turn interactions."""
@@ -186,16 +199,33 @@ class ConversationMemory:
     def _save_session(self, session_id):
         """Save the session to disk."""
         filename = os.path.join(self.storage_dir, f"{session_id}.json")
-        with open(filename, 'w') as f:
-            json.dump(self.sessions[session_id], f, indent=2)
+        try:
+            with open(filename, 'w') as f:
+                json.dump(self.sessions[session_id], f, indent=2, cls=CustomJSONEncoder)
+        except Exception as e:
+            logger.error(f"⚠️ Error saving to memory: {str(e)}")
+            # Try with minimal context if the full context isn't serializable
+            try:
+                minimal_context = {
+                    "last_team": self.get_last_team(session_id),
+                    "soccer_context": "North Coast soccer statistics"
+                }
+                with open(filename, 'w') as f:
+                    json.dump(minimal_context, f, indent=2, cls=CustomJSONEncoder)
+            except Exception as e:
+                logger.error(f"⚠️ Error saving with minimal context: {str(e)}")
 
     def load_session(self, session_id):
         """Load a session from disk."""
         filename = os.path.join(self.storage_dir, f"{session_id}.json")
         if os.path.exists(filename):
-            with open(filename, 'r') as f:
-                self.sessions[session_id] = json.load(f)
-            return True
+            try:
+                with open(filename, 'r') as f:
+                    self.sessions[session_id] = json.load(f)
+                return True
+            except Exception as e:
+                logger.error(f"⚠️ Error loading session {session_id}: {str(e)}")
+                return False
         return False
 
     def format_context(self, session_id):
