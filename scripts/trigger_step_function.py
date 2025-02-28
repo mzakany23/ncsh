@@ -51,6 +51,8 @@ def main():
                       help='Day to scrape (if not provided, will scrape entire month)')
     parser.add_argument('--mode', choices=['day', 'month'], default='month',
                       help='Scraping mode (default: month)')
+    parser.add_argument('--force-scrape', action='store_true',
+                      help='Force re-scraping even if data was already scraped')
     parser.add_argument('--profile', help='AWS profile to use')
     parser.add_argument('--region', default='us-east-2',
                       help='AWS region (default: us-east-2)')
@@ -71,6 +73,10 @@ def main():
     }
     if args.day:
         input_data["day"] = args.day
+
+    # Add force_scrape flag if specified
+    if args.force_scrape:
+        input_data["force_scrape"] = True
 
     try:
         # Trigger the step function

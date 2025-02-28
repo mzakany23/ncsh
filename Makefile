@@ -61,14 +61,15 @@ deploy-processing: compile-requirements
 
 scrape-month:
 	AWS_PROFILE=mzakany python scripts/trigger_step_function.py \
-		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsh-scraper \
+		--state-machine-arn arn:aws:states:us-east-2:$${AWS_ACCOUNT:-}:stateMachine:$${STATE_MACHINE:-ncsoccer-workflow} \
 		--mode month \
 		--year $${YEAR} \
-		--month $${MONTH}
+		--month $${MONTH} \
+		$(if $(force),--force-scrape,)
 
 process-data:
 	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
-		--state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-processing
+		--state-machine-arn arn:aws:states:us-east-2:$${AWS_ACCOUNT:-}:stateMachine:$${STATE_MACHINE:-ncsoccer-processing}
 
 query-llama:
 	@echo "Running Soccer Query Engine..."
