@@ -59,6 +59,10 @@ def parse_args():
         "--list-sessions", "-l", action="store_true",
         help="List all available sessions"
     )
+    parser.add_argument(
+        "--always-infer", "-a", action="store_true",
+        help="Always use LLM to infer query instead of templates"
+    )
     return parser.parse_args()
 
 def interactive_mode(args):
@@ -74,8 +78,16 @@ def interactive_mode(args):
     # Ensure the conversations directory exists
     os.makedirs(memory_manager.storage_dir, exist_ok=True)
 
-    # Create a session ID if not provided
+    # Handle session ID with priority: args > env var > new
     session_id = args.session
+
+    # If session ID not provided via args, check environment variable
+    if not session_id:
+        session_id = os.environ.get("QUERY_SESSION")
+        if session_id:
+            print(f"Using session ID from environment: {session_id}")
+
+    # If still no session ID, create a new one
     if not session_id:
         session_id = memory_manager.create_session()
         print(f"Created new session: {session_id}")
@@ -93,6 +105,13 @@ def interactive_mode(args):
             memory_manager._save_session(session_id)
             print(f"Created new custom session: {session_id}")
 
+    # Store the session ID in memory manager for later use
+    memory_manager.session_id = session_id
+
+    # Export the session ID to environment for subsequent calls
+    os.environ["QUERY_SESSION"] = session_id
+    print(f"Session ID '{session_id}' exported to environment as QUERY_SESSION")
+
     print(f"Session ID: {session_id}")
 
     # Set up the query engine
@@ -101,7 +120,8 @@ def interactive_mode(args):
         model_name=args.model,
         api_key=args.api_key,
         api_base=args.api_base,
-        verbose=args.verbose
+        verbose=args.verbose,
+        always_infer=args.always_infer
     )
 
     try:
@@ -173,8 +193,16 @@ def main():
     # Ensure the conversations directory exists
     os.makedirs(memory_manager.storage_dir, exist_ok=True)
 
-    # Handle session ID
+    # Handle session ID with priority: args > env var > new
     session_id = args.session
+
+    # If session ID not provided via args, check environment variable
+    if not session_id:
+        session_id = os.environ.get("QUERY_SESSION")
+        if session_id:
+            print(f"Using session ID from environment: {session_id}")
+
+    # If still no session ID, create a new one
     if not session_id:
         session_id = memory_manager.create_session()
         print(f"Created new session: {session_id}")
@@ -190,6 +218,13 @@ def main():
             memory_manager._save_session(session_id)
             print(f"Created new custom session: {session_id}")
 
+    # Store the session ID in memory manager for later use
+    memory_manager.session_id = session_id
+
+    # Export the session ID to environment for subsequent calls
+    os.environ["QUERY_SESSION"] = session_id
+    print(f"Session ID '{session_id}' exported to environment as QUERY_SESSION")
+
     # Run a single query with memory context
     response = run_query(
         query=args.query,
@@ -198,7 +233,8 @@ def main():
         api_key=args.api_key,
         api_base=args.api_base,
         memory=memory_manager,
-        verbose=args.verbose
+        verbose=args.verbose,
+        always_infer=args.always_infer
     )
 
     # Get memory context from the last query engine that was created

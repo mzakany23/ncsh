@@ -101,13 +101,24 @@ class ConversationMemory:
 
         # If no team in context, try to extract from query using regex
         if 'last_team' not in extracted_context:
-            # Simple regex to extract team names mentioned in the query or response
-            team_pattern = r'(?i)(Key West FC|FC United|Spartak Cleveland|Cleveland Force FC|Boston Braves FC)'
+            # Enhanced regex to extract team names more generically
+            # This is a basic pattern that captures team names followed by FC, United, etc.
+            team_pattern = r'(?i)([A-Za-z\s\-\']+\s*(?:FC|United|City|Soccer|Athletic|Club|SC))'
             team_match = re.search(team_pattern, query)
+
+            # If the generic pattern doesn't find a match, try common North Coast teams
+            if not team_match:
+                nc_teams_pattern = r'(?i)(Key West|Durham|Charlotte|Cleveland|Asheville|Raleigh|Chapel Hill|Wilmington|Greenville|Boone|Outer Banks)'
+                team_match = re.search(nc_teams_pattern, query)
+
             if team_match:
-                team_name = team_match.group(1)
+                team_name = team_match.group(1).strip()
                 extracted_context['last_team'] = team_name
                 print(f"📝 Extracted team from query: {team_name}")
+
+                # Add context about North Coast soccer
+                extracted_context['soccer_context'] = "North Coast soccer statistics"
+                print(f"📝 Added North Coast soccer context")
 
         # If no division in context, try to extract from query using regex
         if 'last_division' not in extracted_context:
@@ -151,19 +162,22 @@ class ConversationMemory:
         return None
 
     def get_last_query_context(self, session_id=None):
-        """Get the context from the most recent query for multi-turn conversations."""
+        """Get the most recent query context for multi-turn conversations."""
         if not session_id or session_id not in self.sessions:
-            # Try to get the most recent session if none specified
-            if self.sessions:
-                session_id = sorted(self.sessions.keys())[-1]
-            else:
-                return None
+            return None
 
         for interaction in reversed(self.sessions[session_id]):
             if interaction.get("type") == "context" and "query_context" in interaction.get("data", {}):
-                return interaction["data"]["query_context"]
+                context = interaction["data"]["query_context"]
 
-        return None
+                # Always ensure North Coast soccer context is included
+                if "soccer_context" not in context:
+                    context["soccer_context"] = "North Coast soccer statistics"
+
+                return context
+
+        # If no query context found, at least return basic soccer context
+        return {"soccer_context": "North Coast soccer statistics"}
 
     def save_session(self, session_id):
         """Save the session to disk (public method)."""
@@ -224,6 +238,10 @@ class ConversationMemory:
                 query = interaction.get("query", "")
                 response = interaction.get("response", "")
 
+                # Ensure query and response are valid strings
+                query = str(query) if query is not None else ""
+                response = str(response) if response is not None else "No response available"
+
                 # Add turn number for clarity
                 turn_num = i//2 + 1
                 conversation.append(f"Turn {turn_num}:")
@@ -247,20 +265,30 @@ class ConversationMemory:
 
                 # Track mentioned entities from context
                 if "last_team" in context_data:
-                    mentioned_teams.add(context_data["last_team"])
+                    team_value = context_data["last_team"]
+                    if team_value is not None:
+                        mentioned_teams.add(str(team_value))
 
                 if "last_division" in context_data:
-                    mentioned_divisions.add(context_data["last_division"])
+                    division_value = context_data["last_division"]
+                    if division_value is not None:
+                        mentioned_divisions.add(str(division_value))
 
         # Add a summary of key entities if any were mentioned
         summary = []
         if mentioned_teams:
-            teams_str = ", ".join(mentioned_teams)
-            summary.append(f"Teams mentioned: {teams_str}")
+            # Filter out None values and ensure all are strings
+            valid_teams = [str(team) for team in mentioned_teams if team is not None]
+            if valid_teams:
+                teams_str = ", ".join(valid_teams)
+                summary.append(f"Teams mentioned: {teams_str}")
 
         if mentioned_divisions:
-            divisions_str = ", ".join(mentioned_divisions)
-            summary.append(f"Divisions mentioned: {divisions_str}")
+            # Filter out None values and ensure all are strings
+            valid_divisions = [str(div) for div in mentioned_divisions if div is not None]
+            if valid_divisions:
+                divisions_str = ", ".join(valid_divisions)
+                summary.append(f"Divisions mentioned: {divisions_str}")
 
         # Build the final context string
         context_str = ""
@@ -313,28 +341,40 @@ class ConversationMemory:
         for interaction in session_data:
             if interaction.get("type") == "context":
                 context_data = interaction.get("data", {})
-                if "last_team" in context_data:
-                    teams.add(context_data["last_team"])
-                if "last_division" in context_data:
-                    divisions.add(context_data["last_division"])
+                if "last_team" in context_data and context_data["last_team"] is not None:
+                    teams.add(str(context_data["last_team"]))
+
+                if "last_division" in context_data and context_data["last_division"] is not None:
+                    divisions.add(str(context_data["last_division"]))
+
                 if "query_context" in context_data:
                     query_ctx = context_data["query_context"]
-                    if "team" in query_ctx:
-                        teams.add(query_ctx["team"])
-                    if "division" in query_ctx:
-                        divisions.add(query_ctx["division"])
-                    if "time_period" in query_ctx:
-                        time_periods.add(query_ctx["time_period"])
+                    if "team" in query_ctx and query_ctx["team"] is not None:
+                        teams.add(str(query_ctx["team"]))
+
+                    if "division" in query_ctx and query_ctx["division"] is not None:
+                        divisions.add(str(query_ctx["division"]))
+
+                    if "time_period" in query_ctx and query_ctx["time_period"] is not None:
+                        time_periods.add(str(query_ctx["time_period"]))
 
         # Build a concise summary
         summary = ["CONVERSATION SUMMARY:"]
 
         if teams:
-            summary.append(f"Teams discussed: {', '.join(teams)}")
+            teams_str = ", ".join([str(team) for team in teams if team is not None])
+            if teams_str:
+                summary.append(f"Teams discussed: {teams_str}")
+
         if divisions:
-            summary.append(f"Divisions discussed: {', '.join(divisions)}")
+            divisions_str = ", ".join([str(div) for div in divisions if div is not None])
+            if divisions_str:
+                summary.append(f"Divisions discussed: {divisions_str}")
+
         if time_periods:
-            summary.append(f"Time periods discussed: {', '.join(time_periods)}")
+            periods_str = ", ".join([str(period) for period in time_periods if period is not None])
+            if periods_str:
+                summary.append(f"Time periods discussed: {periods_str}")
 
         # Get only recent interactions for verbatim inclusion
         recent_turns = []
@@ -353,6 +393,10 @@ class ConversationMemory:
         for i, interaction in enumerate(recent_turns):
             query = interaction.get("query", "")
             response = interaction.get("response", "")
+
+            # Ensure query and response are valid strings
+            query = str(query) if query is not None else ""
+            response = str(response) if response is not None else "No response available"
 
             recent_context.append(f"User: {query}")
             recent_context.append(f"System: {response}")
@@ -385,8 +429,18 @@ class ConversationMemory:
             # Handle interaction entries
             if isinstance(item, dict) and 'query' in item and 'response' in item:
                 query = item.get('query', '')
+                # Ensure response is a valid string
                 response = item.get('response', '')
-                timestamp = item.get('timestamp', datetime.now().isoformat())
+                if response is None:
+                    response = "No response available"
+
+                timestamp = item.get('timestamp', '')
+
+                # Make sure all values are strings
+                query = str(query) if query is not None else ""
+                response = str(response) if response is not None else ""
+                timestamp = str(timestamp) if timestamp is not None else ""
+
                 history.append((query, response, timestamp))
 
         return history

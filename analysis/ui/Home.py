@@ -23,10 +23,27 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "memory_manager" not in st.session_state:
     st.session_state.memory_manager = ConversationMemory(
-        db_path=Path(__file__).parent / "conversation_history.db"
+        storage_dir=Path(__file__).parent.parent / "conversations"
     )
 if "session_id" not in st.session_state:
-    st.session_state.session_id = st.session_state.memory_manager.create_session()
+    # Check for existing session in environment variable
+    env_session_id = os.environ.get("QUERY_SESSION")
+    if env_session_id:
+        st.session_state.session_id = env_session_id
+        # Try to load the session if it exists
+        session_file = os.path.join(st.session_state.memory_manager.storage_dir, f"{env_session_id}.json")
+        if os.path.exists(session_file):
+            st.session_state.memory_manager.load_session(env_session_id)
+            print(f"Loaded existing session from environment: {env_session_id}")
+    else:
+        # Create a new session if none found in environment
+        st.session_state.session_id = st.session_state.memory_manager.create_session()
+
+# Set the session ID on the memory manager
+st.session_state.memory_manager.session_id = st.session_state.session_id
+
+# Export the session ID to environment for CLI integration
+os.environ["QUERY_SESSION"] = st.session_state.session_id
 
 # Title and description
 st.title("⚽ NC Soccer Hub Chat")
@@ -42,18 +59,29 @@ with st.sidebar:
     st.subheader("Session Information")
     st.text(f"Session ID: {st.session_state.session_id}")
 
-    # Show conversation history in sidebar
-    st.subheader("Conversation History")
-    history = st.session_state.memory_manager.get_session_history(st.session_state.session_id)
-    if history:
-        for query, response, _ in history:
-            with st.expander(f"Q: {query[:50]}..."):
-                st.text("Question:")
-                st.markdown(query)
-                st.text("Answer:")
-                st.markdown(response)
+    # Display history in sidebar
+    st.sidebar.header("Conversation History")
 
-    if st.button("Clear Chat History"):
+    if 'memory_manager' in st.session_state and 'session_id' in st.session_state:
+        history = st.session_state.memory_manager.get_session_history(st.session_state.session_id)
+
+        # Display each Q&A pair in the sidebar if history exists
+        if history and len(history) > 0:
+            for query, response, timestamp in history:
+                # Safety check for None values
+                query = str(query) if query is not None else ""
+                response = str(response) if response is not None else "No response available"
+                timestamp = str(timestamp) if timestamp is not None else ""
+
+                with st.sidebar.expander(f"Q: {query[:50]}..." if len(query) > 50 else f"Q: {query}"):
+                    st.sidebar.text("Question:")
+                    st.sidebar.markdown(query)
+                    st.sidebar.text("Answer:")
+                    st.sidebar.markdown(response)
+        else:
+            st.sidebar.info("No conversation history yet.")
+
+    if st.sidebar.button("Clear Chat History"):
         st.session_state.messages = []
         st.session_state.memory_manager = ConversationMemory()
         st.session_state.session_id = st.session_state.memory_manager.create_session()
@@ -87,6 +115,13 @@ if prompt := st.chat_input("Ask about soccer matches..."):
                 # Process query and get response
                 response = query_engine.query(prompt, memory=st.session_state.memory_manager)
 
+                # Ensure response is a valid string
+                if response is None:
+                    response = "Sorry, I couldn't generate a response. Please try a different query."
+
+                # Make sure response is converted to string safely
+                response_str = str(response) if response is not None else "No response generated"
+
                 # Store interaction in memory with context
                 # Get memory context if it was set by the query engine
                 memory_context = getattr(query_engine, 'memory_context', None)
@@ -94,16 +129,16 @@ if prompt := st.chat_input("Ask about soccer matches..."):
                 st.session_state.memory_manager.add_interaction(
                     session_id=st.session_state.session_id,
                     query=prompt,
-                    response=str(response),
+                    response=response_str,
                     context=memory_context
                 )
 
                 # Display response
-                st.markdown(response)
+                st.markdown(response_str)
 
                 # Add assistant message to chat history
                 st.session_state.messages.append(
-                    {"role": "assistant", "content": str(response)}
+                    {"role": "assistant", "content": response_str}
                 )
 
             except Exception as e:
