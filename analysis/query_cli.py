@@ -10,12 +10,15 @@ import os
 import sys
 import argparse
 from datetime import datetime
+import gc
 
 # Add the parent directory to the path so we can import our modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import from our refactored modules
 from analysis.query.core.setup import setup_query_engine, run_query
+from analysis.memory import ConversationMemory
+from analysis.query.core.engine import QueryEngine
 
 def parse_args():
     """Parse command-line arguments."""
@@ -52,6 +55,14 @@ def parse_args():
         "--verbose", "-v", action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--list-sessions", "-l", action="store_true",
+        help="List all available sessions"
+    )
+    parser.add_argument(
+        "--always-infer", "-a", action="store_true",
+        help="Always use LLM to infer query instead of templates"
+    )
     return parser.parse_args()
 
 def interactive_mode(args):
@@ -61,11 +72,45 @@ def interactive_mode(args):
     print("Type 'reset' to reset the conversation memory")
     print("-" * 50)
 
-    # Create a session ID if not provided
+    # Create a properly structured memory manager using ConversationMemory
+    memory_manager = ConversationMemory()
+
+    # Ensure the conversations directory exists
+    os.makedirs(memory_manager.storage_dir, exist_ok=True)
+
+    # Handle session ID with priority: args > env var > new
     session_id = args.session
+
+    # If session ID not provided via args, check environment variable
     if not session_id:
-        now = datetime.now()
-        session_id = now.strftime("%Y%m%d_%H%M%S")
+        session_id = os.environ.get("QUERY_SESSION")
+        if session_id:
+            print(f"Using session ID from environment: {session_id}")
+
+    # If still no session ID, create a new one
+    if not session_id:
+        session_id = memory_manager.create_session()
+        print(f"Created new session: {session_id}")
+    else:
+        # Try to load existing session if provided
+        # First check if the session file exists
+        session_file = os.path.join(memory_manager.storage_dir, f"{session_id}.json")
+        if os.path.exists(session_file):
+            memory_manager.load_session(session_id)
+            print(f"Loaded existing session: {session_id}")
+        else:
+            # For custom session IDs, we'll create a new session with exactly that ID
+            # This is different from the default behavior that generates timestamp-based IDs
+            memory_manager.sessions[session_id] = []
+            memory_manager._save_session(session_id)
+            print(f"Created new custom session: {session_id}")
+
+    # Store the session ID in memory manager for later use
+    memory_manager.session_id = session_id
+
+    # Export the session ID to environment for subsequent calls
+    os.environ["QUERY_SESSION"] = session_id
+    print(f"Session ID '{session_id}' exported to environment as QUERY_SESSION")
 
     print(f"Session ID: {session_id}")
 
@@ -75,11 +120,9 @@ def interactive_mode(args):
         model_name=args.model,
         api_key=args.api_key,
         api_base=args.api_base,
-        verbose=args.verbose
+        verbose=args.verbose,
+        always_infer=args.always_infer
     )
-
-    # Simple memory implementation
-    memory = {"session_id": session_id, "history": []}
 
     try:
         while True:
@@ -94,17 +137,26 @@ def interactive_mode(args):
             # Check for reset command
             if query.lower() == "reset":
                 engine.reset_memory()
-                memory["history"] = []
+                memory_manager = ConversationMemory()
+                session_id = memory_manager.create_session()
                 print("Conversation memory reset.")
                 continue
 
             # Process the query
             if query.strip():
                 print("\nProcessing query...")
-                response = engine.query(query, memory=memory)
 
-                # Store in memory
-                memory["history"].append({"query": query, "response": response})
+                # Pass the memory manager to the query engine
+                response = engine.query(query, memory=memory_manager)
+
+                # Store interaction in memory with context from the query engine
+                memory_context = getattr(engine, 'memory_context', None)
+                memory_manager.add_interaction(
+                    session_id=session_id,
+                    query=query,
+                    response=str(response),
+                    context=memory_context
+                )
 
                 print("\nResponse:")
                 print("-" * 50)
@@ -118,19 +170,88 @@ def main():
     """Main entry point."""
     args = parse_args()
 
+    # If requested, list all available sessions and exit
+    if args.list_sessions:
+        memory_manager = ConversationMemory()
+        sessions = memory_manager.list_sessions()
+        if sessions:
+            print("Available sessions:")
+            for session in sessions:
+                print(f"  - {session}")
+        else:
+            print("No sessions found.")
+        return
+
     # Run in interactive mode if requested or if no query is provided
     if args.interactive or args.query is None:
         interactive_mode(args)
         return
 
-    # Run a single query
+    # For single queries, create a memory manager just for this query
+    memory_manager = ConversationMemory()
+
+    # Ensure the conversations directory exists
+    os.makedirs(memory_manager.storage_dir, exist_ok=True)
+
+    # Handle session ID with priority: args > env var > new
+    session_id = args.session
+
+    # If session ID not provided via args, check environment variable
+    if not session_id:
+        session_id = os.environ.get("QUERY_SESSION")
+        if session_id:
+            print(f"Using session ID from environment: {session_id}")
+
+    # If still no session ID, create a new one
+    if not session_id:
+        session_id = memory_manager.create_session()
+        print(f"Created new session: {session_id}")
+    else:
+        # Try to load existing session if provided
+        session_file = os.path.join(memory_manager.storage_dir, f"{session_id}.json")
+        if os.path.exists(session_file):
+            memory_manager.load_session(session_id)
+            print(f"Loaded existing session: {session_id}")
+        else:
+            # For custom session IDs, create a new session with exactly that ID
+            memory_manager.sessions[session_id] = []
+            memory_manager._save_session(session_id)
+            print(f"Created new custom session: {session_id}")
+
+    # Store the session ID in memory manager for later use
+    memory_manager.session_id = session_id
+
+    # Export the session ID to environment for subsequent calls
+    os.environ["QUERY_SESSION"] = session_id
+    print(f"Session ID '{session_id}' exported to environment as QUERY_SESSION")
+
+    # Run a single query with memory context
     response = run_query(
         query=args.query,
         db_path=args.db,
         model_name=args.model,
         api_key=args.api_key,
         api_base=args.api_base,
-        verbose=args.verbose
+        memory=memory_manager,
+        verbose=args.verbose,
+        always_infer=args.always_infer
+    )
+
+    # Get memory context from the last query engine that was created
+    # Import the necessary module to access the engine
+    # Find the current instance
+    engine_instances = [obj for obj in gc.get_objects() if isinstance(obj, QueryEngine)]
+    memory_context = None
+    if engine_instances:
+        # Use the most recently created engine
+        memory_context = getattr(engine_instances[-1], 'memory_context', None)
+
+    # Save interaction to memory
+    memory_manager.add_interaction(
+        session_id=session_id,
+        query=args.query,
+        response=str(response),
+        context=memory_context
     )
 
     print(response)
