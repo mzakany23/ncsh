@@ -62,6 +62,30 @@ To trigger data processing:
 make process-data
 ```
 
+### Refreshing Database
+
+To refresh your local matches.parquet file with the latest version from S3:
+```bash
+# Using default settings (ncsh-app-data bucket and data/parquet/ prefix)
+make refresh-db
+
+# Using a custom bucket
+make refresh-db S3_BUCKET=my-custom-bucket
+
+# Using a custom prefix
+make refresh-db S3_PREFIX=custom/path/
+
+# Using both custom bucket and prefix
+make refresh-db S3_BUCKET=my-custom-bucket S3_PREFIX=custom/path/
+```
+
+The command automatically:
+1. Creates a backup of your existing database file as `analysis/matches.parquet.bak` before downloading the new version
+2. Downloads the data to `analysis/matches.parquet` for use with the CLI interface
+3. Creates a copy at `analysis/ui/matches.parquet` for use with the Streamlit UI
+
+This dual-file approach ensures compatibility with both command-line queries and the web interface.
+
 ### Analyzing Data
 
 The analysis module provides a smart chat interface to query the soccer data using natural language. The data is stored in Parquet format and queried using DuckDB, with Anthropic's Claude 3.7 Sonnet powering the natural language understanding.

@@ -23,6 +23,7 @@ def setup_query_engine(
     api_base: Optional[str] = None,
     temperature: float = 0.0,
     verbose: bool = False,
+    always_infer: bool = False,
 ) -> QueryEngine:
     """
     Set up and initialize the QueryEngine with database and LLM configuration.
@@ -34,6 +35,7 @@ def setup_query_engine(
         api_base: API base URL for Anthropic (optional)
         temperature: Temperature for LLM generation (default: 0.0)
         verbose: Whether to enable verbose logging (default: False)
+        always_infer: Always use LLM to infer query instead of templates (default: False)
 
     Returns:
         Initialized QueryEngine instance
@@ -84,6 +86,7 @@ def setup_query_engine(
     query_engine = QueryEngine(
         sql_database=sql_database,
         llm=llm,
+        always_infer=always_infer,
     )
 
     logger.info("QueryEngine setup complete")
@@ -100,6 +103,7 @@ def run_query(
     temperature: float = 0.0,
     memory: Optional[Any] = None,
     verbose: bool = False,
+    always_infer: bool = False,
 ) -> str:
     """
     Run a query using the QueryEngine.
@@ -116,6 +120,7 @@ def run_query(
         temperature: Temperature for LLM generation (if engine not provided)
         memory: Optional memory context for conversation history
         verbose: Whether to enable verbose logging
+        always_infer: Always use LLM to infer query instead of templates (default: False)
 
     Returns:
         Natural language response to the query
@@ -138,7 +143,14 @@ def run_query(
             api_base=api_base,
             temperature=temperature,
             verbose=verbose,
+            always_infer=always_infer,
         )
+
+    # Get session ID from environment if present
+    session_id = os.environ.get("QUERY_SESSION")
+    if session_id and memory and not hasattr(memory, 'session_id'):
+        memory.session_id = session_id
+        logger.info(f"Using session ID from environment: {session_id}")
 
     # Run the query
     logger.info(f"Running query: {query}")

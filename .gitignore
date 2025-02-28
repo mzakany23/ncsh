@@ -85,3 +85,7 @@ analysis/ui/[0-9]*.json
 
 # DuckDB database file
 matches.parquet
+matches.parquet.bak
+analysis/matches.parquet
+analysis/matches.parquet.bak
+analysis/ui/matches.parquet

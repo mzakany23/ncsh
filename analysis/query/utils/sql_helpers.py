@@ -16,11 +16,50 @@ def fix_duckdb_sql(sql_query: str) -> str:
     if not isinstance(sql_query, str):
         return sql_query
 
-    # First, remove any markdown code blocks
-    if sql_query.startswith('```sql') or sql_query.startswith('```'):
-        sql_query = re.sub(r'^```sql\n', '', sql_query)
-        sql_query = re.sub(r'^```\n', '', sql_query)
-        sql_query = re.sub(r'\n```$', '', sql_query)
+    # First, remove any markdown code blocks and explanatory text
+    if '```' in sql_query:
+        # Extract just the SQL part from markdown code blocks
+        sql_parts = []
+        in_code_block = False
+        for line in sql_query.split('\n'):
+            if line.strip().startswith('```'):
+                in_code_block = not in_code_block
+                continue
+            if in_code_block and not line.startswith('#') and not line.startswith('--'):
+                sql_parts.append(line)
+
+        # If we found code blocks, join them
+        if sql_parts:
+            sql_query = '\n'.join(sql_parts)
+        else:
+            # Fallback: just strip out the markdown markers
+            sql_query = re.sub(r'```sql\s*', '', sql_query)
+            sql_query = re.sub(r'```\s*', '', sql_query)
+
+    # Remove any explanatory text that might follow the SQL
+    # Look for patterns like "This query will:" or numbered explanations
+    explanation_patterns = [
+        r'This query will:.*$',
+        r'This SQL query will:.*$',
+        r'\d+\.\s+.*$',  # Numbered explanations
+        r'--\s+Explanation:.*$',
+        r'/\*.*?\*/'  # SQL block comments
+    ]
+
+    for pattern in explanation_patterns:
+        sql_query = re.sub(pattern, '', sql_query, flags=re.MULTILINE | re.DOTALL)
+
+    # Check if the SQL starts with explanatory text (common with LLM responses)
+    # If it doesn't start with common SQL keywords, try to find where the SQL actually starts
+    sql_keywords = ['SELECT', 'WITH', 'CREATE', 'INSERT', 'UPDATE', 'DELETE', 'ALTER', 'DROP']
+    if not any(sql_query.lstrip().upper().startswith(keyword) for keyword in sql_keywords):
+        # Look for the first SQL keyword
+        for keyword in sql_keywords:
+            keyword_pos = sql_query.upper().find(keyword)
+            if keyword_pos > 0:
+                # Found a keyword - trim everything before it
+                sql_query = sql_query[keyword_pos:]
+                break
 
     # Remove trailing comments that might have incomplete code
     sql_query = re.sub(r'--.*$', '', sql_query, flags=re.MULTILINE)
@@ -47,6 +86,10 @@ def fix_duckdb_sql(sql_query: str) -> str:
     # Ensure clean whitespace
     sql_query = re.sub(r'\s+', ' ', sql_query)
     sql_query = re.sub(r'\s*;\s*$', ';', sql_query)
+
+    # Final check - if the query is just explanatory text with no SQL, return a simple SELECT
+    if not any(keyword in sql_query.upper() for keyword in sql_keywords):
+        return "SELECT 'Error: No valid SQL found in response' AS error;"
 
     return sql_query
 
