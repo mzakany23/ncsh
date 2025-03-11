@@ -19,8 +19,20 @@ COPY . ${LAMBDA_TASK_ROOT}
 # Install the package
 RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 
-# Copy lambda handler
+# Copy lambda handler and backfill runner
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
+COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Set the CMD to your handler (matches the function name in lambda_function.py)
-CMD [ "lambda_function.lambda_handler" ]
+# Set the handler based on BACKFILL_MODE env variable
+RUN echo '#!/bin/bash\n\
+if [ "$BACKFILL_MODE" = "true" ]; then\n\
+  echo "Running in backfill mode"\n\
+  exec python3 -m awslambdaric backfill_runner.lambda_handler\n\
+else\n\
+  echo "Running in standard mode"\n\
+  exec python3 -m awslambdaric lambda_function.lambda_handler\n\
+fi' > ${LAMBDA_TASK_ROOT}/handler.sh && \
+chmod +x ${LAMBDA_TASK_ROOT}/handler.sh
+
+# Use the script as the entry point
+ENTRYPOINT [ "/var/task/handler.sh" ]
