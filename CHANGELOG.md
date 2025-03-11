@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2024-03-11
+### Fixed
+- Critical fix to processing Lambda to only process files that are new or modified since the last run
+- Added timestamp tracking system to avoid reprocessing old data
+- Added ability to force full reprocessing with explicit flag
+
 ## [1.2.0] - 2024-03-11
 ### Changed
 - Enhanced data processing to append new data to existing dataset instead of overwriting
