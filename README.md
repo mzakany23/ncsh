@@ -15,15 +15,9 @@ A data pipeline for collecting and processing soccer game data.
 │   ├── lambda_function.py
 │   ├── requirements.txt
 │   └── Dockerfile
-├── analysis/          # Data analysis and chat interface
-│   ├── query/        # Refactored query engine modules
-│   ├── ui/           # Streamlit UI components
-│   ├── query_cli.py  # Command-line interface for queries
-│   └── requirements.in
 ├── terraform/         # Infrastructure as code
 │   └── infrastructure/
 ├── scripts/          # Utility scripts
-├── requirements.txt  # Combined dependencies for analysis module
 └── Makefile         # Build and deployment tasks
 ```
 
@@ -62,6 +56,7 @@ To trigger data processing:
 make process-data
 ```
 
+<<<<<<< HEAD
 ### Backfill Historical Data
 
 The project includes a backfill mechanism to scrape and process historical data. The backfill step function is configurable to scrape data for specific date ranges.
@@ -201,15 +196,15 @@ cd analysis
 streamlit run ui/Home.py
 ```
 
+=======
+>>>>>>> origin/main
 ## Project Notes
 
 ### Requirements Management
 
 The project uses a modular approach to managing dependencies:
 
-- **Module-specific requirements**: Each module (`scraping/`, `processing/`, `analysis/`) has its own `requirements.in` and/or `requirements.txt` file for module-specific dependencies.
-
-- **Root requirements.txt**: The root `requirements.txt` is a compiled version of the analysis module's requirements, generated using `uv pip compile analysis/requirements.in -o requirements.txt`. This compiled file includes all resolved dependencies with pinned versions for reproducibility.
+- **Module-specific requirements**: Each module (`scraping/`, `processing/`) has its own `requirements.in` and/or `requirements.txt` file for module-specific dependencies.
 
 ## Development
 

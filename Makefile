@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 .PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-llama refresh-db run-backfill check-backfill deploy-backfill
+=======
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements
+>>>>>>> origin/main
 
 # Clean up data directories
 clean-data:
@@ -35,8 +39,6 @@ install: venv compile-requirements
 	@echo "Installing dependencies..."
 	cd scraping && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
 	cd processing && uv pip install -r requirements.txt && uv pip install -e ".[dev]"
-	@echo "Installing analysis dependencies..."
-	cd analysis && uv pip install -r requirements.txt && uv pip install -e .
 
 test: install
 	@echo "Running tests..."
@@ -73,6 +75,7 @@ scrape-month:
 process-data:
 	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
 		--state-machine-arn arn:aws:states:us-east-2:$${AWS_ACCOUNT:-}:stateMachine:$${STATE_MACHINE:-ncsoccer-processing}
+<<<<<<< HEAD
 
 run-backfill:
 	@echo "Starting backfill job..."
@@ -131,3 +134,5 @@ refresh-db:
 	@echo "Creating a copy for Streamlit UI..."
 	cp analysis/matches.parquet analysis/ui/matches.parquet
 	@echo "Database refreshed successfully!"
+=======
+>>>>>>> origin/main
