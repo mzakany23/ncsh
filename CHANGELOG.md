@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2024-03-11
+### Changed
+- Enhanced data processing to append new data to existing dataset instead of overwriting
+- Improved deduplication logic to prevent duplicate entries when processing daily data
+- Added better logging for data processing operations
+- Updated processing Lambda to track both new and total record counts
+
 ## [Unreleased]
 ### Changed
 - Simplified Step Function workflow to focus on synchronous queries

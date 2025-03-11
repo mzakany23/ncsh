@@ -50,8 +50,27 @@ def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str
 
     return validated_data
 
+def get_existing_dataset(bucket: str, key: str) -> pd.DataFrame:
+    """Get the existing dataset from S3 if it exists, otherwise return an empty DataFrame"""
+    s3 = boto3.client("s3")
+    try:
+        logger.info(f"Attempting to read existing dataset from s3://{bucket}/{key}")
+        obj_response = s3.get_object(Bucket=bucket, Key=key)
+        buffer = io.BytesIO(obj_response['Body'].read())
+
+        # Read the existing Parquet file
+        df = pd.read_parquet(buffer)
+        logger.info(f"Successfully read existing dataset with {len(df)} rows")
+        return df
+    except s3.exceptions.NoSuchKey:
+        logger.info(f"No existing dataset found at s3://{bucket}/{key}, starting with empty dataset")
+        return pd.DataFrame()
+    except Exception as e:
+        logger.warning(f"Error reading existing dataset: {str(e)}, starting with empty dataset")
+        return pd.DataFrame()
+
 def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
-    """Convert JSON files to Parquet format with strict schema validation"""
+    """Convert JSON files to Parquet format and append to existing dataset"""
     logger.info(f"Converting {len(files)} JSON files to Parquet")
     s3 = boto3.client("s3")
 
@@ -93,14 +112,14 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
                 "validation_errors": validation_errors
             }
 
-        # Convert to DataFrame
-        logger.info("Creating DataFrame")
-        df = pd.DataFrame(all_validated_data)
-        logger.info(f"DataFrame shape: {df.shape}")
+        # Convert new data to DataFrame
+        logger.info("Creating DataFrame from new data")
+        new_df = pd.DataFrame(all_validated_data)
+        logger.info(f"New data DataFrame shape: {new_df.shape}")
 
-        # Convert to Parquet with schema enforcement
-        logger.info("Converting to Parquet format")
-        out_buffer = io.BytesIO()
+        # Get existing dataset
+        current_key = f"{dst_prefix}data.parquet"
+        existing_df = get_existing_dataset(dst_bucket, current_key)
 
         # Define PyArrow schema
         schema = pa.schema([
@@ -118,19 +137,42 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
             ('timestamp', pa.timestamp('ns'))
         ])
 
-        df.to_parquet(
-            out_buffer,
-            index=False,
-            schema=schema
-        )
-        out_buffer.seek(0)
+        # If we have new data, combine with existing
+        if not new_df.empty:
+            if not existing_df.empty:
+                # Create composite key for deduplication
+                logger.info("Combining existing data with new data and deduplicating")
+                existing_df['composite_key'] = existing_df.apply(
+                    lambda x: f"{x['date']}_{x['home_team']}_{x['away_team']}_{x['league']}", axis=1
+                )
+                new_df['composite_key'] = new_df.apply(
+                    lambda x: f"{x['date']}_{x['home_team']}_{x['away_team']}_{x['league']}", axis=1
+                )
 
-        # Define file locations
-        current_key = f"{dst_prefix}data.parquet"
-        backup_key = f"{dst_prefix}data.backup.parquet"
+                # Combine datasets, keeping the most recent version of each record
+                combined_df = pd.concat([existing_df, new_df])
+                combined_df = combined_df.sort_values('timestamp', ascending=False)
+                combined_df = combined_df.drop_duplicates(subset='composite_key', keep='first')
+                combined_df = combined_df.drop(columns=['composite_key'])
+                logger.info(f"Combined DataFrame shape after deduplication: {combined_df.shape}")
+            else:
+                logger.info("No existing data, using only new data")
+                combined_df = new_df
+        else:
+            logger.info("No new data to add, using existing data")
+            combined_df = existing_df
 
+        if combined_df.empty:
+            logger.warning("No data to write")
+            return {
+                "status": "WARNING",
+                "message": "No data to write",
+                "validation_errors": validation_errors
+            }
+
+        # Backup the existing file if it exists
         try:
-            # Create backup of existing file if it exists
+            backup_key = f"{dst_prefix}data.backup.parquet"
             s3.head_object(Bucket=dst_bucket, Key=current_key)
             logger.info("Creating backup of existing Parquet file")
             s3.copy_object(
@@ -143,8 +185,17 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
                 raise
             logger.info("No existing Parquet file to backup")
 
-        # Upload new Parquet file
-        logger.info(f"Uploading Parquet file to s3://{dst_bucket}/{current_key}")
+        # Write the combined data
+        out_buffer = io.BytesIO()
+        combined_df.to_parquet(
+            out_buffer,
+            index=False,
+            schema=schema
+        )
+        out_buffer.seek(0)
+
+        # Upload combined Parquet file
+        logger.info(f"Uploading combined Parquet file ({len(combined_df)} rows) to s3://{dst_bucket}/{current_key}")
         s3.put_object(
             Bucket=dst_bucket,
             Key=current_key,
@@ -155,7 +206,8 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
             "status": "SUCCESS",
             "source": f"s3://{src_bucket}",
             "destination": f"s3://{dst_bucket}/{current_key}",
-            "rows_processed": len(df),
+            "new_rows_processed": len(new_df),
+            "total_rows": len(combined_df),
             "validation_errors": validation_errors if validation_errors else None
         }
 
