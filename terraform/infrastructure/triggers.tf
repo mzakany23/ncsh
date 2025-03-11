@@ -1,3 +1,7 @@
+# This file contains the original monthly schedule trigger
+# These resources are now managed in monitoring.tf
+
+/*
 # EventBridge rule to trigger Step Function monthly
 resource "aws_cloudwatch_event_rule" "monthly_schedule" {
   name                = "ncsoccer-monthly-schedule"
@@ -19,3 +23,4 @@ resource "aws_cloudwatch_event_target" "step_function" {
     mode  = "month"
   })
 }
+*/

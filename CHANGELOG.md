@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2024-03-11
+### Changed
+- Enhanced data processing to append new data to existing dataset instead of overwriting
+- Improved deduplication logic to prevent duplicate entries when processing daily data
+- Added better logging for data processing operations
+- Updated processing Lambda to track both new and total record counts
+
 ## [Unreleased]
 ### Changed
 - Simplified Step Function workflow to focus on synchronous queries
@@ -20,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - New query_analysis.py script for testing analysis queries
 - IAM policy for Step Function access from local development
+- Added historical data backfill step function for automated data ingestion
+- Implemented robust backfill monitoring and troubleshooting tools
+- Added comprehensive logs and metrics for backfill jobs
+- Created make commands for running and managing backfill operations
 
 ## [2.4.0] - 2025-02-21
 ### Added
