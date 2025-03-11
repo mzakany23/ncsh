@@ -75,3 +75,18 @@ checkpoint_*.parquet
 final_data.parquet
 final_dataset.parquet
 final_dataset.csv
+
+# Aider and Cursor artifacts
+.aider*
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v3/
+.gitignore.d/
+.cursor/
+conversations/
+
+# Package version files (from uv)
+=*.*.*/
+=*.*.*
+=*.*/
+=*.*
