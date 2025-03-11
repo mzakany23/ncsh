@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements query-llama refresh-db run-backfill check-backfill deploy-backfill
-=======
-.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements
->>>>>>> origin/main
+.PHONY: clean clean-data clean-all install test lint deploy-scraper deploy-processing scrape-month process-data venv compile-requirements run-backfill check-backfill deploy-backfill
 
 # Clean up data directories
 clean-data:
@@ -75,7 +71,6 @@ scrape-month:
 process-data:
 	AWS_PROFILE=mzakany python scripts/trigger_processing.py \
 		--state-machine-arn arn:aws:states:us-east-2:$${AWS_ACCOUNT:-}:stateMachine:$${STATE_MACHINE:-ncsoccer-processing}
-<<<<<<< HEAD
 
 run-backfill:
 	@echo "Starting backfill job..."
@@ -117,22 +112,3 @@ analyze-execution:
 		exit 1; \
 	fi
 	AWS_PROFILE=mzakany python scripts/backfill_monitor.py --execution-arn $(execution)
-
-query-llama:
-	@echo "Running Soccer Query Engine..."
-	python analysis/query_cli.py "$(query)" $(if $(session_id),--session=$(session_id),) $(if $(verbose),--verbose,) --db analysis/matches.parquet
-
-# Refresh database from S3
-refresh-db:
-	@echo "Refreshing matches.parquet from S3..."
-	@mkdir -p analysis/ui/
-	@if [ -f analysis/matches.parquet ]; then \
-		echo "Creating backup of current database..."; \
-		cp analysis/matches.parquet analysis/matches.parquet.bak; \
-	fi
-	AWS_PROFILE=mzakany aws s3 cp s3://$${S3_BUCKET:-ncsh-app-data}/$${S3_PREFIX:-data/parquet/}data.parquet analysis/matches.parquet
-	@echo "Creating a copy for Streamlit UI..."
-	cp analysis/matches.parquet analysis/ui/matches.parquet
-	@echo "Database refreshed successfully!"
-=======
->>>>>>> origin/main
