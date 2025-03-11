@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - New query_analysis.py script for testing analysis queries
 - IAM policy for Step Function access from local development
+- Added historical data backfill step function for automated data ingestion
+- Implemented robust backfill monitoring and troubleshooting tools
+- Added comprehensive logs and metrics for backfill jobs
+- Created make commands for running and managing backfill operations
 
 ## [2.4.0] - 2025-02-21
 ### Added

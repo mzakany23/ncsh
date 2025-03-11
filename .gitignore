@@ -1,4 +1,3 @@
-.aider*
 # Python
 __pycache__/
 *.py[cod]
@@ -20,13 +19,16 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
 
-# Virtual Environment
+# Virtual environments
 .env
 .venv
 env/
 venv/
 ENV/
+env.bak/
+venv.bak/
 
 # IDE
 .idea/
@@ -37,11 +39,22 @@ ENV/
 # Project specific
 .scrapy/
 data/
-.cursor/
+test_data/
+!tests/data/html/2024-03-01.html
+conversation_history.txt
+*-ui.json
+matches.parquet
 
-# uv
-=*.*.*
-=*.*
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform.lock.hcl
+
+# Logs
+*.log
 
 # OS
 .DS_Store
@@ -52,40 +65,13 @@ data/
 ehthumbs.db
 Thumbs.db
 
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-.terraformrc
-terraform.rc
-.terraform.lock.hcl
-terraform.tfvars
-*.tfvars.json
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-
-*.log
-
-# Project specific
-test_data/
-!tests/data/html/2024-03-01.html
-.windsurfrules
-
-# Chat history and user data
-conversations/
-conversation_history.db
-*_chat_history.db
-*.chat.history*
-*.history.*
-analysis/ui/*.json
-analysis/ui/[0-9]*.json
-
-# DuckDB database file
-matches.parquet
-matches.parquet.bak
-analysis/matches.parquet
-analysis/matches.parquet.bak
-analysis/ui/matches.parquet
+# Backfill artifacts
+*.parquet
+analysis_output/
+backfill_test/
+test_backfill/
+*.csv
+checkpoint_*.parquet
+final_data.parquet
+final_dataset.parquet
+final_dataset.csv
