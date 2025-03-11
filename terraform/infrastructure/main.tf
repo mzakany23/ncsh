@@ -312,7 +312,9 @@ resource "aws_iam_role_policy" "step_function_policy" {
           "lambda:InvokeFunction"
         ]
         Resource = [
-          aws_lambda_function.ncsoccer_scraper.arn
+          aws_lambda_function.ncsoccer_scraper.arn,
+          aws_lambda_function.processing.arn,
+          aws_lambda_function.ncsoccer_backfill.arn
         ]
       }
     ]
