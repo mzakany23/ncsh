@@ -6,9 +6,9 @@ import boto3
 import pandas as pd
 import pyarrow as pa
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from models import GameData, Game
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -68,6 +68,62 @@ def get_existing_dataset(bucket: str, key: str) -> pd.DataFrame:
     except Exception as e:
         logger.warning(f"Error reading existing dataset: {str(e)}, starting with empty dataset")
         return pd.DataFrame()
+
+def get_last_processed_timestamp(bucket: str, prefix: str) -> Optional[datetime]:
+    """
+    Get the timestamp of the last successful processing run
+    Uses a marker file in S3 to track when processing was last completed
+    """
+    s3 = boto3.client("s3")
+    marker_key = f"{prefix.rstrip('/')}/last_processed.json"
+
+    try:
+        logger.info(f"Checking for last processed timestamp at s3://{bucket}/{marker_key}")
+        response = s3.get_object(Bucket=bucket, Key=marker_key)
+        data = json.loads(response['Body'].read().decode('utf-8'))
+        timestamp_str = data.get('timestamp')
+
+        if timestamp_str:
+            last_processed = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            logger.info(f"Last processing run was at {last_processed}")
+            return last_processed
+
+    except s3.exceptions.NoSuchKey:
+        logger.info(f"No last processed timestamp found at s3://{bucket}/{marker_key}")
+    except Exception as e:
+        logger.warning(f"Error getting last processed timestamp: {str(e)}")
+
+    # If no marker file or errors, default to process only files from the last 2 days
+    # This is a safety measure to avoid reprocessing the entire dataset
+    default_time = datetime.utcnow() - timedelta(days=2)
+    logger.info(f"Using default last processed time: {default_time}")
+    return default_time
+
+def update_last_processed_timestamp(bucket: str, prefix: str) -> None:
+    """
+    Update the timestamp of the last successful processing run
+    Creates or updates a marker file in S3
+    """
+    s3 = boto3.client("s3")
+    marker_key = f"{prefix.rstrip('/')}/last_processed.json"
+
+    now = datetime.utcnow()
+    data = {
+        'timestamp': now.isoformat() + 'Z',
+        'status': 'success'
+    }
+
+    try:
+        logger.info(f"Updating last processed timestamp to {now}")
+        s3.put_object(
+            Bucket=bucket,
+            Key=marker_key,
+            Body=json.dumps(data),
+            ContentType='application/json'
+        )
+        logger.info(f"Successfully updated last processed timestamp")
+    except Exception as e:
+        logger.warning(f"Error updating last processed timestamp: {str(e)}")
 
 def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
     """Convert JSON files to Parquet format and append to existing dataset"""
@@ -202,6 +258,9 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
             Body=out_buffer.getvalue()
         )
 
+        # Update the last processed timestamp
+        update_last_processed_timestamp(dst_bucket, dst_prefix)
+
         return {
             "status": "SUCCESS",
             "source": f"s3://{src_bucket}",
@@ -216,11 +275,21 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         logger.error(error_msg)
         raise Exception(error_msg)
 
-def list_json_files(bucket: str, prefix: str) -> List[str]:
-    """List all JSON files in the specified S3 bucket and prefix"""
+def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[str]:
+    """
+    List JSON files in the specified S3 bucket and prefix
+
+    If only_recent is True, only returns files modified since the last processing run
+    """
     logger.info(f"Listing JSON files in s3://{bucket}/{prefix}")
     s3 = boto3.client("s3")
     files = []
+
+    # Get the timestamp of the last processing run
+    last_processed = get_last_processed_timestamp(bucket, prefix.replace('json', 'parquet')) if only_recent else None
+
+    if last_processed:
+        logger.info(f"Filtering for files modified after {last_processed}")
 
     try:
         paginator = s3.get_paginator('list_objects_v2')
@@ -228,11 +297,17 @@ def list_json_files(bucket: str, prefix: str) -> List[str]:
             if 'Contents' in page:
                 for obj in page['Contents']:
                     key = obj['Key']
+                    last_modified = obj['LastModified']
+
+                    # Skip files that haven't been modified since the last processing run
+                    if only_recent and last_processed and last_modified.replace(tzinfo=None) <= last_processed:
+                        continue
+
                     if key.endswith('.json') or key.endswith('.jsonl'):
                         files.append(key)
-                        logger.info(f"Found file: {key}")
+                        logger.info(f"Found file: {key}, Last Modified: {last_modified}")
 
-        logger.info(f"Found {len(files)} JSON files")
+        logger.info(f"Found {len(files)} JSON files to process")
         return files
 
     except Exception as e:
@@ -248,6 +323,9 @@ def lambda_handler(event, context):
         # Get operation type
         operation = event.get('operation', 'convert')  # Default to convert for backward compatibility
 
+        # Check if we should process all files or only recent ones
+        force_full_reprocess = event.get('force_full_reprocess', False)
+
         # Get environment variables with defaults
         src_bucket = event.get('src_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
         src_prefix = event.get('src_prefix', os.environ.get("JSON_PREFIX", "data/json/"))
@@ -255,21 +333,27 @@ def lambda_handler(event, context):
         dst_prefix = event.get('dst_prefix', os.environ.get("PARQUET_PREFIX", "data/parquet/"))
 
         if operation == "list_files":
-            # List JSON files
-            files = list_json_files(src_bucket, src_prefix)
+            # List JSON files, optionally filtering for only recent ones
+            files = list_json_files(src_bucket, src_prefix, not force_full_reprocess)
             return {
                 "files": files,
                 "src_bucket": src_bucket,
                 "src_prefix": src_prefix,
                 "dst_bucket": dst_bucket,
-                "dst_prefix": dst_prefix
+                "dst_prefix": dst_prefix,
+                "force_full_reprocess": force_full_reprocess
             }
 
         elif operation == "convert":
             # Get files from previous step
             files = event.get('files', [])
             if not files:
-                raise ValueError("No files provided for conversion")
+                logger.info("No files provided for conversion")
+                return {
+                    "status": "SUCCESS",
+                    "message": "No new files to process",
+                    "new_rows_processed": 0
+                }
 
             # Convert files to Parquet
             result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
