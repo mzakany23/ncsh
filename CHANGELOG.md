@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added better logging for data processing operations
 - Updated processing Lambda to track both new and total record counts
 
-## [Unreleased]
+## [2.5.0] - 2025-03-13
 ### Added
 - Enhanced score extraction with Claude-powered AI agent as fallback
 - Added comprehensive HTML analysis to extract scores from historical data
