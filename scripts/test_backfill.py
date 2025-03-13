@@ -219,13 +219,19 @@ def run_backfill(start_year, start_month, end_year, end_month,
 def main():
     """Main function to parse arguments and run the backfill test."""
     parser = argparse.ArgumentParser(description='Test the backfill spider for NC Soccer data')
-    parser.add_argument('--start-year', type=int, default=2022, help='Start year (default: 2022)')
-    parser.add_argument('--start-month', type=int, default=1, help='Start month (default: 1)')
-    parser.add_argument('--end-year', type=int, default=datetime.now().year, help='End year (default: current year)')
-    parser.add_argument('--end-month', type=int, default=datetime.now().month, help='End month (default: current month)')
-    parser.add_argument('--force-scrape', action='store_true', help='Force re-scrape even if already done')
+    parser.add_argument('--start-year', type=int, default=int(os.environ.get('START_YEAR', '2007')), 
+                        help='Start year (default: 2007 or from START_YEAR env var)')
+    parser.add_argument('--start-month', type=int, default=int(os.environ.get('START_MONTH', '1')), 
+                        help='Start month (default: 1 or from START_MONTH env var)')
+    parser.add_argument('--end-year', type=int, default=int(os.environ.get('END_YEAR', str(datetime.now().year))), 
+                        help='End year (default: current year or from END_YEAR env var)')
+    parser.add_argument('--end-month', type=int, default=int(os.environ.get('END_MONTH', str(datetime.now().month))), 
+                        help='End month (default: current month or from END_MONTH env var)')
+    parser.add_argument('--force-scrape', action='store_true', default=os.environ.get('FORCE_SCRAPE', '').lower() == 'true', 
+                        help='Force re-scrape even if already done')
     parser.add_argument('--skip-existing', action='store_true', help='Skip already scraped dates')
-    parser.add_argument('--output-dir', default='data', help='Output directory for scraped data')
+    parser.add_argument('--output-dir', default=os.environ.get('OUTPUT_DIR', 'data'), 
+                        help='Output directory for scraped data')
     parser.add_argument('--no-verify', action='store_true', help='Skip verification step')
     
     args = parser.parse_args()
