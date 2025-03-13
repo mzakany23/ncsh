@@ -139,14 +139,14 @@ class BackfillSpider(ScheduleSpider):
                 (self.current_target_year == self.start_year and self.current_target_month < self.start_month))
     
     def start_requests(self):
-        """Start the backfill process."""
+        """Start the backfill process with improved session handling."""
         # Check if we're already done
         if self.is_backfill_complete():
             self.logger.info("Backfill already complete")
             return
         
         # First, check if current month is already fully scraped
-        if self.is_target_complete():
+        if self.is_target_complete() and self.skip_existing:
             self.logger.info(f"Month {self.current_target_year}-{self.current_target_month:02d} already complete, skipping")
             self.months_skipped += 1
             self.save_checkpoint()
@@ -155,16 +155,52 @@ class BackfillSpider(ScheduleSpider):
                 return self.start_requests()
             return
         
+        # Set up cookies for the initial session
+        self.logger.info("Establishing initial session with the website...")
+        
+        # First visit the homepage to establish a session and get cookies
+        yield scrapy.Request(
+            url='https://nc-soccer-hudson.ezleagues.ezfacility.com/',
+            callback=self.visit_facility_page,
+            meta={
+                'dont_redirect': True,
+                'handle_httpstatus_list': [301, 302],
+                'target_year': self.current_target_year,
+                'target_month': self.current_target_month
+            }
+        )
+        
+    def visit_facility_page(self, response):
+        """Visit the facility page to get necessary cookies."""
+        self.logger.info("Visiting facility page to establish cookies...")
+        
+        # Now visit the facility page to get additional cookies
+        yield scrapy.Request(
+            url='https://nc-soccer-hudson.ezleagues.ezfacility.com/facilities/facilities.aspx',
+            callback=self.visit_schedule_page,
+            meta={
+                'dont_redirect': True,
+                'handle_httpstatus_list': [301, 302],
+                'target_year': response.meta.get('target_year'),
+                'target_month': response.meta.get('target_month')
+            }
+        )
+    
+    def visit_schedule_page(self, response):
+        """Visit the schedule page with established cookies."""
+        self.logger.info("Now visiting schedule page with established session...")
+        
         # Start with initial request to the schedule page
         self.logger.info(f"Starting backfill from {self.current_target_year}-{self.current_target_month:02d}")
         yield scrapy.Request(
             url=self.start_urls[0],
             callback=self.handle_calendar_navigation,
+            dont_filter=True,  # Important to avoid duplicate filtering
             meta={
                 'dont_redirect': True, 
                 'handle_httpstatus_list': [301, 302],
-                'target_year': self.current_target_year,
-                'target_month': self.current_target_month
+                'target_year': response.meta.get('target_year'),
+                'target_month': response.meta.get('target_month')
             }
         )
     
