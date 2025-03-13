@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated processing Lambda to track both new and total record counts
 
 ## [Unreleased]
+### Added
+- Enhanced score extraction with Claude-powered AI agent as fallback
+- Added comprehensive HTML analysis to extract scores from historical data
+- Improved support for 2010-era HTML structure in schedule spider
+
 ### Changed
 - Simplified Step Function workflow to focus on synchronous queries
 - Removed WebSocket API Gateway and related resources
