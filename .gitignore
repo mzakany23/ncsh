@@ -70,6 +70,8 @@ Thumbs.db
 analysis_output/
 backfill_test/
 test_backfill/
+test_backfill_data/
+test_oct_2010/
 *.csv
 checkpoint_*.parquet
 final_data.parquet
