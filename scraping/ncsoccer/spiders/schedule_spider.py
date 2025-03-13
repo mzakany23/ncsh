@@ -14,6 +14,13 @@ from ..pipeline.config import (
 )
 from ..pipeline.lookup import get_lookup_interface
 
+# Import the score extraction agent (will be used as a fallback)
+try:
+    from ..agents.score_extraction_agent import ScoreExtractionAgent
+    AGENT_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    AGENT_AVAILABLE = False
+
 class ScheduleSpider(scrapy.Spider):
     name = 'schedule'
     allowed_domains = ['nc-soccer-hudson.ezleagues.ezfacility.com']
@@ -26,14 +33,32 @@ class ScheduleSpider(scrapy.Spider):
         'ROBOTSTXT_OBEY': False,
         'COOKIES_ENABLED': True,
         'COOKIES_DEBUG': True,
-        'DOWNLOAD_DELAY': 1,
-        'CONCURRENT_REQUESTS': 1
+        'DOWNLOAD_DELAY': 2,  # Increased to avoid rate limiting
+        'CONCURRENT_REQUESTS': 1,
+        'DEFAULT_REQUEST_HEADERS': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'max-age=0',
+            'Connection': 'keep-alive',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'sec-ch-ua': '"Chromium";v="121", "Not A(Brand";v="99"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"'
+        },
+        'RETRY_ENABLED': True,
+        'RETRY_TIMES': 5,  # Increased for better reliability
+        'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429, 403]
     }
 
     def __init__(self, mode='day', year=None, month=None, day=None, skip_existing=True,
                  html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
                  storage_type='s3', bucket_name=None, lookup_type='file', region='us-east-2',
-                 table_name=None, force_scrape=False, use_test_data=False, *args, **kwargs):
+                 table_name=None, force_scrape=False, use_test_data=False, use_agent=True, 
+                 anthropic_api_key=None, *args, **kwargs):
         super(ScheduleSpider, self).__init__(*args, **kwargs)
 
         # Parse configuration
@@ -75,6 +100,19 @@ class ScheduleSpider(scrapy.Spider):
 
         # Track current month to avoid unnecessary navigation
         self.current_month_date = None
+        
+        # Set up score extraction agent if available and requested
+        self.use_agent = use_agent and AGENT_AVAILABLE
+        self.agent = None
+        self.anthropic_api_key = anthropic_api_key
+        
+        if self.use_agent:
+            try:
+                self.agent = ScoreExtractionAgent(api_key=self.anthropic_api_key)
+                self.logger.info("Score extraction agent initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize score extraction agent: {e}")
+                self.use_agent = False
 
     def _is_date_scraped(self, date):
         """Check if a date has already been scraped using the lookup data"""
@@ -354,15 +392,35 @@ class ScheduleSpider(scrapy.Spider):
                     # Extract session from league name (e.g., "session 2 2024" from "Mens 40+ Friday night 7v7 Indoor session 2 2024")
                     session = league.split('session')[-1].strip() if 'session' in league else ''
 
-                    # Extract scores from the versus column
-                    versus_text = cells[2].css('span::text').get('').strip()
+                    # Enhanced score extraction to handle different HTML structures
                     home_score = None
                     away_score = None
+                    extraction_method = "standard"
+                    
+                    # Try the standard method first (direct span text in third column)
+                    versus_text = cells[2].css('span::text').get('').strip()
+                    
+                    # If that doesn't have scores, check if we have a td with schedule-versus-column class (2010 format)
+                    if not versus_text or ' - ' not in versus_text:
+                        # First, check if the current cell has the schedule-versus-column class
+                        if 'class' in cells[2].attrib and 'schedule-versus-column' in cells[2].attrib['class']:
+                            versus_text = cells[2].css('span::text').get('').strip()
+                            extraction_method = "schedule-versus-column"
+                        else:
+                            # If not, try finding any cell with the schedule-versus-column class
+                            for i, cell in enumerate(cells):
+                                if 'class' in cell.attrib and 'schedule-versus-column' in cell.attrib['class']:
+                                    versus_text = cell.css('span::text').get('').strip()
+                                    extraction_method = f"schedule-versus-column-cell-{i}"
+                                    break
+                    
+                    # Parse scores if we found them
                     if versus_text and ' - ' in versus_text:
                         try:
                             scores = versus_text.split(' - ')
                             home_score = int(scores[0].strip())
                             away_score = int(scores[1].strip())
+                            self.logger.info(f"Successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
                         except (ValueError, IndexError):
                             self.logger.warning(f"Failed to parse scores from: {versus_text}")
                             home_score = None
@@ -371,8 +429,34 @@ class ScheduleSpider(scrapy.Spider):
                         # This is a pending game, scores should be None
                         home_score = None
                         away_score = None
+                        extraction_method = "pending-game"
                     else:
-                        self.logger.warning(f"Unexpected versus text format: {versus_text}")
+                        self.logger.warning(f"Standard extraction methods failed with text: {versus_text}")
+                        
+                        # If all standard methods fail and the agent is available, try it as a fallback
+                        if self.use_agent and self.agent and status.lower() == 'complete':
+                            try:
+                                # Get the HTML of the current row for the agent
+                                row_html = row.get()
+                                
+                                # Also get the table HTML for context if this is the first row
+                                table_html = None
+                                if games_count == 1:  # First game in this page
+                                    table_html = schedule_table.get()
+                                
+                                self.logger.info("Attempting score extraction using Claude agent")
+                                agent_home_score, agent_away_score, agent_method = self.agent.extract_scores(
+                                    row_html=row_html,
+                                    table_html=table_html
+                                )
+                                
+                                if agent_home_score is not None and agent_away_score is not None:
+                                    home_score = agent_home_score
+                                    away_score = agent_away_score
+                                    extraction_method = f"agent-{agent_method}"
+                                    self.logger.info(f"Agent successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
+                            except Exception as e:
+                                self.logger.error(f"Agent-based score extraction failed: {e}")
 
                     # Extract status (no times available)
                     status = cells[4].css('a::text').get('').strip()
