@@ -87,6 +87,7 @@ scripts/enhanced_backfill_test.py
 scripts/quick_test.py
 
 # Test output
+output
 tests/output/
 tests/output/html/
 tests/output/json/
