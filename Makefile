@@ -112,3 +112,26 @@ analyze-execution:
 		exit 1; \
 	fi
 	AWS_PROFILE=mzakany python scripts/backfill_monitor.py --execution-arn $(execution)
+
+# Local testing commands to avoid deployment cycles
+test-lambda-image:
+	@echo "Building and testing Lambda Docker image locally..."
+	./scripts/test_lambda_image.sh
+
+test-workflow:
+	@echo "Running local workflow simulation..."
+	@if [ -z "$(year)" ] || [ -z "$(month)" ]; then \
+		echo "Error: Missing year or month. Use: make test-workflow year=2025 month=3 [day=15 mode=day|month]"; \
+		exit 1; \
+	fi
+	python scripts/local_workflow_simulator.py \
+		--year $(year) \
+		--month $(month) \
+		$(if $(day),--day=$(day),) \
+		$(if $(mode),--mode=$(mode),--mode=day) \
+		$(if $(force),--force-scrape,)
+
+# Run the real scraper test directly (without deployment)
+test-real-scraper:
+	@echo "Running real scraper test..."
+	python -m pytest tests/functional/test_real_scraper.py -v

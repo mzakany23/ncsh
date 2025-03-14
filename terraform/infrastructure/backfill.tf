@@ -11,7 +11,7 @@ resource "aws_sfn_state_machine" "backfill_state_machine" {
       "Initialize" = {
         Type = "Pass",
         Result = {
-          current_year = 2007,
+          current_year = 2010,
           current_month = 1,
           count = 0,
           stats = {
