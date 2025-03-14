@@ -86,6 +86,11 @@ scripts/direct_scrape.py
 scripts/enhanced_backfill_test.py
 scripts/quick_test.py
 
+# Test output
+tests/output/
+tests/output/html/
+tests/output/json/
+
 # Aider and Cursor artifacts
 .aider*
 .aider.chat.history.md
