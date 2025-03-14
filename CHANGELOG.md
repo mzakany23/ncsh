@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2025-03-14
+### Added
+- Created unified Step Function workflow to handle all scraping and processing scenarios (daily, monthly, backfill)
+- Added new operations to the processing Lambda: build_dataset, check_backfill_status, and process_all
+- Improved error handling and retry logic in the Step Function workflow
+
+### Changed
+- Reorganized project structure for better maintainability
+- Moved test files to a dedicated tests directory
+- Added infrastructure as code for the unified workflow in terraform/infrastructure
+
+## [2.5.8] - 2025-03-14
+### Fixed
+- Fixed bootstrap script in scraper Lambda Dockerfile to properly handle Lambda runtime arguments
+- Modified script to pass arguments to the awslambdaric module using "$@"
+
 ## [2.5.7] - 2025-03-14
 ### Fixed
 - Implemented more robust error handling for Twisted reactor in backfill_runner.py

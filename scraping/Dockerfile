@@ -25,12 +25,13 @@ COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
 # Create a wrapper script in the correct location with proper line breaks
 RUN echo '#!/bin/bash' > ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '# Accept handler name from Lambda runtime as first argument' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'if [ "$BACKFILL_MODE" = "true" ]; then' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo '  echo "Running in backfill mode"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exec python3 -m awslambdaric backfill_runner.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  exec python3 -m awslambdaric backfill_runner.lambda_handler "$@"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'else' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo '  echo "Running in standard mode"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exec python3 -m awslambdaric lambda_function.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  exec python3 -m awslambdaric lambda_function.lambda_handler "$@"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'fi' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap
 
