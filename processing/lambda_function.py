@@ -300,8 +300,12 @@ def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[
                     last_modified = obj['LastModified']
 
                     # Skip files that haven't been modified since the last processing run
-                    if only_recent and last_processed and last_modified.replace(tzinfo=None) <= last_processed:
-                        continue
+                    if only_recent and last_processed:
+                        # Ensure both are timezone-naive for proper comparison
+                        naive_last_modified = last_modified.replace(tzinfo=None)
+                        naive_last_processed = last_processed.replace(tzinfo=None) if last_processed.tzinfo else last_processed
+                        if naive_last_modified <= naive_last_processed:
+                            continue
 
                     if key.endswith('.json') or key.endswith('.jsonl'):
                         files.append(key)
