@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive scripts for local dataset building and analysis
 
 ### Fixed
-- Addressed container entrypoint configuration issue in the backfill Lambda function
+- Addressed container entrypoint configuration issue in the backfill Lambda function with proper bootstrap script handling
 
 ## [2.6.1] - 2025-03-14
 ### Fixed
