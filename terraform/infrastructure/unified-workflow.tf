@@ -73,9 +73,9 @@ resource "aws_iam_policy" "step_function_lambda_policy" {
           "lambda:InvokeFunction"
         ]
         Resource = [
-          var.scraper_lambda_arn,
-          var.processor_lambda_arn,
-          var.backfill_lambda_arn
+          aws_lambda_function.ncsoccer_scraper.arn,
+          aws_lambda_function.processing.arn,
+          aws_lambda_function.ncsoccer_backfill.arn
         ]
       },
       {
@@ -123,7 +123,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_daily_unified" {
   description = "Trigger NC Soccer unified workflow for current day at 04:00 UTC"
   
   schedule_expression = "cron(0 4 * * ? *)"
-  is_enabled          = true
+  state               = "ENABLED"
   
   tags = {
     Environment = var.environment
@@ -137,7 +137,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_monthly_unified" {
   description = "Trigger NC Soccer unified workflow for entire month on the 1st day at 05:00 UTC"
   
   schedule_expression = "cron(0 5 1 * ? *)"
-  is_enabled          = true
+  state               = "ENABLED"
   
   tags = {
     Environment = var.environment
@@ -151,7 +151,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_backfill_unified" {
   description = "Manual trigger for NC Soccer backfill workflow (disabled by default)"
   
   schedule_expression = "cron(0 1 1 1 ? 2099)" # Far future date to effectively disable automatic triggering
-  is_enabled          = false
+  state               = "DISABLED"
   
   tags = {
     Environment = var.environment
