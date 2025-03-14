@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2025-03-13
+### Fixed
+- Updated log file path to use /tmp directory in Lambda environment
+- Fixed file permission issues in read-only Lambda file system
+
 ## [2.5.2] - 2025-03-13
 ### Fixed
 - Fixed Lambda container bootstrap script formatting to resolve line break issues
