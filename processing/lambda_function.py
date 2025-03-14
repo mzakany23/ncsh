@@ -319,6 +319,210 @@ def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[
         logger.error(error_msg)
         raise Exception(error_msg)
 
+def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str) -> Dict[str, Any]:
+    """Build or update the final dataset from all processed Parquet files"""
+    logger.info(f'Building final dataset from {src_bucket}/{src_prefix} to {dst_bucket}/{dst_prefix}')
+    
+    s3_client = boto3.client('s3')
+    
+    try:
+        # List all Parquet files in the source prefix
+        all_files = []
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=src_bucket, Prefix=src_prefix)
+        
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if key.endswith('.parquet'):
+                        all_files.append(key)
+        
+        if not all_files:
+            logger.warning(f'No Parquet files found in {src_bucket}/{src_prefix}')
+            return {
+                'status': 'SUCCESS',
+                'message': 'No Parquet files found to build dataset',
+                'filesProcessed': 0
+            }
+            
+        logger.info(f'Found {len(all_files)} Parquet files to process')
+        
+        # Load and combine all Parquet files
+        combined_df = None
+        
+        for file_key in all_files:
+            logger.info(f'Processing file: {file_key}')
+            try:
+                response = s3_client.get_object(Bucket=src_bucket, Key=file_key)
+                file_df = pd.read_parquet(io.BytesIO(response['Body'].read()))
+                
+                if combined_df is None:
+                    combined_df = file_df
+                else:
+                    combined_df = pd.concat([combined_df, file_df], ignore_index=True)
+            except Exception as e:
+                logger.error(f'Error processing file {file_key}: {str(e)}')
+                # Continue processing other files
+                continue
+        
+        if combined_df is None or combined_df.empty:
+            logger.warning('No valid data found in any Parquet files')
+            return {
+                'status': 'SUCCESS',
+                'message': 'No valid data found in Parquet files',
+                'filesProcessed': 0
+            }
+        
+        # Remove duplicates and sort
+        logger.info(f'Raw dataset size before deduplication: {len(combined_df)}')
+        
+        # Use a combination of fields that should be unique for each game
+        combined_df.drop_duplicates(subset=['date', 'field', 'home_team', 'away_team', 'time'], inplace=True)
+        
+        # Sort by date and time
+        combined_df.sort_values(by=['date', 'time'], inplace=True)
+        
+        logger.info(f'Final dataset size after deduplication: {len(combined_df)}')
+        
+        # Save as both Parquet and CSV
+        parquet_buffer = io.BytesIO()
+        combined_df.to_parquet(parquet_buffer)
+        parquet_buffer.seek(0)
+        
+        csv_buffer = io.StringIO()
+        combined_df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        
+        # Upload the final datasets
+        parquet_key = f"{dst_prefix}final_dataset.parquet"
+        csv_key = f"{dst_prefix}final_dataset.csv"
+        
+        s3_client.put_object(
+            Body=parquet_buffer.getvalue(),
+            Bucket=dst_bucket,
+            Key=parquet_key
+        )
+        
+        s3_client.put_object(
+            Body=csv_buffer.getvalue(),
+            Bucket=dst_bucket,
+            Key=csv_key
+        )
+        
+        logger.info(f'Successfully built and uploaded final dataset: {dst_bucket}/{parquet_key} and {dst_bucket}/{csv_key}')
+        
+        return {
+            'status': 'SUCCESS',
+            'message': 'Successfully built and uploaded final dataset',
+            'filesProcessed': len(all_files),
+            'totalRecords': len(combined_df),
+            'parquetPath': f"s3://{dst_bucket}/{parquet_key}",
+            'csvPath': f"s3://{dst_bucket}/{csv_key}"
+        }
+    
+    except Exception as e:
+        error_msg = f'Error building final dataset: {str(e)}'
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
+def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
+    """Check the status of a backfill operation by examining markers in S3"""
+    logger.info(f'Checking backfill status in {src_bucket}/{src_prefix}')
+    
+    s3_client = boto3.client('s3')
+    
+    try:
+        # Check for backfill marker files
+        backfill_in_progress = False
+        backfill_completed = False
+        
+        # Check for in-progress marker
+        try:
+            s3_client.head_object(Bucket=src_bucket, Key=f"{src_prefix}backfill_in_progress.marker")
+            backfill_in_progress = True
+        except s3_client.exceptions.ClientError:
+            # Marker doesn't exist, which is fine
+            pass
+            
+        # Check for completed marker
+        try:
+            s3_client.head_object(Bucket=src_bucket, Key=f"{src_prefix}backfill_completed.marker")
+            backfill_completed = True
+        except s3_client.exceptions.ClientError:
+            # Marker doesn't exist, which is fine
+            pass
+        
+        # Count the number of files processed
+        file_count = 0
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=src_bucket, Prefix=src_prefix)
+        
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    if key.endswith('.json') or key.endswith('.jsonl'):
+                        file_count += 1
+        
+        logger.info(f'Found {file_count} JSON files in {src_bucket}/{src_prefix}')
+        
+        # Determine the backfill status
+        status = "UNKNOWN"
+        if backfill_completed:
+            status = "COMPLETED"
+        elif backfill_in_progress:
+            status = "IN_PROGRESS"
+        else:
+            # If no markers exist but we have files, likely a completed backfill
+            if file_count > 0:
+                status = "COMPLETED"
+            else:
+                status = "NOT_STARTED"
+        
+        return {
+            'status': status,
+            'filesCount': file_count,
+            'inProgressMarker': backfill_in_progress,
+            'completedMarker': backfill_completed
+        }
+    
+    except Exception as e:
+        error_msg = f'Error checking backfill status: {str(e)}'
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
+def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str) -> Dict[str, Any]:
+    """Process all JSON files regardless of their last modified date"""
+    logger.info(f'Processing all JSON files from {src_bucket}/{src_prefix} to {dst_bucket}/{dst_prefix}')
+    
+    try:
+        # List all files without time filtering
+        files = list_json_files(src_bucket, src_prefix, only_recent=False)
+        
+        if not files:
+            logger.info("No JSON files found to process")
+            return {
+                "status": "SUCCESS",
+                "message": "No files to process",
+                "filesProcessed": 0
+            }
+        
+        # Convert all files to Parquet
+        result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
+        
+        return {
+            "status": "SUCCESS",
+            "message": f"Successfully processed all {len(files)} files",
+            "filesProcessed": len(files),
+            "newRowsProcessed": result.get("new_rows_processed", 0)
+        }
+    
+    except Exception as e:
+        error_msg = f'Error in process_all operation: {str(e)}'
+        logger.error(error_msg)
+        raise Exception(error_msg)
+
 def lambda_handler(event, context):
     """AWS Lambda handler for the processing pipeline"""
     logger.info(f"Processing event: {json.dumps(event)}")
@@ -341,6 +545,7 @@ def lambda_handler(event, context):
             files = list_json_files(src_bucket, src_prefix, not force_full_reprocess)
             return {
                 "files": files,
+                "filesProcessed": len(files),
                 "src_bucket": src_bucket,
                 "src_prefix": src_prefix,
                 "dst_bucket": dst_bucket,
@@ -362,6 +567,18 @@ def lambda_handler(event, context):
             # Convert files to Parquet
             result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
             return result
+            
+        elif operation == "build_dataset":
+            # Build final dataset from all Parquet files
+            return build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix)
+            
+        elif operation == "check_backfill_status":
+            # Check status of backfill operation
+            return check_backfill_status(src_bucket, src_prefix)
+            
+        elif operation == "process_all":
+            # Process all files regardless of last modified time
+            return process_all(src_bucket, src_prefix, dst_bucket, dst_prefix)
 
         else:
             raise ValueError(f"Unknown operation: {operation}")
