@@ -16,12 +16,15 @@ from datetime import datetime
 import time
 
 # Set up logging
+# Use /tmp directory for log files in Lambda (the only writable directory)
+log_file = "/tmp/backfill_spider.log" if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') else "backfill_spider.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
-        logging.FileHandler("backfill_spider.log"),
+        logging.FileHandler(log_file),
         logging.StreamHandler(sys.stdout)
     ]
 )
