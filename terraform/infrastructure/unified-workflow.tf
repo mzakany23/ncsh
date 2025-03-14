@@ -5,7 +5,7 @@
 
 resource "aws_sfn_state_machine" "ncsoccer_unified_workflow" {
   name     = "ncsoccer-unified-workflow"
-  role_arn = aws_iam_role.step_function_role.arn
+  role_arn = aws_iam_role.unified_workflow_step_function_role.arn
   
   definition = file("${path.module}/unified-workflow.asl.json")
 
@@ -38,7 +38,7 @@ resource "aws_cloudwatch_log_group" "step_function_logs" {
 }
 
 # IAM Role for Step Function
-resource "aws_iam_role" "step_function_role" {
+resource "aws_iam_role" "unified_workflow_step_function_role" {
   name = "ncsoccer_unified_workflow_role"
   
   assume_role_policy = jsonencode({
@@ -109,7 +109,7 @@ resource "aws_iam_policy" "step_function_lambda_policy" {
 
 # Attach policy to role
 resource "aws_iam_role_policy_attachment" "step_function_lambda_policy_attachment" {
-  role       = aws_iam_role.step_function_role.name
+  role       = aws_iam_role.unified_workflow_step_function_role.name
   policy_arn = aws_iam_policy.step_function_lambda_policy.arn
 }
 
@@ -160,7 +160,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_backfill_unified" {
 }
 
 # IAM Role for EventBridge to invoke Step Functions
-resource "aws_iam_role" "eventbridge_step_function_role" {
+resource "aws_iam_role" "unified_workflow_eventbridge_role" {
   name = "ncsoccer_eventbridge_step_function_role"
   
   assume_role_policy = jsonencode({
@@ -204,7 +204,7 @@ resource "aws_iam_policy" "eventbridge_step_function_policy" {
 
 # Attach policy to role
 resource "aws_iam_role_policy_attachment" "eventbridge_step_function_policy_attachment" {
-  role       = aws_iam_role.eventbridge_step_function_role.name
+  role       = aws_iam_role.unified_workflow_eventbridge_role.name
   policy_arn = aws_iam_policy.eventbridge_step_function_policy.arn
 }
 
@@ -212,7 +212,7 @@ resource "aws_iam_role_policy_attachment" "eventbridge_step_function_policy_atta
 resource "aws_cloudwatch_event_target" "ncsoccer_daily_unified_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_daily_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
-  role_arn  = aws_iam_role.eventbridge_step_function_role.arn
+  role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
   
   input = jsonencode({
     operation = "daily",
@@ -229,7 +229,7 @@ resource "aws_cloudwatch_event_target" "ncsoccer_daily_unified_target" {
 resource "aws_cloudwatch_event_target" "ncsoccer_monthly_unified_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_monthly_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
-  role_arn  = aws_iam_role.eventbridge_step_function_role.arn
+  role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
   
   input = jsonencode({
     operation = "monthly",
@@ -245,7 +245,7 @@ resource "aws_cloudwatch_event_target" "ncsoccer_monthly_unified_target" {
 resource "aws_cloudwatch_event_target" "ncsoccer_backfill_unified_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_backfill_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
-  role_arn  = aws_iam_role.eventbridge_step_function_role.arn
+  role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
   
   input = jsonencode({
     operation = "backfill",
