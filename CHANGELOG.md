@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.6] - 2025-03-13
+### Fixed
+- Added fallback reactor import in backfill_runner.py to prevent 'reactor not defined' error
+
 ## [2.5.5] - 2025-03-13
 ### Fixed
 - Fixed datetime comparison error in processing Lambda function

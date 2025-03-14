@@ -38,6 +38,11 @@ try:
     twisted.internet.asyncio.install()
 except (ImportError, Exception) as e:
     logger.warning(f"Could not install asyncio reactor: {e}")
+    # Fall back to standard reactor
+    try:
+        from twisted.internet import reactor
+    except ImportError:
+        logger.error("Could not import any reactor from Twisted")
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
