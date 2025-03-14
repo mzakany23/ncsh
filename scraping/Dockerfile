@@ -23,7 +23,7 @@ RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Set the handler based on BACKFILL_MODE env variable
+# Create a wrapper script in the correct location
 RUN echo '#!/bin/bash\n\
 if [ "$BACKFILL_MODE" = "true" ]; then\n\
   echo "Running in backfill mode"\n\
@@ -31,8 +31,8 @@ if [ "$BACKFILL_MODE" = "true" ]; then\n\
 else\n\
   echo "Running in standard mode"\n\
   exec python3 -m awslambdaric lambda_function.lambda_handler\n\
-fi' > ${LAMBDA_TASK_ROOT}/handler.sh && \
-chmod +x ${LAMBDA_TASK_ROOT}/handler.sh
+fi' > ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap
 
-# Use the script as the entry point
-ENTRYPOINT [ "/var/task/handler.sh" ]
+# Standard Lambda container configuration - no custom ENTRYPOINT required
+# AWS Lambda will automatically use the bootstrap file in the correct location
