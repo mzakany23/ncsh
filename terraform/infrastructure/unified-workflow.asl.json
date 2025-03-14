@@ -356,7 +356,7 @@
     "WorkflowFailed": {
       "Type": "Fail",
       "Error": "WorkflowFailed",
-      "Cause.$": "$.errorInfo"
+      "Cause": "Workflow execution failed. Check CloudWatch logs for details."
     }
   }
 }
