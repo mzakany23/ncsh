@@ -150,8 +150,18 @@ def run_backfill(start_year=2007, start_month=1, end_year=None, end_month=None,
                 # Check again in 10 seconds
                 reactor.callLater(10, check_timeout)
         
-        # Start timeout checking
-        reactor.callLater(10, check_timeout)
+        # Start timeout checking - safely handle missing reactor
+        try:
+            # First try to access the global reactor
+            reactor.callLater(10, check_timeout)
+        except (NameError, AttributeError):
+            # If that fails, try to import it again
+            try:
+                from twisted.internet import reactor
+                reactor.callLater(10, check_timeout)
+            except (ImportError, Exception) as e:
+                # If we can't get the reactor at all, just log a warning and continue without timeout
+                logger.warning(f"Could not set up timeout checking: {e}")
         
         # Start the process
         process.start()

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.7] - 2025-03-14
+### Fixed
+- Implemented more robust error handling for Twisted reactor in backfill_runner.py
+- Added multiple fallback mechanisms to ensure backfill process can proceed even without reactor
+
 ## [2.5.6] - 2025-03-13
 ### Fixed
 - Added fallback reactor import in backfill_runner.py to prevent 'reactor not defined' error
