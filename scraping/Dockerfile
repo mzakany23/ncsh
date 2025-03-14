@@ -25,13 +25,26 @@ COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
 # Create a wrapper script in the correct location with proper line breaks
 RUN echo '#!/bin/bash' > ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '# Accept handler name from Lambda runtime as first argument' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '# This is the correct bootstrap pattern that AWS Lambda expects' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '# Get the handler name from the first argument' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo 'handler=$1' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo 'if [ -z "$handler" ]; then' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  echo "ERROR: Lambda handler name is required as the first argument"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  exit 1' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo 'fi' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'if [ "$BACKFILL_MODE" = "true" ]; then' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  echo "Running in backfill mode"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exec python3 -m awslambdaric backfill_runner.lambda_handler "$@"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  echo "Running in backfill mode with handler: $handler"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  # For Lambda we need to execute the specific handler we want' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  # Ignoring the handler argument and using our fixed handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  exec /var/lang/bin/python3 -m awslambdaric backfill_runner.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'else' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  echo "Running in standard mode"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exec python3 -m awslambdaric lambda_function.lambda_handler "$@"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  echo "Running in standard mode with handler: $handler"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  # For Lambda we need to execute the specific handler we want' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  # Ignoring the handler argument and using our fixed handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    echo '  exec /var/lang/bin/python3 -m awslambdaric lambda_function.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'fi' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap
 
