@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2025-03-14
+### Changed
+- Updated backfill Step Function to start from 2010 instead of 2007
+- Improved month scraper implementation with better parallel processing
+- Added comprehensive scripts for local dataset building and analysis
+
+### Fixed
+- Addressed container entrypoint configuration issue in the backfill Lambda function
+
 ## [2.6.1] - 2025-03-14
 ### Fixed
 - Fixed HTMLParser initialization to correctly handle year and month parameters
