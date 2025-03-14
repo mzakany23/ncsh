@@ -114,6 +114,10 @@ analyze-execution:
 	AWS_PROFILE=mzakany python scripts/backfill_monitor.py --execution-arn $(execution)
 
 # Local testing commands to avoid deployment cycles
+test-lambda-container:
+	@echo "Testing Lambda container with full entrypoint verification..."
+	./scripts/test_lambda_container.sh
+
 test-lambda-image:
 	@echo "Building and testing Lambda Docker image locally..."
 	./scripts/test_lambda_image.sh
