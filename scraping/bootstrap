@@ -1,22 +1,14 @@
-#!/bin/bash
-# This is the correct bootstrap pattern that AWS Lambda expects
+#!/bin/sh
+# AWS Lambda bootstrap script
 
-# Get the handler name from the first argument
+# Get the handler name from the first argument passed to the bootstrap script
 handler=$1
 
-if [ -z "$handler" ]; then
-  echo "ERROR: Lambda handler name is required as the first argument"
-  exit 1
-fi
-
+# Run in backfill mode or standard mode based on environment variable
 if [ "$BACKFILL_MODE" = "true" ]; then
-  echo "Running in backfill mode with handler: $handler"
-  # For Lambda we need to execute the specific handler we want
-  # Ignoring the handler argument and using our fixed handler
-  exec /var/lang/bin/python3 -m awslambdaric backfill_runner.lambda_handler
+  echo "Running in backfill mode"
+  exec python3 -m awslambdaric backfill_runner.lambda_handler
 else
-  echo "Running in standard mode with handler: $handler"
-  # For Lambda we need to execute the specific handler we want
-  # Ignoring the handler argument and using our fixed handler
-  exec /var/lang/bin/python3 -m awslambdaric lambda_function.lambda_handler
+  echo "Running in standard mode"
+  exec python3 -m awslambdaric lambda_function.lambda_handler
 fi
