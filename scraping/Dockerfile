@@ -23,7 +23,8 @@ RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Create a wrapper script in the correct location with proper line breaks
+# Create the bootstrap script in the correct location
+# AWS Lambda will look for this file when executing the container
 RUN echo '#!/bin/bash' > ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo '# This is the correct bootstrap pattern that AWS Lambda expects' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
@@ -46,7 +47,10 @@ RUN echo '#!/bin/bash' > ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo '  # Ignoring the handler argument and using our fixed handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo '  exec /var/lang/bin/python3 -m awslambdaric lambda_function.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     echo 'fi' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap
+    chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap && \
+    # Create a symbolic link from /lambda-entrypoint.sh to our bootstrap script
+    ln -sf ${LAMBDA_RUNTIME_DIR}/bootstrap /lambda-entrypoint.sh && \
+    chmod 755 /lambda-entrypoint.sh
 
 # Standard Lambda container configuration - no custom ENTRYPOINT required
 # AWS Lambda will automatically use the bootstrap file in the correct location
