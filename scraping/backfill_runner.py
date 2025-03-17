@@ -31,6 +31,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Try to install asyncio reactor for improved performance
+# Define a global reactor variable
+reactor = None
 try:
     import asyncio
     import twisted.internet.asyncio
@@ -38,6 +40,11 @@ try:
     twisted.internet.asyncio.install()
 except (ImportError, Exception) as e:
     logger.warning(f"Could not install asyncio reactor: {e}")
+    # Try to import the default reactor as fallback
+    try:
+        from twisted.internet import reactor
+    except ImportError as e:
+        logger.warning(f"Could not import default reactor: {e}")
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
@@ -139,14 +146,17 @@ def run_backfill(start_year=2007, start_month=1, end_year=None, end_month=None,
         def check_timeout():
             if time.time() - start_time > timeout:
                 logger.info(f"Reached timeout of {timeout} seconds, stopping crawler")
-                # This will gracefully stop the crawler
-                reactor.callFromThread(reactor.stop)
+                # This will gracefully stop the crawler if reactor is available
+                if reactor:
+                    reactor.callFromThread(reactor.stop)
             else:
-                # Check again in 10 seconds
-                reactor.callLater(10, check_timeout)
+                # Check again in 10 seconds if reactor is available
+                if reactor:
+                    reactor.callLater(10, check_timeout)
         
-        # Start timeout checking
-        reactor.callLater(10, check_timeout)
+        # Start timeout checking if reactor is available
+        if reactor:
+            reactor.callLater(10, check_timeout)
         
         # Start the process
         process.start()

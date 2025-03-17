@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.13] - 2025-03-17
+### Fixed
+- Fixed Twisted reactor import error in backfill runner by adding proper fallback handling
+- Added defensive coding to handle missing reactor in AWS Lambda environment
+
 ## [2.6.12] - 2025-03-17
 ### Fixed
 - Updated CI/CD workflow to explicitly use Docker buildx for cross-platform image building
