@@ -118,6 +118,10 @@ test-lambda-container:
 	@echo "Testing Lambda container with full entrypoint verification..."
 	./scripts/test_lambda_container.sh
 
+test-lambda-entrypoint:
+	@echo "Testing Lambda entrypoint configuration..."
+	./scripts/test_lambda_entrypoint.sh
+
 test-lambda-image:
 	@echo "Building and testing Lambda Docker image locally..."
 	./scripts/test_lambda_image.sh
