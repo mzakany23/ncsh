@@ -23,14 +23,16 @@ RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Copy the pre-created bootstrap script to the correct location
-# AWS Lambda will look for this file when executing the container
-COPY bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
-
-# Set correct permissions and create a symbolic link from /lambda-entrypoint.sh to our bootstrap script
-RUN chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    ln -sf ${LAMBDA_RUNTIME_DIR}/bootstrap /lambda-entrypoint.sh && \
-    chmod 755 /lambda-entrypoint.sh
+# Use a much simpler bootstrap approach
+# This should be more reliable across different environments
+COPY bootstrap.sh /var/runtime/bootstrap
+RUN chmod 755 /var/runtime/bootstrap && \
+    ln -sf /var/runtime/bootstrap /lambda-entrypoint.sh && \
+    chmod 755 /lambda-entrypoint.sh && \
+    # Verify permissions and content 
+    ls -la /var/runtime/bootstrap && \
+    ls -la /lambda-entrypoint.sh && \
+    cat /var/runtime/bootstrap
 
 # Standard Lambda container configuration - no custom ENTRYPOINT required
 # AWS Lambda will automatically use the bootstrap file in the correct location
