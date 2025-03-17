@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.11] - 2025-03-17
+### Fixed
+- Resolved "exec format error" by explicitly targeting x86_64 architecture
+- Added architecture-specific base image tag (3.11-x86_64) for Lambda compatibility
+- Ensured proper CMD format with double quotes for handler specification
+- Fixed Docker image building for cross-architecture deployment from ARM64 Macs
+
 ## [2.6.10] - 2025-03-17
 ### Fixed
 - Explicitly set Docker image platform to linux/amd64 to match AWS Lambda architecture
