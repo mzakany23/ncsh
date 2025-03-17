@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.6] - 2025-03-17
+### Fixed
+- Simplified Lambda bootstrap script using shell script format to ensure maximum compatibility
+- Added verification steps in container build to confirm proper entrypoint setup
+
 ## [2.6.5] - 2025-03-17
 ### Fixed
 - Updated Docker build process to use direct file copy for bootstrap script to prevent line ending issues
