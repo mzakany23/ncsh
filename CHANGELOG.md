@@ -5,11 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.6.8] - 2025-03-17
+## [2.6.9] - 2025-03-17
 ### Fixed
-- Simplified Lambda container approach by eliminating separate bootstrap file
-- Using official AWS Lambda Python image's built-in mechanisms for handler selection
-- Implemented environment-aware CMD instruction to dynamically select the appropriate handler
+- Implemented unified Lambda handler approach with a single entrypoint
+- Simplified container configuration by using a single handler that handles both standard and backfill modes
+- Removed conditional logic from Docker, moving it to the application code for better maintainability
 
 ## [2.6.5] - 2025-03-17
 ### Fixed
