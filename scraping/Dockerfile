@@ -23,32 +23,12 @@ RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Create the bootstrap script in the correct location
+# Copy the pre-created bootstrap script to the correct location
 # AWS Lambda will look for this file when executing the container
-RUN echo '#!/bin/bash' > ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '# This is the correct bootstrap pattern that AWS Lambda expects' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '# Get the handler name from the first argument' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo 'handler=$1' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo 'if [ -z "$handler" ]; then' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  echo "ERROR: Lambda handler name is required as the first argument"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exit 1' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo 'fi' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo 'if [ "$BACKFILL_MODE" = "true" ]; then' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  echo "Running in backfill mode with handler: $handler"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  # For Lambda we need to execute the specific handler we want' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  # Ignoring the handler argument and using our fixed handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exec /var/lang/bin/python3 -m awslambdaric backfill_runner.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo 'else' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  echo "Running in standard mode with handler: $handler"' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  # For Lambda we need to execute the specific handler we want' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  # Ignoring the handler argument and using our fixed handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo '  exec /var/lang/bin/python3 -m awslambdaric lambda_function.lambda_handler' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    echo 'fi' >> ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    # Create a symbolic link from /lambda-entrypoint.sh to our bootstrap script
+COPY bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
+
+# Set correct permissions and create a symbolic link from /lambda-entrypoint.sh to our bootstrap script
+RUN chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap && \
     ln -sf ${LAMBDA_RUNTIME_DIR}/bootstrap /lambda-entrypoint.sh && \
     chmod 755 /lambda-entrypoint.sh
 
