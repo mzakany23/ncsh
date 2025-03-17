@@ -1,7 +1,6 @@
 # Base image for NC Soccer Scraper Lambda function
-# Handles both day and month mode scraping operations
-# Using SHA-tagged images for versioning
-FROM public.ecr.aws/lambda/python:3.11
+# Using x86_64/amd64 architecture (Lambda's default)
+FROM --platform=linux/amd64 public.ecr.aws/lambda/python:3.11
 
 # Install system dependencies
 RUN yum install -y gcc python3-devel && \
@@ -19,10 +18,9 @@ COPY . ${LAMBDA_TASK_ROOT}
 # Install the package
 RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 
-# Copy lambda handler and backfill runner
+# Copy lambda handler
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Use a single Lambda handler to keep things simple
-# The mode (backfill vs standard) will be determined at runtime via environment variables
+# Use straightforward Lambda entry point
 CMD [ "lambda_function.lambda_handler" ]
