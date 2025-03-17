@@ -23,14 +23,14 @@ RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# Copy the bootstrap script for AWS Lambda
-COPY bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
+# No need for a separate bootstrap file - use CMD to specify the handler
+# This handler will be executed by the Lambda runtime
 
-# Ensure correct permissions and create symbolic link required by AWS Lambda
-RUN chmod 755 ${LAMBDA_RUNTIME_DIR}/bootstrap && \
-    ln -sf ${LAMBDA_RUNTIME_DIR}/bootstrap /var/rapid/bootstrap && \
-    ln -sf ${LAMBDA_RUNTIME_DIR}/bootstrap /lambda-entrypoint.sh && \
-    chmod 755 /lambda-entrypoint.sh
-
-# Standard Lambda container configuration - no custom ENTRYPOINT required
-# AWS Lambda will automatically use the bootstrap file in the correct location
+# Set handler based on environment variable
+CMD if [ "$BACKFILL_MODE" = "true" ]; then \
+      echo "Running in backfill mode" && \
+      exec python -m awslambdaric backfill_runner.lambda_handler; \
+    else \
+      echo "Running in standard mode" && \
+      exec python -m awslambdaric lambda_function.lambda_handler; \
+    fi
