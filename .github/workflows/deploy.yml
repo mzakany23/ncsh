@@ -73,15 +73,25 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG -f scraping/Dockerfile scraping/
+        # Build image explicitly for x86_64 (amd64) architecture
+        docker buildx build --platform=linux/amd64 -t $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG -f scraping/Dockerfile scraping/ --load
         docker tag $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
         docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG
         docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
+        
+        # Print image details to verify architecture in logs
+        docker inspect $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG | grep -A 3 Architecture
 
     - name: Update Lambda Function
       run: |
         aws lambda update-function-code \
           --function-name ncsoccer_scraper \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
+
+    - name: Update Backfill Lambda Function
+      run: |
+        aws lambda update-function-code \
+          --function-name ncsoccer_backfill \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
 
   build-processing:
