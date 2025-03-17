@@ -23,14 +23,6 @@ RUN cd ${LAMBDA_TASK_ROOT} && pip install -e .
 COPY lambda_function.py ${LAMBDA_TASK_ROOT}
 COPY backfill_runner.py ${LAMBDA_TASK_ROOT}
 
-# No need for a separate bootstrap file - use CMD to specify the handler
-# This handler will be executed by the Lambda runtime
-
-# Set handler based on environment variable
-CMD if [ "$BACKFILL_MODE" = "true" ]; then \
-      echo "Running in backfill mode" && \
-      exec python -m awslambdaric backfill_runner.lambda_handler; \
-    else \
-      echo "Running in standard mode" && \
-      exec python -m awslambdaric lambda_function.lambda_handler; \
-    fi
+# Use a single Lambda handler to keep things simple
+# The mode (backfill vs standard) will be determined at runtime via environment variables
+CMD [ "lambda_function.lambda_handler" ]
