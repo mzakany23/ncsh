@@ -28,7 +28,7 @@
       ],
       "Default": "HandleInvalidOperation"
     },
-    
+
     "ConfigureDailyScrape": {
       "Type": "Pass",
       "Result": {
@@ -38,7 +38,7 @@
       "ResultPath": "$.config",
       "Next": "MergeDailyParameters"
     },
-    
+
     "MergeDailyParameters": {
       "Type": "Pass",
       "Parameters": {
@@ -51,7 +51,7 @@
       },
       "Next": "RunScraper"
     },
-    
+
     "ConfigureMonthlyScrape": {
       "Type": "Pass",
       "Result": {
@@ -61,7 +61,7 @@
       "ResultPath": "$.config",
       "Next": "MergeMonthlyParameters"
     },
-    
+
     "MergeMonthlyParameters": {
       "Type": "Pass",
       "Parameters": {
@@ -73,7 +73,7 @@
       },
       "Next": "RunScraper"
     },
-    
+
     "ConfigureBackfill": {
       "Type": "Pass",
       "Result": {
@@ -82,7 +82,7 @@
       "ResultPath": "$.config",
       "Next": "MergeBackfillParameters"
     },
-    
+
     "MergeBackfillParameters": {
       "Type": "Pass",
       "Parameters": {
@@ -93,7 +93,7 @@
       },
       "Next": "RunBackfill"
     },
-    
+
     "ConfigurableDateScrape": {
       "Type": "Pass",
       "Result": {
@@ -104,14 +104,14 @@
       "ResultPath": "$.config",
       "Next": "MergeConfigurableParameters"
     },
-    
+
     "MergeConfigurableParameters": {
       "Type": "Pass",
       "Parameters": {
         "scrape_mode": "date_range",
-        "start_date.$": "$.date_range.start_date",
-        "end_date.$": "$.date_range.end_date",
-        "specific_dates.$": "$.specific_dates",
+        "start_date.$": "States.JsonMerge(States.JsonToString({}), States.JsonToString($.date_range.start_date))",
+        "end_date.$": "States.JsonMerge(States.JsonToString({}), States.JsonToString($.date_range.end_date))",
+        "specific_dates.$": "States.JsonMerge(States.JsonToString([]), States.JsonToString($.specific_dates))",
         "force_full_reprocess.$": "$.force_full_reprocess",
         "version.$": "$.version",
         "src_bucket.$": "$.src_bucket",
@@ -121,15 +121,16 @@
         "mode.$": "$.config.mode",
         "backfill_mode.$": "$.config.backfill_mode"
       },
+      "ResultPath": "$.merged_input",
       "Next": "RunScraper"
     },
-    
+
     "RunScraper": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "Parameters": {
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_scraper",
-        "Payload.$": "$"
+        "Payload.$": "$.merged_input"
       },
       "Retry": [
         {
@@ -145,9 +146,24 @@
           "Next": "HandleScraperFailure"
         }
       ],
+      "ResultPath": "$.scraper_result",
+      "Next": "PreserveParametersAfterScraper"
+    },
+
+    "PreserveParametersAfterScraper": {
+      "Type": "Pass",
+      "Parameters": {
+        "scraper_result.$": "$.scraper_result",
+        "src_bucket.$": "$.src_bucket",
+        "src_prefix.$": "$.src_prefix",
+        "dst_bucket.$": "$.dst_bucket",
+        "dst_prefix.$": "$.dst_prefix",
+        "version.$": "$.version",
+        "force_full_reprocess.$": "$.force_full_reprocess"
+      },
       "Next": "ListJSONFiles"
     },
-    
+
     "RunBackfill": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -171,7 +187,7 @@
       ],
       "Next": "ListJSONFiles"
     },
-    
+
     "ListJSONFiles": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -198,7 +214,7 @@
       "ResultPath": "$.listing",
       "Next": "CheckFilesFound"
     },
-    
+
     "CheckFilesFound": {
       "Type": "Choice",
       "Choices": [
@@ -210,7 +226,7 @@
       ],
       "Default": "ConvertToParquet"
     },
-    
+
     "ConvertToParquet": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -237,7 +253,7 @@
       "ResultPath": "$.conversion",
       "Next": "BuildFinalDataset"
     },
-    
+
     "BuildFinalDataset": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -263,7 +279,7 @@
       "ResultPath": "$.dataset",
       "Next": "WorkflowSuccess"
     },
-    
+
     "NoNewFiles": {
       "Type": "Pass",
       "Result": {
@@ -272,13 +288,13 @@
       },
       "Next": "WorkflowSuccess"
     },
-    
+
     "HandleInvalidOperation": {
       "Type": "Fail",
       "Error": "InvalidOperation",
       "Cause": "Operation type not recognized. Use 'daily', 'monthly', 'backfill', or 'configurable'."
     },
-    
+
     "HandleScraperFailure": {
       "Type": "Pass",
       "Result": {
@@ -287,7 +303,7 @@
       },
       "Next": "WorkflowFailed"
     },
-    
+
     "HandleBackfillFailure": {
       "Type": "Pass",
       "Result": {
@@ -296,7 +312,7 @@
       },
       "Next": "WorkflowFailed"
     },
-    
+
     "WorkflowSuccess": {
       "Type": "Pass",
       "Result": {
@@ -305,7 +321,7 @@
       },
       "End": true
     },
-    
+
     "WorkflowFailed": {
       "Type": "Fail",
       "Error": "WorkflowFailed",
