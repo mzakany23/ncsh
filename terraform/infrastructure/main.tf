@@ -280,85 +280,19 @@ resource "aws_lambda_function" "ncsoccer_scraper" {
   }
 }
 
-# IAM Role for Step Function
-resource "aws_iam_role" "step_function_role" {
-  name = "ncsoccer_step_function_role"
+# Note: All Step Functions have been consolidated into a single unified workflow
+# defined in unified-workflow.tf
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "states.amazonaws.com"
-        }
-      }
-    ]
-  })
+# SNS Topic for Alarms
+resource "aws_sns_topic" "ncsoccer_alarms" {
+  name = "ncsoccer-alarms"
 }
 
-# IAM Policy for Step Function
-resource "aws_iam_role_policy" "step_function_policy" {
-  name = "ncsoccer_step_function_policy"
-  role = aws_iam_role.step_function_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "lambda:InvokeFunction"
-        ]
-        Resource = [
-          aws_lambda_function.ncsoccer_scraper.arn,
-          aws_lambda_function.processing.arn,
-          aws_lambda_function.ncsoccer_backfill.arn
-        ]
-      }
-    ]
-  })
-}
-
-# Step Function Definition
-resource "aws_sfn_state_machine" "ncsoccer_workflow" {
-  name     = "ncsoccer-workflow"
-  role_arn = aws_iam_role.step_function_role.arn
-
-  definition = jsonencode({
-    Comment = "NC Soccer Scraper Workflow"
-    StartAt = "ScrapeSchedule"
-    States = {
-      ScrapeSchedule = {
-        Type = "Task"
-        Resource = aws_lambda_function.ncsoccer_scraper.arn
-        Retry = [
-          {
-            ErrorEquals = ["States.TaskFailed"]
-            IntervalSeconds = 30
-            MaxAttempts = 3
-            BackoffRate = 2.0
-          }
-        ]
-        Catch = [
-          {
-            ErrorEquals = ["States.ALL"]
-            Next = "HandleError"
-          }
-        ]
-        End = true
-      }
-      HandleError = {
-        Type = "Pass"
-        Result = {
-          error = "Failed to scrape schedule"
-          status = "FAILED"
-        }
-        End = true
-      }
-    }
-  })
+# Email subscription for SNS
+resource "aws_sns_topic_subscription" "email_notification" {
+  topic_arn = aws_sns_topic.ncsoccer_alarms.arn
+  protocol  = "email"
+  endpoint  = "mzakany@gmail.com"
 }
 
 # IAM Role for EventBridge

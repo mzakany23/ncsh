@@ -91,7 +91,9 @@ resource "aws_iam_role_policy" "processing_lambda" {
           "s3:ListBucket",
           "s3:GetObjectVersion",
           "s3:PutObjectAcl",
-          "s3:GetObjectAcl"
+          "s3:GetObjectAcl",
+          "s3:ListObjectVersions",
+          "s3:CopyObject"
         ]
         Resource = [
           "arn:aws:s3:::ncsh-app-data",
@@ -114,43 +116,6 @@ resource "aws_iam_role_policy" "processing_lambda" {
   })
 }
 
-# IAM role for the Step Function
-resource "aws_iam_role" "processing_step_function" {
-  name = "ncsoccer-processing-step-function"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "states.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-# IAM policy for the Step Function
-resource "aws_iam_role_policy" "processing_step_function" {
-  name = "ncsoccer-processing-step-function"
-  role = aws_iam_role.processing_step_function.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "lambda:InvokeFunction"
-        ]
-        Resource = aws_lambda_function.processing.arn
-      }
-    ]
-  })
-}
-
 # Lambda function for JSON to Parquet conversion
 resource "aws_lambda_function" "processing" {
   function_name = "ncsoccer-processing"
@@ -161,70 +126,21 @@ resource "aws_lambda_function" "processing" {
   package_type = "Image"
   image_uri    = "${aws_ecr_repository.processing.repository_url}:latest"
 
+  # Environment variables for dataset versioning
+  environment {
+    variables = {
+      DATA_BUCKET   = "ncsh-app-data"
+      JSON_PREFIX   = "data/json/"
+      PARQUET_PREFIX = "data/parquet/"
+      ENABLE_VERSIONING = "true"
+    }
+  }
+
   # Ignore image_uri changes since they are managed by CI/CD
   lifecycle {
     ignore_changes = [image_uri]
   }
 }
 
-# State Machine for processing workflow
-resource "aws_sfn_state_machine" "processing" {
-  name     = "ncsoccer-processing"
-  role_arn = aws_iam_role.processing_step_function.arn
-
-  definition = jsonencode({
-    Comment = "NC Soccer Data Processing Pipeline",
-    StartAt = "ListJSONFiles",
-    States = {
-      ListJSONFiles = {
-        Type = "Task",
-        Resource = aws_lambda_function.processing.arn,
-        Parameters = {
-          "operation": "list_files",
-          "src_bucket.$": "$.src_bucket",
-          "src_prefix.$": "$.src_prefix"
-        },
-        Next = "ProcessJSONToParquet",
-        Catch = [{
-          ErrorEquals = ["States.ALL"],
-          Next = "HandleError"
-        }]
-      },
-      ProcessJSONToParquet = {
-        Type = "Task",
-        Resource = aws_lambda_function.processing.arn,
-        Parameters = {
-          "operation": "convert",
-          "src_bucket.$": "$.src_bucket",
-          "src_prefix.$": "$.src_prefix",
-          "dst_bucket.$": "$.dst_bucket",
-          "dst_prefix.$": "$.dst_prefix",
-          "files.$": "$.files"
-        },
-        Next = "Success",
-        Catch = [{
-          ErrorEquals = ["States.ALL"],
-          Next = "HandleError"
-        }]
-      },
-      HandleError = {
-        Type = "Pass",
-        Result = {
-          "status": "FAILED",
-          "error.$": "$.error",
-          "cause.$": "$.cause"
-        },
-        End = true
-      },
-      Success = {
-        Type = "Pass",
-        Result = {
-          "status": "SUCCESS",
-          "message": "Successfully converted JSON files to Parquet",
-          "timestamp.$": "$$.Execution.StartTime"
-        },
-        End = true
-      }
-    }
-  })
-}
+# Note: The processing state machine has been consolidated into the unified workflow
+# and is now managed in unified-workflow.tf
