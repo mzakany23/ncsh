@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2025-03-18
+### Fixed
+- Removed lingering references to old step function state machines in terraform
+- Updated terraform to consistently use the unified workflow for all operations
+- Fixed references to IAM roles in EventBridge targets
+- Ensured consistent CloudWatch alarm configuration for the unified workflow
+
+## [2.9.0] - 2025-03-18
+### Changed
+- Consolidated all Step Functions (processing, backfill) into a single unified workflow
+- Removed unused Step Function state machines that were replaced by the unified workflow
+- Updated EventBridge triggers to use the unified workflow with appropriate parameters
+- Updated CloudWatch logs configuration to ALL level for better debugging visibility
+
+## [2.8.0] - 2025-03-18
+### Added
+- Added environment variables to processing Lambda for versioning configuration
+- Enhanced IAM permissions for S3 operations to support versioning (ListObjectVersions, CopyObject)
+- Improved state machine definition with better error handling and workflow control
+
+## [2.7.0] - 2025-03-18
+### Added
+- AWS Step Function pipeline for configurable scraping and dataset building
+- Versioned parquet datasets with datetime-based versioning in filenames
+- Enhanced Lambda functions for scraping and data processing
+- AWS deployment configuration with IAM policies and documentation
+
+### Changed
+- Added new 'configurable' operation type to the Step Function workflow
+- Implemented datetime-based versioning for parquet datasets for better data lineage
+- Modified processing Lambda to maintain both versioned and 'latest' datasets
+- Updated Lambda to handle specific dates list for targeted scraping operations
+- Enhanced error handling and reporting in the Step Function workflow
+
+### Technical Details
+- Versioned datasets are now stored with format: `ncsoccer_games_YYYY-MM-DD-HH-MM-SS.parquet/csv`
+- 'Latest' datasets are always accessible with consistent path: `ncsoccer_games_latest.parquet/csv`
+- Step Function now passes version identifier throughout the workflow for consistent versioning
+- Infrastructure deployed with Terraform and Docker containers built via GitHub Actions
+
 ## [2.6.17] - 2025-03-18
 ### Changed
 - Unified spider functionality by consolidating BackfillSpider features into ScheduleSpider
@@ -75,14 +115,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.6.3] - 2025-03-14
 ### Fixed
-- Lambda backfill process crash during long-running operations 
+- Lambda backfill process crash during long-running operations
 - Added integration with DynamoDB for backfill status tracking
 - Improved error handling for edge cases
 
 ## [2.6.2] - 2025-03-13
 ### Added
 - Lambda backfill process now respects historical season boundaries
-- Improved retry logic for intermittent failures 
+- Improved retry logic for intermittent failures
 - Added fallback mode for parsing edge cases
 
 ## [2.6.1] - 2025-03-13
