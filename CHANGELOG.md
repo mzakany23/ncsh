@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.14] - 2025-03-18
+### Fixed
+- Fixed local variable 'time' reference error in runner.py by removing redundant imports that created variable scope issues
+
 ## [2.6.13] - 2025-03-17
 ### Fixed
 - Fixed Twisted reactor import error in backfill runner by adding proper fallback handling
