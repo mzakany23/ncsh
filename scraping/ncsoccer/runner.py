@@ -77,6 +77,14 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
              use_test_data=False):
     """Run the scraper for a specific day"""
     try:
+        # Ensure year, month, day are all integers if provided
+        if year is not None and not isinstance(year, int):
+            year = int(year) if str(year).isdigit() else year
+        if month is not None and not isinstance(month, int):
+            month = int(month) if str(month).isdigit() else month
+        if day is not None and not isinstance(day, int):
+            day = int(day) if str(day).isdigit() else day
+
         logger.info(f"Starting run_scraper with params: year={year}, month={month}, day={day}, "
                    f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
                    f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}")

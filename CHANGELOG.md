@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.1] - 2025-03-18
+### Fixed
+- Fixed format string error in runner.py when handling string parameters
+- Fixed parameter passing in unified workflow to maintain parameters between states
+- Added proper handling for optional specific_dates parameter in Step Function
+- Updated lambda functions to handle string parameters consistently
+
 ## [2.10.0] - 2025-03-18
 ### Added
 - Implemented full versioning support for datasets with datetime-based identifiers
