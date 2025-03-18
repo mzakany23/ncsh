@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import os
 import json
 import re
+import urllib.parse
 from calendar import monthrange
 from ..pipeline.config import (
     ScraperConfig,
@@ -27,6 +28,7 @@ class ScheduleSpider(scrapy.Spider):
     base_url = 'https://nc-soccer-hudson.ezleagues.ezfacility.com'
     facility_id = '690'
     start_urls = [f'https://nc-soccer-hudson.ezleagues.ezfacility.com/schedule.aspx?facility_id=690']
+    print_url = 'https://nc-soccer-hudson.ezleagues.ezfacility.com/print.aspx'
 
     custom_settings = {
         'USER_AGENT': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -119,10 +121,33 @@ class ScheduleSpider(scrapy.Spider):
         date_str = date.strftime('%Y-%m-%d')
         return self.lookup.is_date_scraped(date_str)
 
+    def get_direct_date_url(self, target_date):
+        """Generate a direct URL to access the schedule for a specific date"""
+        # Format the date for the URL
+        date_str = f"{target_date.month}/{target_date.day}/{target_date.year}"
+        
+        # Format the title with day name
+        day_name = target_date.strftime('%A')
+        month_name = target_date.strftime('%B')
+        day = target_date.day
+        year = target_date.year
+        title_date = f"{day_name}, {month_name} {day}, {year}"
+        title = f"Games on {title_date}"
+        title_encoded = urllib.parse.quote(title)
+        
+        # Construct the URL
+        url = (f"{self.print_url}?type=schedule&title={title_encoded}&team_id=0&"
+               f"league_id=0&facility_id={self.facility_id}&"
+               f"day={urllib.parse.quote(date_str)}&framed=1")
+               
+        return url
+
     def start_requests(self):
-        """Override start_requests to use GET first to establish session"""
+        """Use direct date access method to get schedule data"""
         try:
-            if self.skip_existing and self._is_date_scraped(datetime(self.target_year, self.target_month, self.target_day)):
+            # Check if date is already scraped
+            target_date = datetime(self.target_year, self.target_month, self.target_day)
+            if self.skip_existing and self._is_date_scraped(target_date):
                 self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
                 return
 
@@ -144,34 +169,25 @@ class ScheduleSpider(scrapy.Spider):
                     response.meta['date'] = date_str
                     yield from self.parse_schedule(response)
                     return
-                else:
-                    self.logger.info(f"Local HTML file not found at {html_path}, proceeding with network request.")
-                    req = Request(url=self.start_urls[0], callback=self.parse_schedule)
-                    req.meta['date'] = date_str
-                    yield req
             except Exception as e:
                 self.logger.error(f"Failed to load HTML: {e}")
-                raise RuntimeError(f"Failed to load HTML: {e}")
-
-            # If we're already on the correct month, we can reuse that state
-            if (self.current_month_date and
-                self.current_month_date.year == self.target_year and
-                self.current_month_date.month == self.target_month):
-                self.logger.info(f"Already on correct month: {self.current_month_date.strftime('%B %Y')}")
-                # Create a fake response to reuse the parse method
-                response = scrapy.http.HtmlResponse(
-                    url=self.start_urls[0],
-                    body=b'',  # Empty body since we'll make a new request anyway
-                    encoding='utf-8'
-                )
-                return self.parse(response)
-
-            # Otherwise start fresh from the current date
+                self.logger.info("Proceeding with network request...")
+            
+            # Use the direct date access method
+            self.logger.info(f"Fetching data for date {target_date.strftime('%Y-%m-%d')} using direct URL access")
+            direct_url = self.get_direct_date_url(target_date)
+            self.logger.info(f"Direct URL: {direct_url}")
+            
             yield scrapy.Request(
-                url=self.start_urls[0],
-                callback=self.parse,
+                url=direct_url,
+                callback=self.parse_schedule,
+                meta={
+                    'date': date_str,
+                    'expected_date': target_date,
+                    'direct_access': True  # Flag to indicate we're using direct access
+                },
                 dont_filter=True,
-                meta={'dont_redirect': True, 'handle_httpstatus_list': [301, 302]}
+                errback=self.handle_error
             )
         except Exception as e:
             self.logger.error(f"Error in start_requests: {e}")
@@ -347,7 +363,7 @@ class ScheduleSpider(scrapy.Spider):
         self.logger.error(f"Failed while requesting date: {meta.get('date')}")
 
     def parse_schedule(self, response):
-        """Parse the schedule for a specific day"""
+        """Parse the schedule for a specific day - handles both print.aspx and schedule.aspx formats"""
         date_str = response.meta.get('date')
         success = False
         games_count = 0
@@ -355,129 +371,269 @@ class ScheduleSpider(scrapy.Spider):
         try:
             # Store raw HTML immediately
             self.store_raw_html(response)
-
-            # Find the schedule table
-            schedule_table = response.css('table#ctl00_c_Schedule1_GridView1')
-
+            
+            # Check if this is a direct access response (print.aspx) or standard response
+            is_direct_access = response.meta.get('direct_access', False)
+            
             # Initialize empty games list
             games = []
-
-            if not schedule_table:
-                self.logger.warning(f"No schedule table found for {date_str}")
-                metadata = {
-                    'date': date_str,
-                    'games_found': False,
-                    'error': 'No schedule table found',
-                    'games_count': 0
-                }
-                self.store_metadata(metadata, date_str)
-                # Store empty games list instead of returning
-                self.store_games(games, date_str)
-                success = True  # This is still a successful scrape, just with no games
-                games_count = 0
-                yield {  # Yield empty result instead of returning
-                    'date': date_str,
-                    'games_found': False,
-                    'games_count': 0
-                }
-                return
-
-            # Process games one at a time
-            rows = schedule_table.css('tr')[1:]  # Skip header row
-            for row in rows:
-                cells = row.css('td')
-                if len(cells) >= 7:  # Ensure we have all expected columns
-                    games_count += 1
-                    league = cells[0].css('a::text').get('').strip()
-                    # Extract session from league name (e.g., "session 2 2024" from "Mens 40+ Friday night 7v7 Indoor session 2 2024")
-                    session = league.split('session')[-1].strip() if 'session' in league else ''
-
-                    # Enhanced score extraction to handle different HTML structures
-                    home_score = None
-                    away_score = None
-                    extraction_method = "standard"
-                    
-                    # Try the standard method first (direct span text in third column)
-                    versus_text = cells[2].css('span::text').get('').strip()
-                    
-                    # If that doesn't have scores, check if we have a td with schedule-versus-column class (2010 format)
-                    if not versus_text or ' - ' not in versus_text:
-                        # First, check if the current cell has the schedule-versus-column class
-                        if 'class' in cells[2].attrib and 'schedule-versus-column' in cells[2].attrib['class']:
-                            versus_text = cells[2].css('span::text').get('').strip()
-                            extraction_method = "schedule-versus-column"
-                        else:
-                            # If not, try finding any cell with the schedule-versus-column class
-                            for i, cell in enumerate(cells):
-                                if 'class' in cell.attrib and 'schedule-versus-column' in cell.attrib['class']:
-                                    versus_text = cell.css('span::text').get('').strip()
-                                    extraction_method = f"schedule-versus-column-cell-{i}"
+            
+            # Different parsing logic based on the source
+            if is_direct_access:
+                # Process the print.aspx format
+                self.logger.info(f"Processing print.aspx format for {date_str}")
+                
+                # Find the game table - different selector for print.aspx
+                game_tables = response.css('table')
+                game_table = None
+                
+                # Find the table with the game data (has League in header)
+                for table in game_tables:
+                    headers = table.css('th::text').getall()
+                    if headers and any('League' in h for h in headers):
+                        game_table = table
+                        break
+                
+                if not game_table:
+                    # Check for "No games scheduled" message
+                    no_games_text = "No games scheduled"
+                    if no_games_text in response.text:
+                        self.logger.info(f"No games scheduled for {date_str}")
+                        metadata = {
+                            'date': date_str,
+                            'games_found': False,
+                            'error': 'No games scheduled',
+                            'games_count': 0
+                        }
+                        self.store_metadata(metadata, date_str)
+                        self.store_games(games, date_str)
+                        success = True  # This is still a successful scrape, just with no games
+                        games_count = 0
+                        yield {
+                            'date': date_str,
+                            'games_found': False,
+                            'games_count': 0
+                        }
+                        return
+                    else:
+                        self.logger.warning(f"No game table found for {date_str}")
+                        metadata = {
+                            'date': date_str,
+                            'games_found': False,
+                            'error': 'No game table found',
+                            'games_count': 0
+                        }
+                        self.store_metadata(metadata, date_str)
+                        self.store_games(games, date_str)
+                        success = True  # This is still a successful scrape, just with no games
+                        games_count = 0
+                        yield {
+                            'date': date_str,
+                            'games_found': False,
+                            'games_count': 0
+                        }
+                        return
+                
+                # Get headers to understand the table structure
+                headers = [th.css('::text').get('').strip() for th in game_table.css('tr:first-child th')]
+                self.logger.info(f"Found headers: {headers}")
+                
+                # Map header positions to field names
+                header_map = {}
+                for i, header in enumerate(headers):
+                    lower_header = header.lower()
+                    if 'league' in lower_header:
+                        header_map['league'] = i
+                    elif 'date' in lower_header:
+                        header_map['date'] = i
+                    elif 'home' in lower_header and i > 0:  # Skip if it's the first column
+                        header_map['home_team'] = i
+                    elif 'away' in lower_header:
+                        header_map['away_team'] = i
+                    elif 'time' in lower_header or 'status' in lower_header:
+                        header_map['status'] = i
+                    elif 'venue' in lower_header:
+                        header_map['venue'] = i
+                    elif 'official' in lower_header:
+                        header_map['officials'] = i
+                    elif 'game' in lower_header:
+                        header_map['game_type'] = i
+                
+                # Process game rows
+                rows = game_table.css('tr:not(:first-child)')  # Skip header row
+                for row in rows:
+                    cells = row.css('td')
+                    if len(cells) >= 3:  # Ensure we have at least league, home, away
+                        # Skip "No games scheduled" rows
+                        first_cell_text = cells[0].css('::text').get('').strip()
+                        if "no games scheduled" in first_cell_text.lower():
+                            continue
+                            
+                        games_count += 1
+                        
+                        # Extract data using header map
+                        game_data = {
+                            'league': '',
+                            'home_team': '',
+                            'away_team': '',
+                            'status': '',
+                            'venue': '',
+                            'officials': '',
+                            'time': None,
+                            'home_score': None,
+                            'away_score': None,
+                            'session': ''
+                        }
+                        
+                        # Fill in data from cells
+                        for field, index in header_map.items():
+                            if index < len(cells):
+                                # Get cell text without internal tags
+                                value = ' '.join(cells[index].css('::text').getall()).strip()
+                                game_data[field] = value
+                        
+                        # Extract session from league name
+                        if 'session' in game_data['league'].lower():
+                            game_data['session'] = game_data['league'].split('session')[-1].strip()
+                        
+                        # Look for score in the row (might be in home/away team cells or separate)
+                        score_pattern = r'(\d+)\s*-\s*(\d+)'
+                        for i, cell in enumerate(cells):
+                            cell_text = ' '.join(cell.css('::text').getall()).strip()
+                            score_match = re.search(score_pattern, cell_text)
+                            if score_match:
+                                try:
+                                    game_data['home_score'] = int(score_match.group(1))
+                                    game_data['away_score'] = int(score_match.group(2))
+                                    self.logger.info(f"Found score: {game_data['home_score']} - {game_data['away_score']} in column {i}")
                                     break
-                    
-                    # Parse scores if we found them
-                    if versus_text and ' - ' in versus_text:
-                        try:
-                            scores = versus_text.split(' - ')
-                            home_score = int(scores[0].strip())
-                            away_score = int(scores[1].strip())
-                            self.logger.info(f"Successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
-                        except (ValueError, IndexError):
-                            self.logger.warning(f"Failed to parse scores from: {versus_text}")
-                            home_score = None
-                            away_score = None
-                    elif versus_text == 'v':
-                        # This is a pending game, scores should be None
+                                except (ValueError, IndexError):
+                                    self.logger.warning(f"Failed to parse scores from: {cell_text}")
+                        
+                        games.append(game_data)
+            else:
+                # Standard schedule.aspx format parsing
+                self.logger.info(f"Processing schedule.aspx format for {date_str}")
+                
+                # Find the schedule table
+                schedule_table = response.css('table#ctl00_c_Schedule1_GridView1')
+                
+                if not schedule_table:
+                    self.logger.warning(f"No schedule table found for {date_str}")
+                    metadata = {
+                        'date': date_str,
+                        'games_found': False,
+                        'error': 'No schedule table found',
+                        'games_count': 0
+                    }
+                    self.store_metadata(metadata, date_str)
+                    self.store_games(games, date_str)
+                    success = True  # This is still a successful scrape, just with no games
+                    games_count = 0
+                    yield {
+                        'date': date_str,
+                        'games_found': False,
+                        'games_count': 0
+                    }
+                    return
+                
+                # Process games one at a time
+                rows = schedule_table.css('tr')[1:]  # Skip header row
+                for row in rows:
+                    cells = row.css('td')
+                    if len(cells) >= 7:  # Ensure we have all expected columns
+                        games_count += 1
+                        league = cells[0].css('a::text').get('').strip()
+                        # Extract session from league name
+                        session = league.split('session')[-1].strip() if 'session' in league else ''
+                        
+                        # Enhanced score extraction to handle different HTML structures
                         home_score = None
                         away_score = None
-                        extraction_method = "pending-game"
-                    else:
-                        self.logger.warning(f"Standard extraction methods failed with text: {versus_text}")
+                        extraction_method = "standard"
                         
-                        # If all standard methods fail and the agent is available, try it as a fallback
-                        if self.use_agent and self.agent and status.lower() == 'complete':
+                        # Try the standard method first (direct span text in third column)
+                        versus_text = cells[2].css('span::text').get('').strip()
+                        
+                        # If that doesn't have scores, check if we have a td with schedule-versus-column class
+                        if not versus_text or ' - ' not in versus_text:
+                            # First, check if the current cell has the schedule-versus-column class
+                            if 'class' in cells[2].attrib and 'schedule-versus-column' in cells[2].attrib['class']:
+                                versus_text = cells[2].css('span::text').get('').strip()
+                                extraction_method = "schedule-versus-column"
+                            else:
+                                # If not, try finding any cell with the schedule-versus-column class
+                                for i, cell in enumerate(cells):
+                                    if 'class' in cell.attrib and 'schedule-versus-column' in cell.attrib['class']:
+                                        versus_text = cell.css('span::text').get('').strip()
+                                        extraction_method = f"schedule-versus-column-cell-{i}"
+                                        break
+                        
+                        # Parse scores if we found them
+                        if versus_text and ' - ' in versus_text:
                             try:
-                                # Get the HTML of the current row for the agent
-                                row_html = row.get()
-                                
-                                # Also get the table HTML for context if this is the first row
-                                table_html = None
-                                if games_count == 1:  # First game in this page
-                                    table_html = schedule_table.get()
-                                
-                                self.logger.info("Attempting score extraction using Claude agent")
-                                agent_home_score, agent_away_score, agent_method = self.agent.extract_scores(
-                                    row_html=row_html,
-                                    table_html=table_html
-                                )
-                                
-                                if agent_home_score is not None and agent_away_score is not None:
-                                    home_score = agent_home_score
-                                    away_score = agent_away_score
-                                    extraction_method = f"agent-{agent_method}"
-                                    self.logger.info(f"Agent successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
-                            except Exception as e:
-                                self.logger.error(f"Agent-based score extraction failed: {e}")
-
-                    # Extract status (no times available)
-                    status = cells[4].css('a::text').get('').strip()
-
-                    games.append({
-                        'league': league,
-                        'session': session,
-                        'home_team': cells[1].css('a::text').get('').strip(),
-                        'away_team': cells[3].css('a::text').get('').strip(),
-                        'status': status,
-                        'venue': cells[5].css('a::text').get('').strip(),
-                        'officials': cells[6].css('::text').get('').strip(),
-                        'time': None,  # No times available in the HTML
-                        'home_score': home_score,
-                        'away_score': away_score
-                    })
+                                scores = versus_text.split(' - ')
+                                home_score = int(scores[0].strip())
+                                away_score = int(scores[1].strip())
+                                self.logger.info(f"Successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
+                            except (ValueError, IndexError):
+                                self.logger.warning(f"Failed to parse scores from: {versus_text}")
+                                home_score = None
+                                away_score = None
+                        elif versus_text == 'v':
+                            # This is a pending game, scores should be None
+                            home_score = None
+                            away_score = None
+                            extraction_method = "pending-game"
+                        else:
+                            self.logger.warning(f"Standard extraction methods failed with text: {versus_text}")
+                            
+                            # If all standard methods fail and the agent is available, try it as a fallback
+                            status = cells[4].css('a::text').get('').strip()
+                            if self.use_agent and self.agent and status.lower() == 'complete':
+                                try:
+                                    # Get the HTML of the current row for the agent
+                                    row_html = row.get()
+                                    
+                                    # Also get the table HTML for context if this is the first row
+                                    table_html = None
+                                    if games_count == 1:  # First game in this page
+                                        table_html = schedule_table.get()
+                                    
+                                    self.logger.info("Attempting score extraction using Claude agent")
+                                    agent_home_score, agent_away_score, agent_method = self.agent.extract_scores(
+                                        row_html=row_html,
+                                        table_html=table_html
+                                    )
+                                    
+                                    if agent_home_score is not None and agent_away_score is not None:
+                                        home_score = agent_home_score
+                                        away_score = agent_away_score
+                                        extraction_method = f"agent-{agent_method}"
+                                        self.logger.info(f"Agent successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
+                                except Exception as e:
+                                    self.logger.error(f"Agent-based score extraction failed: {e}")
+                        
+                        # Extract status
+                        status = cells[4].css('a::text').get('').strip()
+                        
+                        games.append({
+                            'league': league,
+                            'session': session,
+                            'home_team': cells[1].css('a::text').get('').strip(),
+                            'away_team': cells[3].css('a::text').get('').strip(),
+                            'status': status,
+                            'venue': cells[5].css('a::text').get('').strip(),
+                            'officials': cells[6].css('::text').get('').strip(),
+                            'time': None,  # No times available in the HTML
+                            'home_score': home_score,
+                            'away_score': away_score
+                        })
 
             # Write the complete JSON file
             json_data = {
                 'date': date_str,
-                'games_found': True,
+                'games_found': games_count > 0,
                 'games': games
             }
             json_filename = f"{self.json_prefix}/{date_str}.json"
@@ -489,8 +645,9 @@ class ScheduleSpider(scrapy.Spider):
             # Store metadata in partitioned format
             metadata = {
                 'date': date_str,
-                'games_found': True,
-                'games_count': games_count
+                'games_found': games_count > 0,
+                'games_count': games_count,
+                'scrape_method': 'direct_access' if response.meta.get('direct_access', False) else 'standard'
             }
             self.store_metadata(metadata, date_str)
 
@@ -500,7 +657,7 @@ class ScheduleSpider(scrapy.Spider):
             # Yield the result
             yield {
                 'date': date_str,
-                'games_found': True,
+                'games_found': games_count > 0,
                 'games_count': games_count,
                 'games': games
             }
