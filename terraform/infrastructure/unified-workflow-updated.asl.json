@@ -109,9 +109,9 @@
       "Type": "Pass",
       "Parameters": {
         "scrape_mode": "date_range",
-        "start_date.$": "$.date_range.start_date",
-        "end_date.$": "$.date_range.end_date",
-        "specific_dates.$": "States.JsonMerge(\"[]\", States.StringToJson(States.JsonToString($.specific_dates)))",
+        "start_date": "$.date_range.start_date",
+        "end_date": "$.date_range.end_date",
+        "specific_dates": "$.specific_dates",
         "force_full_reprocess.$": "$.force_full_reprocess",
         "version.$": "$.version",
         "src_bucket.$": "$.src_bucket",
