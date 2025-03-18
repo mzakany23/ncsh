@@ -5,6 +5,7 @@ This directory contains test files and examples for the NC Soccer Terraform infr
 ## Files
 
 - `test-versioning-input.json` - Example input for testing the unified workflow with dataset versioning
+- `test-versioning-workflow.json` - Example input for testing the configurable workflow operation with a custom version
 
 ## Usage
 
@@ -15,6 +16,12 @@ These test files can be used with the AWS CLI to manually invoke step functions:
 aws stepfunctions start-execution \
   --state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-unified-workflow \
   --input file://terraform/tests/test-versioning-input.json \
+  --region us-east-2
+
+# Example: Test the configurable workflow with custom version
+aws stepfunctions start-execution \
+  --state-machine-arn arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-unified-workflow \
+  --input file://terraform/tests/test-versioning-workflow.json \
   --region us-east-2
 ```
 
