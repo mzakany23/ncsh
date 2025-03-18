@@ -19,3 +19,8 @@ aws stepfunctions start-execution \
 ```
 
 This allows for testing specific operations without modifying the production setup.
+
+## Notes
+
+- The unified workflow step function should be used for all operations, as it consolidates functionality from previous separate workflows
+- No Terraform changes need to be applied to use these test files
