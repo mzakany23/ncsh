@@ -35,11 +35,11 @@ def run_test():
     # Create test periods - one month from each of the last three years
     current_date = datetime.datetime.now()
     
-    # Define test periods - one month from each of the last three years with limited days
+    # Define test periods - just one day from each of the last three years for quick testing
     test_periods = [
-        {"year": current_date.year - 3, "month": 3, "days": 5},  # 5 days from March three years ago
-        {"year": current_date.year - 2, "month": 7, "days": 3},  # 3 days from July two years ago
-        {"year": current_date.year - 1, "month": 11, "days": 4}   # 4 days from November last year
+        {"year": current_date.year - 3, "month": 3, "days": 1},  # Just one day from March three years ago
+        {"year": current_date.year - 2, "month": 7, "days": 1},  # Just one day from July two years ago
+        {"year": current_date.year - 1, "month": 11, "days": 1}   # Just one day from November last year
     ]
     
     logger.info(f"Testing backfill spider for selected periods in the last three years")
@@ -51,7 +51,7 @@ def run_test():
     test_settings = {
         'CONCURRENT_REQUESTS': 1,
         'CONCURRENT_REQUESTS_PER_DOMAIN': 1, 
-        'DOWNLOAD_DELAY': 3,  # 3 seconds between requests
+        'DOWNLOAD_DELAY': 5,  # 5 seconds between requests
         'LOG_LEVEL': 'INFO',
         'COOKIES_DEBUG': True,
         'TELNETCONSOLE_ENABLED': False,
