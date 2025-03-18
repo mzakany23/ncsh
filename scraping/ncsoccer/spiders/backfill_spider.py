@@ -310,74 +310,25 @@ class BackfillSpider(ScheduleSpider):
         yield from self.scrape_day(response, days_to_scrape[0], days_to_scrape[1:])
     
     def scrape_day(self, response, day, remaining_days):
-        """Scrape a specific day in the current month."""
+        """Scrape a specific day in the current month using direct URL access."""
         target_year = response.meta.get('target_year', self.current_target_year)
         target_month = response.meta.get('target_month', self.current_target_month)
-        
-        self.logger.info(f"Scraping day: {target_year}-{target_month:02d}-{day:02d}")
-        
-        # Find the link for our target date
-        target_date_str = f"{day}"  # The text content we're looking for
-        date_link = response.css(f'a[title*="{self.current_month_date.strftime("%B")} {day}"]')
-        
-        if not date_link:
-            self.logger.error(f"Could not find link for date: {target_date_str}")
-            
-            # Try to recover by moving to the next day
-            if remaining_days:
-                self.logger.info(f"Trying next day: {remaining_days[0]}")
-                yield from self.scrape_day(response, remaining_days[0], remaining_days[1:])
-            else:
-                # No more days to scrape in this month, move to previous month
-                self.months_scraped += 1
-                if self.move_to_previous_month():
-                    self.save_checkpoint()
-                    yield from self.navigate_to_previous_month(response)
-            return
-        
-        # Extract the __doPostBack arguments from the href
-        href = date_link.attrib['href']
-        match = re.search(r"__doPostBack\('([^']+)','([^']+)'\)", href)
-        if not match:
-            self.logger.error(f"Could not extract postback arguments from href: {href}")
-            
-            # Try to recover by moving to the next day
-            if remaining_days:
-                yield from self.scrape_day(response, remaining_days[0], remaining_days[1:])
-            else:
-                # No more days to scrape in this month, move to previous month
-                self.months_scraped += 1
-                if self.move_to_previous_month():
-                    self.save_checkpoint()
-                    yield from self.navigate_to_previous_month(response)
-            return
-        
-        event_target, event_argument = match.groups()
-        
-        # Extract ASP.NET form fields
-        viewstate = response.css('#__VIEWSTATE::attr(value)').get()
-        eventvalidation = response.css('#__EVENTVALIDATION::attr(value)').get()
-        viewstategenerator = response.css('#__VIEWSTATEGENERATOR::attr(value)').get()
-        
-        # Create form data for the postback
-        formdata = {
-            '__EVENTTARGET': event_target,
-            '__EVENTARGUMENT': event_argument,
-            '__VIEWSTATE': viewstate,
-            '__EVENTVALIDATION': eventvalidation,
-            '__VIEWSTATEGENERATOR': viewstategenerator,
-        }
         
         # Create a date string for tracking
         date_str = f"{target_year}-{target_month:02d}-{day:02d}"
         target_date = datetime(target_year, target_month, day)
         
+        self.logger.info(f"Scraping day: {date_str} using direct URL access")
+        
         # Store reference to response for backfill continuation
         month_response = response
         
-        yield FormRequest(
-            url=self.start_urls[0],
-            formdata=formdata,
+        # Use the direct date access method from the parent class
+        direct_url = self.get_direct_date_url(target_date)
+        self.logger.info(f"Direct URL: {direct_url}")
+        
+        yield scrapy.Request(
+            url=direct_url,
             callback=self.handle_day_scrape,
             meta={
                 'date': date_str,
@@ -386,7 +337,8 @@ class BackfillSpider(ScheduleSpider):
                 'month_response': month_response,
                 'remaining_days': remaining_days,
                 'target_year': target_year,
-                'target_month': target_month
+                'target_month': target_month,
+                'direct_access': True  # Flag to indicate we're using direct access
             },
             dont_filter=True,
             errback=self.handle_error

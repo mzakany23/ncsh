@@ -38,7 +38,7 @@ install: venv compile-requirements
 
 test: install
 	@echo "Running tests..."
-	source .venv/bin/activate && cd scraping && python -m pytest tests/
+	source .venv/bin/activate && python -m pytest tests/unit/scraping/
 	@echo "Note: processing module has no tests yet"
 
 lint: install
