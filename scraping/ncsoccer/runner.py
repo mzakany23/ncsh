@@ -205,11 +205,9 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             else:
                 logger.info("Using existing reactor")
                 # Wait a bit for spiders to complete their work
-                import time
                 time.sleep(5)
 
             # Add timeout for file verification
-            import time
             max_wait = 60  # Maximum wait time in seconds
             start_time = time.time()
 
