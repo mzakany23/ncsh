@@ -327,7 +327,7 @@ resource "aws_iam_role_policy" "eventbridge_policy" {
           "states:StartExecution"
         ]
         Resource = [
-          aws_sfn_state_machine.ncsoccer_workflow.arn
+          aws_sfn_state_machine.ncsoccer_unified_workflow.arn
         ]
       }
     ]

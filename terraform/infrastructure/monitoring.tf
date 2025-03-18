@@ -1,14 +1,14 @@
-# SNS Topic for Alarm Notifications
-resource "aws_sns_topic" "ncsoccer_alarms" {
-  name = "ncsoccer-alarms"
-}
+# SNS Topic for Alarm Notifications (defined in main.tf)
+# resource "aws_sns_topic" "ncsoccer_alarms" {
+#   name = "ncsoccer-alarms"
+# }
 
-# SNS Subscription for Email Notifications
-resource "aws_sns_topic_subscription" "email_notification" {
-  topic_arn = aws_sns_topic.ncsoccer_alarms.arn
-  protocol  = "email"
-  endpoint  = "mzakany@gmail.com"
-}
+# SNS Subscription for Email Notifications (defined in main.tf)
+# resource "aws_sns_topic_subscription" "email_notification" {
+#   topic_arn = aws_sns_topic.ncsoccer_alarms.arn
+#   protocol  = "email"
+#   endpoint  = "mzakany@gmail.com"
+# }
 
 # IAM Role for EventBridge to Trigger Step Functions (used by the CloudWatch Events)
 resource "aws_iam_role" "eventbridge_step_function_role" {
@@ -60,16 +60,17 @@ resource "aws_cloudwatch_event_rule" "daily_scrape" {
 # Daily Scrape EventBridge Target
 resource "aws_cloudwatch_event_target" "daily_scrape_target" {
   rule      = aws_cloudwatch_event_rule.daily_scrape.name
-  target_id = "NCSoccerDailyScrape"
-  arn       = aws_sfn_state_machine.ncsoccer_workflow.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
-    year        = "#{aws:DateNow(YYYY)}"
-    month       = "#{aws:DateNow(MM)}"
-    day         = "#{aws:DateNow(DD)}"
-    mode        = "day"
-    force_scrape = true
+    operation = "daily",
+    parameters = {
+      day         = "#{aws:DateNow(DD)}",
+      month       = "#{aws:DateNow(MM)}",
+      year        = "#{aws:DateNow(YYYY)}",
+      force_scrape = true
+    }
   })
 }
 
@@ -84,16 +85,16 @@ resource "aws_cloudwatch_event_rule" "daily_process" {
 # Daily Process EventBridge Target
 resource "aws_cloudwatch_event_target" "daily_process_target" {
   rule      = aws_cloudwatch_event_rule.daily_process.name
-  target_id = "NCSoccerDailyProcess"
-  arn       = aws_sfn_state_machine.processing.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
-    timestamp   = "#{aws:DateNow()}"
-    src_bucket  = "ncsh-app-data"
-    src_prefix  = "data/json/"
-    dst_bucket  = "ncsh-app-data"
-    dst_prefix  = "data/parquet/"
+    operation = "daily_process",
+    parameters = {
+      day         = "#{aws:DateNow(DD)}",
+      month       = "#{aws:DateNow(MM)}",
+      year        = "#{aws:DateNow(YYYY)}"
+    }
   })
 }
 
@@ -108,15 +109,16 @@ resource "aws_cloudwatch_event_rule" "monthly_scrape" {
 # Monthly Scrape EventBridge Target
 resource "aws_cloudwatch_event_target" "monthly_scrape_target" {
   rule      = aws_cloudwatch_event_rule.monthly_scrape.name
-  target_id = "NCSoccerMonthlyScrape"
-  arn       = aws_sfn_state_machine.ncsoccer_workflow.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
-    year        = "#{aws:DateNow(YYYY)}"
-    month       = "#{aws:DateNow(MM)}"
-    mode        = "month"
-    force_scrape = true
+    operation = "monthly",
+    parameters = {
+      month       = "#{aws:DateNow(MM)}",
+      year        = "#{aws:DateNow(YYYY)}",
+      force_scrape = true
+    }
   })
 }
 
@@ -131,35 +133,35 @@ resource "aws_cloudwatch_event_rule" "monthly_process" {
 # Monthly Process EventBridge Target
 resource "aws_cloudwatch_event_target" "monthly_process_target" {
   rule      = aws_cloudwatch_event_rule.monthly_process.name
-  target_id = "NCSoccerMonthlyProcess"
-  arn       = aws_sfn_state_machine.processing.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
-    timestamp   = "#{aws:DateNow()}"
-    src_bucket  = "ncsh-app-data"
-    src_prefix  = "data/json/"
-    dst_bucket  = "ncsh-app-data"
-    dst_prefix  = "data/parquet/"
+    operation = "monthly_process",
+    parameters = {
+      month       = "#{aws:DateNow(MM)}",
+      year        = "#{aws:DateNow(YYYY)}"
+    }
   })
 }
 
 # CloudWatch Alarm for Scraper Step Function Failures
 resource "aws_cloudwatch_metric_alarm" "scraper_failure_alarm" {
-  alarm_name          = "ncsoccer-workflow-failure"
+  alarm_name          = "ncsoccer-scraper-failure"
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 1
+  evaluation_periods  = "1"
   metric_name         = "ExecutionsFailed"
   namespace           = "AWS/States"
-  period              = 60
+  period              = "300"
   statistic           = "Sum"
-  threshold           = 1
-  alarm_description   = "This alarm monitors for NC Soccer scraper workflow failures"
-  alarm_actions       = [aws_sns_topic.ncsoccer_alarms.arn]
+  threshold           = "1"
+  alarm_description   = "This alarm monitors for NC Soccer scraper step function failures"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ncsoccer_alarms.arn]
+  ok_actions          = [aws_sns_topic.ncsoccer_alarms.arn]
 
   dimensions = {
-    StateMachineArn = aws_sfn_state_machine.ncsoccer_workflow.arn
+    StateMachineArn = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   }
 }
 
@@ -167,18 +169,19 @@ resource "aws_cloudwatch_metric_alarm" "scraper_failure_alarm" {
 resource "aws_cloudwatch_metric_alarm" "processing_failure_alarm" {
   alarm_name          = "ncsoccer-processing-failure"
   comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 1
+  evaluation_periods  = "1"
   metric_name         = "ExecutionsFailed"
   namespace           = "AWS/States"
-  period              = 60
+  period              = "300"
   statistic           = "Sum"
-  threshold           = 1
-  alarm_description   = "This alarm monitors for NC Soccer processing workflow failures"
-  alarm_actions       = [aws_sns_topic.ncsoccer_alarms.arn]
+  threshold           = "1"
+  alarm_description   = "This alarm monitors for NC Soccer processing step function failures"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ncsoccer_alarms.arn]
+  ok_actions          = [aws_sns_topic.ncsoccer_alarms.arn]
 
   dimensions = {
-    StateMachineArn = aws_sfn_state_machine.processing.arn
+    StateMachineArn = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   }
 }
 

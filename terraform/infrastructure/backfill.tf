@@ -37,13 +37,13 @@ resource "aws_cloudwatch_metric_alarm" "backfill_failure_alarm" {
   statistic           = "Sum"
   threshold           = "1"
   alarm_description   = "This metric monitors backfill failures in the unified workflow"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.ncsoccer_alarms.arn]
+  ok_actions          = [aws_sns_topic.ncsoccer_alarms.arn]
 
   dimensions = {
     StateMachineArn = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   }
-
-  alarm_actions = [aws_sns_topic.ncsoccer_alarms.arn]
-  ok_actions    = [aws_sns_topic.ncsoccer_alarms.arn]
 }
 
 # Log group specifically for backfill executions
