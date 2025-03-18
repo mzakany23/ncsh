@@ -5,11 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.17] - 2025-03-18
+### Changed
+- Unified spider functionality by consolidating BackfillSpider features into ScheduleSpider
+- Added flexible date parameters to support both single date and date range scraping
+- Improved code maintainability by removing duplicate functionality across spiders
+- Added better parameter documentation and more descriptive logging for all operating modes
+
+### Removed
+- Removed BackfillSpider as its functionality is now in the unified ScheduleSpider
+- Updated tests to use the ScheduleSpider with the new date range mode
+
 ## [2.6.16] - 2025-03-18
 ### Added
 - Implemented direct URL access method using print.aspx endpoint for more reliable data retrieval
 - Added get_direct_date_url function to generate printer-friendly URLs with query parameters
 - Significantly improved reliability of historical data scraping, especially for dates before 2018
+- Completely refactored BackfillSpider to eliminate UI navigation, making it faster and more reliable
 
 ## [2.6.15] - 2025-03-18
 ### Fixed

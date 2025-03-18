@@ -20,8 +20,8 @@ import time
 # Add the scraping directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scraping'))
 
-# Import the backfill spider directly
-from ncsoccer.spiders.backfill_spider import BackfillSpider
+# Import the unified schedule spider
+from ncsoccer.spiders.schedule_spider import ScheduleSpider
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 
@@ -170,9 +170,10 @@ def run_backfill(start_year, start_month, end_year, end_month,
         # Create crawler process
         process = CrawlerProcess(settings)
         
-        # Start crawling with the BackfillSpider
+        # Start crawling with the unified ScheduleSpider in range mode
         process.crawl(
-            BackfillSpider,
+            ScheduleSpider,
+            mode='range',
             start_year=start_year,
             start_month=start_month,
             end_year=end_year,
