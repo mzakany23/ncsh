@@ -119,7 +119,7 @@
       "Type": "Choice",
       "Choices": [
         {
-          "Variable": "$.scraperResult.statusCode",
+          "Variable": "$.scraperResult.Payload.statusCode",
           "NumericEquals": 200,
           "Next": "ProcessScrapedData"
         }
