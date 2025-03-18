@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved code maintainability by removing duplicate functionality across spiders
 - Added better parameter documentation and more descriptive logging for all operating modes
 
+### Fixed
+- Added missing time module import in ScheduleSpider
+- Updated HTML parser tests to handle the current HTML structure correctly
+
 ### Removed
 - Removed BackfillSpider as its functionality is now in the unified ScheduleSpider
 - Updated tests to use the ScheduleSpider with the new date range mode
