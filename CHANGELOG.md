@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed references to IAM roles in EventBridge targets
 - Ensured consistent CloudWatch alarm configuration for the unified workflow
 
+### Changed
+- Organized test files into appropriate directories for better repository structure
+- Added documentation for test files and examples
+- Improved overall code organization and project structure
+
 ## [2.9.0] - 2025-03-18
 ### Changed
 - Consolidated all Step Functions (processing, backfill) into a single unified workflow
