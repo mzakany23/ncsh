@@ -6,11 +6,11 @@
 resource "aws_sfn_state_machine" "ncsoccer_unified_workflow" {
   name     = "ncsoccer-unified-workflow"
   role_arn = aws_iam_role.unified_workflow_step_function_role.arn
-  
-  definition = file("${path.module}/unified-workflow.asl.json")
+
+  definition = file("${path.module}/unified-workflow-updated.asl.json")
 
   logging_configuration {
-    level                  = "ERROR"
+    level                  = "ALL"
     include_execution_data = true
     log_destination        = "${aws_cloudwatch_log_group.step_function_logs.arn}:*"
   }
@@ -30,7 +30,7 @@ resource "aws_sfn_state_machine" "ncsoccer_unified_workflow" {
 resource "aws_cloudwatch_log_group" "step_function_logs" {
   name              = "/aws/vendedlogs/states/ncsoccer-unified-workflow"
   retention_in_days = 30
-  
+
   tags = {
     Environment = var.environment
     Project     = "ncsoccer"
@@ -40,7 +40,7 @@ resource "aws_cloudwatch_log_group" "step_function_logs" {
 # IAM Role for Step Function
 resource "aws_iam_role" "unified_workflow_step_function_role" {
   name = "ncsoccer_unified_workflow_role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -53,7 +53,7 @@ resource "aws_iam_role" "unified_workflow_step_function_role" {
       }
     ]
   })
-  
+
   tags = {
     Environment = var.environment
     Project     = "ncsoccer"
@@ -63,7 +63,7 @@ resource "aws_iam_role" "unified_workflow_step_function_role" {
 # Permissions policy for Step Function to invoke Lambda functions
 resource "aws_iam_policy" "step_function_lambda_policy" {
   name = "ncsoccer_step_function_lambda_policy"
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -121,10 +121,10 @@ resource "aws_iam_role_policy_attachment" "step_function_lambda_policy_attachmen
 resource "aws_cloudwatch_event_rule" "ncsoccer_daily_unified" {
   name        = "ncsoccer-daily-unified"
   description = "Trigger NC Soccer unified workflow for current day at 04:00 UTC"
-  
+
   schedule_expression = "cron(0 4 * * ? *)"
   state               = "ENABLED"
-  
+
   tags = {
     Environment = var.environment
     Project     = "ncsoccer"
@@ -135,10 +135,10 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_daily_unified" {
 resource "aws_cloudwatch_event_rule" "ncsoccer_monthly_unified" {
   name        = "ncsoccer-monthly-unified"
   description = "Trigger NC Soccer unified workflow for entire month on the 1st day at 05:00 UTC"
-  
+
   schedule_expression = "cron(0 5 1 * ? *)"
   state               = "ENABLED"
-  
+
   tags = {
     Environment = var.environment
     Project     = "ncsoccer"
@@ -149,10 +149,10 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_monthly_unified" {
 resource "aws_cloudwatch_event_rule" "ncsoccer_backfill_unified" {
   name        = "ncsoccer-backfill-unified"
   description = "Manual trigger for NC Soccer backfill workflow (disabled by default)"
-  
+
   schedule_expression = "cron(0 1 1 1 ? 2099)" # Far future date to effectively disable automatic triggering
   state               = "DISABLED"
-  
+
   tags = {
     Environment = var.environment
     Project     = "ncsoccer"
@@ -162,7 +162,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_backfill_unified" {
 # IAM Role for EventBridge to invoke Step Functions
 resource "aws_iam_role" "unified_workflow_eventbridge_role" {
   name = "ncsoccer_eventbridge_step_function_role"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -175,7 +175,7 @@ resource "aws_iam_role" "unified_workflow_eventbridge_role" {
       }
     ]
   })
-  
+
   tags = {
     Environment = var.environment
     Project     = "ncsoccer"
@@ -185,7 +185,7 @@ resource "aws_iam_role" "unified_workflow_eventbridge_role" {
 # Policy for EventBridge to invoke Step Functions
 resource "aws_iam_policy" "eventbridge_step_function_policy" {
   name = "ncsoccer_eventbridge_step_function_policy"
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -213,7 +213,7 @@ resource "aws_cloudwatch_event_target" "ncsoccer_daily_unified_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_daily_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
-  
+
   input = jsonencode({
     operation = "daily",
     parameters = {
@@ -230,7 +230,7 @@ resource "aws_cloudwatch_event_target" "ncsoccer_monthly_unified_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_monthly_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
-  
+
   input = jsonencode({
     operation = "monthly",
     parameters = {
@@ -246,7 +246,7 @@ resource "aws_cloudwatch_event_target" "ncsoccer_backfill_unified_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_backfill_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
-  
+
   input = jsonencode({
     operation = "backfill",
     parameters = {

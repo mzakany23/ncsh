@@ -1,0 +1,315 @@
+{
+  "Comment": "NC Soccer Unified Workflow - Handles daily, monthly, backfill, and configurable operations",
+  "StartAt": "DetermineOperationType",
+  "States": {
+    "DetermineOperationType": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.operation",
+          "StringEquals": "daily",
+          "Next": "ConfigureDailyScrape"
+        },
+        {
+          "Variable": "$.operation",
+          "StringEquals": "monthly",
+          "Next": "ConfigureMonthlyScrape"
+        },
+        {
+          "Variable": "$.operation",
+          "StringEquals": "backfill",
+          "Next": "ConfigureBackfill"
+        },
+        {
+          "Variable": "$.operation",
+          "StringEquals": "configurable",
+          "Next": "ConfigurableDateScrape"
+        }
+      ],
+      "Default": "HandleInvalidOperation"
+    },
+    
+    "ConfigureDailyScrape": {
+      "Type": "Pass",
+      "Result": {
+        "mode": "day",
+        "backfill_mode": false
+      },
+      "ResultPath": "$.config",
+      "Next": "MergeDailyParameters"
+    },
+    
+    "MergeDailyParameters": {
+      "Type": "Pass",
+      "Parameters": {
+        "day.$": "$.parameters.day",
+        "month.$": "$.parameters.month",
+        "year.$": "$.parameters.year",
+        "force_scrape.$": "$.parameters.force_scrape",
+        "mode.$": "$.config.mode",
+        "backfill_mode.$": "$.config.backfill_mode"
+      },
+      "Next": "RunScraper"
+    },
+    
+    "ConfigureMonthlyScrape": {
+      "Type": "Pass",
+      "Result": {
+        "mode": "month",
+        "backfill_mode": false
+      },
+      "ResultPath": "$.config",
+      "Next": "MergeMonthlyParameters"
+    },
+    
+    "MergeMonthlyParameters": {
+      "Type": "Pass",
+      "Parameters": {
+        "month.$": "$.parameters.month",
+        "year.$": "$.parameters.year",
+        "force_scrape.$": "$.parameters.force_scrape",
+        "mode.$": "$.config.mode",
+        "backfill_mode.$": "$.config.backfill_mode"
+      },
+      "Next": "RunScraper"
+    },
+    
+    "ConfigureBackfill": {
+      "Type": "Pass",
+      "Result": {
+        "backfill_mode": true
+      },
+      "ResultPath": "$.config",
+      "Next": "MergeBackfillParameters"
+    },
+    
+    "MergeBackfillParameters": {
+      "Type": "Pass",
+      "Parameters": {
+        "startDate.$": "$.parameters.startDate",
+        "endDate.$": "$.parameters.endDate",
+        "useNewProcessingCode.$": "$.parameters.useNewProcessingCode",
+        "backfill_mode.$": "$.config.backfill_mode"
+      },
+      "Next": "RunBackfill"
+    },
+    
+    "ConfigurableDateScrape": {
+      "Type": "Pass",
+      "Result": {
+        "mode": "configurable",
+        "backfill_mode": false,
+        "timestamp": "${format(timestamp(), 'yyyy-MM-dd-HH-mm-ss')}"
+      },
+      "ResultPath": "$.config",
+      "Next": "MergeConfigurableParameters"
+    },
+    
+    "MergeConfigurableParameters": {
+      "Type": "Pass",
+      "Parameters": {
+        "scrape_mode": "date_range",
+        "start_date.$": "$.date_range.start_date",
+        "end_date.$": "$.date_range.end_date",
+        "specific_dates.$": "$.specific_dates",
+        "force_full_reprocess.$": "$.force_full_reprocess",
+        "version.$": "$.version",
+        "src_bucket.$": "$.src_bucket",
+        "src_prefix.$": "$.src_prefix",
+        "dst_bucket.$": "$.dst_bucket",
+        "dst_prefix.$": "$.dst_prefix",
+        "mode.$": "$.config.mode",
+        "backfill_mode.$": "$.config.backfill_mode"
+      },
+      "Next": "RunScraper"
+    },
+    
+    "RunScraper": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_scraper",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleScraperFailure"
+        }
+      ],
+      "Next": "ListJSONFiles"
+    },
+    
+    "RunBackfill": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_backfill",
+        "Payload.$": "$"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleBackfillFailure"
+        }
+      ],
+      "Next": "ListJSONFiles"
+    },
+    
+    "ListJSONFiles": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
+        "Payload": {
+          "operation": "list_files",
+          "src_bucket.$": "$.src_bucket",
+          "src_prefix.$": "$.src_prefix",
+          "dst_bucket.$": "$.dst_bucket",
+          "dst_prefix.$": "$.dst_prefix",
+          "force_full_reprocess.$": "$.force_full_reprocess",
+          "version.$": "$.version"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "ResultPath": "$.listing",
+      "Next": "CheckFilesFound"
+    },
+    
+    "CheckFilesFound": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.listing.Payload.filesProcessed",
+          "NumericEquals": 0,
+          "Next": "NoNewFiles"
+        }
+      ],
+      "Default": "ConvertToParquet"
+    },
+    
+    "ConvertToParquet": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
+        "Payload": {
+          "operation": "convert",
+          "src_bucket.$": "$.src_bucket",
+          "src_prefix.$": "$.src_prefix",
+          "dst_bucket.$": "$.dst_bucket",
+          "dst_prefix.$": "$.dst_prefix",
+          "files.$": "$.listing.Payload.files",
+          "version.$": "$.version"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "ResultPath": "$.conversion",
+      "Next": "BuildFinalDataset"
+    },
+    
+    "BuildFinalDataset": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
+        "Payload": {
+          "operation": "build_dataset",
+          "src_bucket.$": "$.dst_bucket",
+          "src_prefix.$": "$.dst_prefix",
+          "dst_bucket.$": "$.dst_bucket",
+          "dst_prefix.$": "$.dst_prefix",
+          "version.$": "$.version"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "ResultPath": "$.dataset",
+      "Next": "WorkflowSuccess"
+    },
+    
+    "NoNewFiles": {
+      "Type": "Pass",
+      "Result": {
+        "status": "SUCCESS",
+        "message": "No new files to process"
+      },
+      "Next": "WorkflowSuccess"
+    },
+    
+    "HandleInvalidOperation": {
+      "Type": "Fail",
+      "Error": "InvalidOperation",
+      "Cause": "Operation type not recognized. Use 'daily', 'monthly', 'backfill', or 'configurable'."
+    },
+    
+    "HandleScraperFailure": {
+      "Type": "Pass",
+      "Result": {
+        "status": "FAILED",
+        "message": "Scraper execution failed. Check CloudWatch logs for details."
+      },
+      "Next": "WorkflowFailed"
+    },
+    
+    "HandleBackfillFailure": {
+      "Type": "Pass",
+      "Result": {
+        "status": "FAILED",
+        "message": "Backfill execution failed. Check CloudWatch logs for details."
+      },
+      "Next": "WorkflowFailed"
+    },
+    
+    "WorkflowSuccess": {
+      "Type": "Pass",
+      "Result": {
+        "status": "SUCCESS",
+        "message": "Workflow completed successfully"
+      },
+      "End": true
+    },
+    
+    "WorkflowFailed": {
+      "Type": "Fail",
+      "Error": "WorkflowFailed",
+      "Cause": "Workflow execution failed. Check CloudWatch logs for details."
+    }
+  }
+}

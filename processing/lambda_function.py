@@ -125,10 +125,30 @@ def update_last_processed_timestamp(bucket: str, prefix: str) -> None:
     except Exception as e:
         logger.warning(f"Error updating last processed timestamp: {str(e)}")
 
-def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
-    """Convert JSON files to Parquet format and append to existing dataset"""
+def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optional[str] = None):
+    """Convert JSON files to Parquet format and append to existing dataset
+    
+    Args:
+        src_bucket: Source S3 bucket containing JSON files
+        files: List of file keys to process
+        dst_bucket: Destination S3 bucket for Parquet files
+        dst_prefix: Prefix for Parquet files in the destination bucket
+        version: Optional version identifier for the dataset (default: current timestamp)
+    
+    Returns:
+        Dictionary with operation results
+    """
     logger.info(f"Converting {len(files)} JSON files to Parquet")
     s3 = boto3.client("s3")
+    
+    # Use provided version or generate a timestamp
+    if not version:
+        version = datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
+        
+    logger.info(f'Using version identifier: {version}')
+    
+    # Add version to the prefix for better organization
+    versioned_prefix = f"{dst_prefix}{version}/"
 
     try:
         # Process each JSON file
@@ -250,8 +270,17 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         )
         out_buffer.seek(0)
 
-        # Upload combined Parquet file
-        logger.info(f"Uploading combined Parquet file ({len(combined_df)} rows) to s3://{dst_bucket}/{current_key}")
+        # Upload combined Parquet file (versioned)
+        versioned_key = f"{versioned_prefix}data.parquet"
+        logger.info(f"Uploading combined Parquet file ({len(combined_df)} rows) to s3://{dst_bucket}/{versioned_key}")
+        s3.put_object(
+            Bucket=dst_bucket,
+            Key=versioned_key,
+            Body=out_buffer.getvalue()
+        )
+        
+        # Also upload to the standard path for backward compatibility
+        logger.info(f"Also uploading to standard path: s3://{dst_bucket}/{current_key}")
         s3.put_object(
             Bucket=dst_bucket,
             Key=current_key,
@@ -264,10 +293,12 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix):
         return {
             "status": "SUCCESS",
             "source": f"s3://{src_bucket}",
-            "destination": f"s3://{dst_bucket}/{current_key}",
+            "destination": f"s3://{dst_bucket}/{versioned_key}",
+            "standardPath": f"s3://{dst_bucket}/{current_key}",
             "new_rows_processed": len(new_df),
             "total_rows": len(combined_df),
-            "validation_errors": validation_errors if validation_errors else None
+            "validation_errors": validation_errors if validation_errors else None,
+            "version": version
         }
 
     except Exception as e:
@@ -319,9 +350,26 @@ def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[
         logger.error(error_msg)
         raise Exception(error_msg)
 
-def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str) -> Dict[str, Any]:
-    """Build or update the final dataset from all processed Parquet files"""
+def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str, version: Optional[str] = None) -> Dict[str, Any]:
+    """Build or update the final dataset from all processed Parquet files
+    
+    Args:
+        src_bucket: Source S3 bucket containing Parquet files
+        src_prefix: Prefix for Parquet files in the source bucket
+        dst_bucket: Destination S3 bucket for the dataset
+        dst_prefix: Prefix for the dataset in the destination bucket
+        version: Optional version identifier for the dataset (default: current timestamp)
+        
+    Returns:
+        Dictionary with operation results
+    """
     logger.info(f'Building final dataset from {src_bucket}/{src_prefix} to {dst_bucket}/{dst_prefix}')
+    
+    # Use provided version or generate a timestamp
+    if not version:
+        version = datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
+        
+    logger.info(f'Using version identifier: {version}')
     
     s3_client = boto3.client('s3')
     
@@ -394,10 +442,15 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
         combined_df.to_csv(csv_buffer, index=False)
         csv_buffer.seek(0)
         
-        # Upload the final datasets
-        parquet_key = f"{dst_prefix}final_dataset.parquet"
-        csv_key = f"{dst_prefix}final_dataset.csv"
+        # Upload the final datasets with version in filename
+        parquet_key = f"{dst_prefix}ncsoccer_games_{version}.parquet"
+        csv_key = f"{dst_prefix}ncsoccer_games_{version}.csv"
         
+        # Also create 'latest' versions for easy access
+        parquet_latest_key = f"{dst_prefix}ncsoccer_games_latest.parquet"
+        csv_latest_key = f"{dst_prefix}ncsoccer_games_latest.csv"
+        
+        # Upload versioned datasets
         s3_client.put_object(
             Body=parquet_buffer.getvalue(),
             Bucket=dst_bucket,
@@ -410,7 +463,22 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
             Key=csv_key
         )
         
-        logger.info(f'Successfully built and uploaded final dataset: {dst_bucket}/{parquet_key} and {dst_bucket}/{csv_key}')
+        # Upload 'latest' versions
+        s3_client.put_object(
+            Body=parquet_buffer.getvalue(),
+            Bucket=dst_bucket,
+            Key=parquet_latest_key
+        )
+        
+        s3_client.put_object(
+            Body=csv_buffer.getvalue(),
+            Bucket=dst_bucket,
+            Key=csv_latest_key
+        )
+        
+        logger.info(f'Successfully built and uploaded final dataset:')
+        logger.info(f' - Versioned files: {dst_bucket}/{parquet_key} and {dst_bucket}/{csv_key}')
+        logger.info(f' - Latest files: {dst_bucket}/{parquet_latest_key} and {dst_bucket}/{csv_latest_key}')
         
         return {
             'status': 'SUCCESS',
@@ -418,7 +486,10 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
             'filesProcessed': len(all_files),
             'totalRecords': len(combined_df),
             'parquetPath': f"s3://{dst_bucket}/{parquet_key}",
-            'csvPath': f"s3://{dst_bucket}/{csv_key}"
+            'csvPath': f"s3://{dst_bucket}/{csv_key}",
+            'latestParquetPath': f"s3://{dst_bucket}/{parquet_latest_key}",
+            'latestCsvPath': f"s3://{dst_bucket}/{csv_latest_key}",
+            'version': version
         }
     
     except Exception as e:
@@ -533,6 +604,11 @@ def lambda_handler(event, context):
 
         # Check if we should process all files or only recent ones
         force_full_reprocess = event.get('force_full_reprocess', False)
+        
+        # Get version for dataset versioning
+        version = event.get('version')
+        if version:
+            logger.info(f"Using provided version identifier: {version}")
 
         # Get environment variables with defaults
         src_bucket = event.get('src_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
@@ -550,7 +626,8 @@ def lambda_handler(event, context):
                 "src_prefix": src_prefix,
                 "dst_bucket": dst_bucket,
                 "dst_prefix": dst_prefix,
-                "force_full_reprocess": force_full_reprocess
+                "force_full_reprocess": force_full_reprocess,
+                "version": version
             }
 
         elif operation == "convert":
@@ -564,13 +641,13 @@ def lambda_handler(event, context):
                     "new_rows_processed": 0
                 }
 
-            # Convert files to Parquet
-            result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
+            # Convert files to Parquet with versioning
+            result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version)
             return result
             
         elif operation == "build_dataset":
-            # Build final dataset from all Parquet files
-            return build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix)
+            # Build final dataset from all Parquet files with versioning
+            return build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix, version)
             
         elif operation == "check_backfill_status":
             # Check status of backfill operation
@@ -578,7 +655,15 @@ def lambda_handler(event, context):
             
         elif operation == "process_all":
             # Process all files regardless of last modified time
-            return process_all(src_bucket, src_prefix, dst_bucket, dst_prefix)
+            result = process_all(src_bucket, src_prefix, dst_bucket, dst_prefix)
+            
+            # If successful, also build a versioned dataset
+            if result.get('status') == 'SUCCESS' and result.get('filesProcessed', 0) > 0:
+                logger.info("Building versioned dataset after processing all files")
+                dataset_result = build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix, version)
+                result['datasetResult'] = dataset_result
+                
+            return result
 
         else:
             raise ValueError(f"Unknown operation: {operation}")
