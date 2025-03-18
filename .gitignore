@@ -106,3 +106,7 @@ conversations/
 =*.*.*
 =*.*/
 =*.*test_output/
+
+# One-time utility scripts
+scripts/cleanup_s3.py
+scripts/restructure_data.py
