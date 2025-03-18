@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import os
 import json
 import re
+import time
 import urllib.parse
 from calendar import monthrange
 from ..pipeline.config import (
@@ -23,6 +24,16 @@ except (ImportError, ModuleNotFoundError):
     AGENT_AVAILABLE = False
 
 class ScheduleSpider(scrapy.Spider):
+    """
+    Unified soccer schedule spider that supports both single date and date range scraping.
+    
+    This spider can operate in two modes:
+    1. Single date mode: Scrapes data for a specific date using the year, month, day parameters
+    2. Date range mode: Scrapes data for a range of dates using start_* and end_* parameters
+    
+    All scraping is done using direct URL access to the print.aspx endpoint, which is more reliable
+    and efficient than UI navigation.
+    """
     name = 'schedule'
     allowed_domains = ['nc-soccer-hudson.ezleagues.ezfacility.com']
     base_url = 'https://nc-soccer-hudson.ezleagues.ezfacility.com'
@@ -56,25 +67,58 @@ class ScheduleSpider(scrapy.Spider):
         'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429, 403]
     }
 
-    def __init__(self, mode='day', year=None, month=None, day=None, skip_existing=True,
-                 html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-                 storage_type='s3', bucket_name=None, lookup_type='file', region='us-east-2',
-                 table_name=None, force_scrape=False, use_test_data=False, use_agent=True, 
+    def __init__(self, mode='day', year=None, month=None, day=None, 
+                 start_year=None, start_month=None, start_day=None, 
+                 end_year=None, end_month=None, end_day=None,
+                 skip_existing=True, html_prefix='data/html', json_prefix='data/json',
+                 lookup_file='data/lookup.json', storage_type='s3', bucket_name=None, 
+                 lookup_type='file', region='us-east-2', table_name=None,
+                 force_scrape=False, use_test_data=False, use_agent=True, 
                  anthropic_api_key=None, *args, **kwargs):
+        """
+        Initialize the spider with flexible date parameters.
+        
+        Args:
+            mode (str): Scrape mode - 'day' for single day, 'range' for date range
+            year, month, day: Target date for single day scraping (default: current date)
+            start_year, start_month, start_day: Start date for range scraping (default: 2007-01-01)
+            end_year, end_month, end_day: End date for range scraping (default: current date)
+            skip_existing (bool): Whether to skip already scraped dates
+            force_scrape (bool): Whether to force scrape even if already scraped
+            html_prefix, json_prefix: Directory prefixes for storage
+            other args: See documentation for details
+        """
         super(ScheduleSpider, self).__init__(*args, **kwargs)
-
-        # Parse configuration
-        self.target_year = int(year) if year else datetime.now().year
-        self.target_month = int(month) if month else datetime.now().month
-        self.target_day = int(day) if day else datetime.now().day
-
-        # Fix force_scrape handling - convert string to bool properly
+        
+        # Convert force_scrape from string to bool
         force_scrape = str(force_scrape).lower() == 'true'
         self.skip_existing = not force_scrape
         self.use_test_data = use_test_data
-
+        
+        # Now logic and default dates
+        now = datetime.now()
+        
+        # Determine scrape mode
+        self.scrape_mode = mode
+        
+        # Parse single day target configuration (for backward compatibility)
+        self.target_year = int(year) if year else now.year
+        self.target_month = int(month) if month else now.month
+        self.target_day = int(day) if day else now.day
+        
+        # Parse date range configuration
+        self.start_year = int(start_year) if start_year else 2007  # Default to 2007
+        self.start_month = int(start_month) if start_month else 1   # Default to January
+        self.start_day = int(start_day) if start_day else 1         # Default to first day
+        
+        self.end_year = int(end_year) if end_year else now.year
+        self.end_month = int(end_month) if end_month else now.month
+        self.end_day = int(end_day) if end_day else None  # None means last day of month
+        
+        # Statistics
+        self.start_time = time.time()
+        
         # Set up storage paths
-        # Use test_data prefix if use_test_data is True
         if use_test_data:
             self.html_prefix = 'test_data/html'
             self.json_prefix = 'test_data/json'
@@ -82,7 +126,7 @@ class ScheduleSpider(scrapy.Spider):
             self.html_prefix = html_prefix
             self.json_prefix = json_prefix
         self.lookup_file = lookup_file
-
+        
         # Create scraper configuration
         self.config = create_scraper_config(
             mode='day',  # Always use day mode, we'll handle multiple days externally
@@ -93,15 +137,10 @@ class ScheduleSpider(scrapy.Spider):
             storage_type=storage_type,
             bucket_name=bucket_name
         )
-
-        # Set up storage interface
+        
+        # Set up storage and lookup interfaces
         self.storage = get_storage_interface(self.config.storage_type, self.config.bucket_name, region=region)
-
-        # Set up lookup interface
         self.lookup = get_lookup_interface(lookup_type, lookup_file=lookup_file, region=region, table_name=table_name)
-
-        # Track current month to avoid unnecessary navigation
-        self.current_month_date = None
         
         # Set up score extraction agent if available and requested
         self.use_agent = use_agent and AGENT_AVAILABLE
@@ -115,6 +154,12 @@ class ScheduleSpider(scrapy.Spider):
             except Exception as e:
                 self.logger.error(f"Failed to initialize score extraction agent: {e}")
                 self.use_agent = False
+                
+        # Log scrape configuration
+        if self.scrape_mode == 'range':
+            self.logger.info(f"Date range scrape: {self.start_year}-{self.start_month:02d}-{self.start_day:02d} to {self.end_year}-{self.end_month:02d}-{self.end_day or 'last day'}")
+        else:
+            self.logger.info(f"Single date scrape: {self.target_year}-{self.target_month:02d}-{self.target_day:02d}")
 
     def _is_date_scraped(self, date):
         """Check if a date has already been scraped using the lookup data"""
@@ -142,53 +187,111 @@ class ScheduleSpider(scrapy.Spider):
                
         return url
 
+    def generate_dates_to_scrape(self):
+        """Generate a list of dates to scrape based on start and end parameters."""
+        import calendar
+        
+        dates = []
+        
+        # Convert parameters to datetime objects
+        start_day = int(getattr(self, 'start_day', 1))
+        
+        start_date = datetime(self.start_year, self.start_month, start_day)
+        
+        # Calculate end date (use last day of month if not specified)
+        if hasattr(self, 'end_day') and self.end_day:
+            end_date = datetime(self.end_year, self.end_month, int(self.end_day))
+        else:
+            # Get last day of the end month
+            last_day = calendar.monthrange(self.end_year, self.end_month)[1]
+            end_date = datetime(self.end_year, self.end_month, last_day)
+        
+        # Generate all dates in the range
+        current_date = start_date
+        while current_date <= end_date:
+            dates.append(current_date)
+            current_date += timedelta(days=1)
+            
+        self.logger.info(f"Generated {len(dates)} dates to scrape from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        return dates
+        
     def start_requests(self):
-        """Use direct date access method to get schedule data"""
+        """Use direct date access method to get schedule data for either a single date or a date range"""
         try:
-            # Check if date is already scraped
-            target_date = datetime(self.target_year, self.target_month, self.target_day)
-            if self.skip_existing and self._is_date_scraped(target_date):
-                self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
-                return
-
-            # Try to load local HTML file first, regardless of test mode
-            date_str = f"{self.target_year}-{self.target_month:02d}-{self.target_day:02d}"
-            html_path = os.path.join(self.html_prefix, f"{date_str}.html")
-            try:
-                if os.path.exists(html_path):
-                    self.logger.info(f"Loading HTML from local file: {html_path}")
-                    with open(html_path, 'r', encoding='utf-8') as f:
-                        html_content = f.read()
-                    request = Request(url=self.start_urls[0])
-                    response = HtmlResponse(
-                        url=self.start_urls[0],
-                        body=html_content.encode('utf-8'),
-                        encoding='utf-8',
-                        request=request
+            if self.scrape_mode == 'range':
+                # Date range mode (formerly BackfillSpider functionality)
+                all_dates = self.generate_dates_to_scrape()
+                self.logger.info(f"Starting direct URL scrape for {len(all_dates)} dates")
+                
+                # Process each date directly using direct URL access
+                for target_date in all_dates:
+                    date_str = target_date.strftime('%Y-%m-%d')
+                    
+                    # Skip dates already scraped if flag is set
+                    if self.skip_existing and self._is_date_scraped(target_date):
+                        self.logger.info(f"Skipping date {date_str} (already scraped)")
+                        continue
+                        
+                    # Use direct URL access for each date
+                    direct_url = self.get_direct_date_url(target_date)
+                    self.logger.info(f"Scheduling scrape for {date_str} using direct URL access")
+                    
+                    yield scrapy.Request(
+                        url=direct_url,
+                        callback=self.parse_schedule,
+                        meta={
+                            'date': date_str,
+                            'expected_date': target_date,
+                            'direct_access': True  # Flag to indicate direct access
+                        },
+                        dont_filter=True,
+                        errback=self.handle_error
                     )
-                    response.meta['date'] = date_str
-                    yield from self.parse_schedule(response)
+            else:
+                # Single date mode (original ScheduleSpider functionality)
+                target_date = datetime(self.target_year, self.target_month, self.target_day)
+                if self.skip_existing and self._is_date_scraped(target_date):
+                    self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
                     return
-            except Exception as e:
-                self.logger.error(f"Failed to load HTML: {e}")
-                self.logger.info("Proceeding with network request...")
-            
-            # Use the direct date access method
-            self.logger.info(f"Fetching data for date {target_date.strftime('%Y-%m-%d')} using direct URL access")
-            direct_url = self.get_direct_date_url(target_date)
-            self.logger.info(f"Direct URL: {direct_url}")
-            
-            yield scrapy.Request(
-                url=direct_url,
-                callback=self.parse_schedule,
-                meta={
-                    'date': date_str,
-                    'expected_date': target_date,
-                    'direct_access': True  # Flag to indicate we're using direct access
-                },
-                dont_filter=True,
-                errback=self.handle_error
-            )
+
+                # Try to load local HTML file first, regardless of test mode
+                date_str = f"{self.target_year}-{self.target_month:02d}-{self.target_day:02d}"
+                html_path = os.path.join(self.html_prefix, f"{date_str}.html")
+                try:
+                    if os.path.exists(html_path):
+                        self.logger.info(f"Loading HTML from local file: {html_path}")
+                        with open(html_path, 'r', encoding='utf-8') as f:
+                            html_content = f.read()
+                        request = Request(url=self.start_urls[0])
+                        response = HtmlResponse(
+                            url=self.start_urls[0],
+                            body=html_content.encode('utf-8'),
+                            encoding='utf-8',
+                            request=request
+                        )
+                        response.meta['date'] = date_str
+                        yield from self.parse_schedule(response)
+                        return
+                except Exception as e:
+                    self.logger.error(f"Failed to load HTML: {e}")
+                    self.logger.info("Proceeding with network request...")
+                
+                # Use the direct date access method
+                self.logger.info(f"Fetching data for date {target_date.strftime('%Y-%m-%d')} using direct URL access")
+                direct_url = self.get_direct_date_url(target_date)
+                self.logger.info(f"Direct URL: {direct_url}")
+                
+                yield scrapy.Request(
+                    url=direct_url,
+                    callback=self.parse_schedule,
+                    meta={
+                        'date': date_str,
+                        'expected_date': target_date,
+                        'direct_access': True  # Flag to indicate we're using direct access
+                    },
+                    dont_filter=True,
+                    errback=self.handle_error
+                )
         except Exception as e:
             self.logger.error(f"Error in start_requests: {e}")
             raise RuntimeError(f"Error in start_requests: {e}")
