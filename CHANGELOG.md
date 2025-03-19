@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.4] - 2025-03-19
+### Fixed
+- Fixed timezone handling issues in Parquet conversion process
+- Added consistent handling of datetime objects throughout the processing pipeline
+- Updated data models to properly handle timezone information
+- Added robust error handling for Parquet conversion
+- Added fallback mechanism for Parquet schema issues
+
 ## [2.10.3] - 2025-03-19
 ### Fixed
 - Fixed string formatting issue in scraper Lambda function that caused "Unknown format code 'd' for object of type 'str'" error

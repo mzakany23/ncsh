@@ -6,7 +6,7 @@ import boto3
 import pandas as pd
 import pyarrow as pa
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from models import GameData, Game
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -36,7 +36,7 @@ def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str
                             type=record.get('type'),
                             status=record.get('status'),
                             headers=record.get('headers'),
-                            timestamp=record.get('timestamp', datetime.utcnow())
+                            timestamp=record.get('timestamp', datetime.now(timezone.utc))
                         )
                         # Convert to flat dictionary structure
                         validated_data.append(game_data.to_dict())
@@ -84,7 +84,16 @@ def get_last_processed_timestamp(bucket: str, prefix: str) -> Optional[datetime]
         timestamp_str = data.get('timestamp')
 
         if timestamp_str:
-            last_processed = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            # Parse with proper timezone handling
+            if 'Z' in timestamp_str:
+                last_processed = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            else:
+                last_processed = datetime.fromisoformat(timestamp_str)
+
+            # Ensure timezone-aware
+            if last_processed.tzinfo is None:
+                last_processed = last_processed.replace(tzinfo=timezone.utc)
+
             logger.info(f"Last processing run was at {last_processed}")
             return last_processed
 
@@ -95,7 +104,7 @@ def get_last_processed_timestamp(bucket: str, prefix: str) -> Optional[datetime]
 
     # If no marker file or errors, default to process only files from the last 2 days
     # This is a safety measure to avoid reprocessing the entire dataset
-    default_time = datetime.utcnow() - timedelta(days=2)
+    default_time = datetime.now(timezone.utc) - timedelta(days=2)
     logger.info(f"Using default last processed time: {default_time}")
     return default_time
 
@@ -107,9 +116,9 @@ def update_last_processed_timestamp(bucket: str, prefix: str) -> None:
     s3 = boto3.client("s3")
     marker_key = f"{prefix.rstrip('/')}/last_processed.json"
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     data = {
-        'timestamp': now.isoformat() + 'Z',
+        'timestamp': now.isoformat(),
         'status': 'success'
     }
 
@@ -143,7 +152,7 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
 
     # Use provided version or generate a timestamp
     if not version:
-        version = datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
+        version = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
 
     logger.info(f'Using version identifier: {version}')
 
@@ -197,9 +206,9 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
         current_key = f"{dst_prefix}data.parquet"
         existing_df = get_existing_dataset(dst_bucket, current_key)
 
-        # Define PyArrow schema with more flexible typing
+        # Define PyArrow schema with updated timestamp handling
         schema = pa.schema([
-            ('date', pa.timestamp('ns', True)),  # Make timestamp nullable
+            ('date', pa.timestamp('ns')),  # Make timestamp nullable
             ('home_team', pa.string()),
             ('away_team', pa.string()),
             ('home_score', pa.int64()),
@@ -261,25 +270,45 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
                 raise
             logger.info("No existing Parquet file to backup")
 
-        # Ensure date column is in datetime format before writing
+        # Ensure date column is in datetime format with proper timezone handling
         try:
-            if 'date' in new_df.columns and new_df['date'].dtype == 'object':
-                logger.info("Converting date column to datetime format before writing Parquet")
-                new_df['date'] = pd.to_datetime(new_df['date'], errors='coerce')
+            if 'date' in combined_df.columns:
+                logger.info("Converting date column to datetime format with consistent timezone")
+                combined_df['date'] = pd.to_datetime(combined_df['date'], errors='coerce')
 
-            if not existing_df.empty and 'date' in existing_df.columns and existing_df['date'].dtype == 'object':
-                logger.info("Converting date column in existing data to datetime format")
-                existing_df['date'] = pd.to_datetime(existing_df['date'], errors='coerce')
+                # Make sure all datetime fields have the same timezone handling (or no timezone)
+                combined_df['date'] = combined_df['date'].dt.tz_localize(None)
+
+            if 'timestamp' in combined_df.columns:
+                logger.info("Ensuring timestamp column has consistent timezone")
+                combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce')
+                combined_df['timestamp'] = combined_df['timestamp'].dt.tz_localize(None)
+
         except Exception as e:
-            logger.warning(f"Error converting dates: {str(e)}. Will proceed with default conversion")
+            logger.warning(f"Error standardizing timezone info: {str(e)}. Will try to proceed.")
 
-        # Write the combined data
+        # Write the combined data with explicit timezone handling
         out_buffer = io.BytesIO()
-        combined_df.to_parquet(
-            out_buffer,
-            index=False,
-            schema=schema
-        )
+        logger.info("Converting DataFrame to Parquet format")
+
+        try:
+            combined_df.to_parquet(
+                out_buffer,
+                index=False,
+                schema=schema
+            )
+        except Exception as e:
+            logger.error(f"Error in to_parquet conversion: {str(e)}")
+
+            # Try alternative approach without schema if needed
+            logger.info("Trying alternative Parquet conversion approach")
+            out_buffer = io.BytesIO()
+            combined_df.to_parquet(
+                out_buffer,
+                index=False,
+                engine='pyarrow'
+            )
+
         out_buffer.seek(0)
 
         # Upload combined Parquet file (versioned)
@@ -379,7 +408,7 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
 
     # Use provided version or generate a timestamp
     if not version:
-        version = datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
+        version = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H-%M-%S")
 
     logger.info(f'Using version identifier: {version}')
 
