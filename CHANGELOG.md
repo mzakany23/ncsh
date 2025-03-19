@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2025-03-19
+### Changed
+- Completely refactored Step Function workflow to use a standardized input approach
+- Added `ValidateAndNormalizeInput` state to normalize all input formats into a consistent structure
+- Consolidated parameter handling to reduce redundancy and potential errors
+- Standardized storage parameters to ensure consistent bucket/prefix handling
+- Created unified execution flow with proper branch handling
+- Simplified maintenance with consistent parameter access patterns
+
+### Fixed
+- Fixed operation flow inconsistencies across different operation modes
+- Fixed parameter preservation issues that caused failures in backfill operations
+- Resolved path inconsistencies between scraping and processing Lambda functions
+- Added fallback defaults for all parameters to make input more robust
+
+## [2.10.7] - 2025-03-19
+### Fixed
+- Fixed MergeBackfillParameters state to preserve S3 bucket and prefix information
+- Ensured consistent parameter handling in backfill workflow path
+- Corrected parameter path for backfill operations in unified workflow
+
 ## [2.10.6] - 2025-03-19
 ### Fixed
 - Fixed backfill operation in unified workflow by adding parameter preservation between states

@@ -1,100 +1,96 @@
 {
-  "Comment": "NC Soccer Unified Workflow - Handles daily, monthly, backfill, and configurable operations",
-  "StartAt": "DetermineOperationType",
+  "Comment": "NC Soccer Unified Workflow - Using a standardized input approach for all operations",
+  "StartAt": "ValidateAndNormalizeInput",
   "States": {
+    "ValidateAndNormalizeInput": {
+      "Type": "Pass",
+      "Parameters": {
+        "operation.$": "$.operation",
+        "parameters": {
+          "date_range": {
+            "start_date.$": "States.JsonMerge($.parameters.start_date, States.JsonMerge($.parameters.startDate, States.JsonMerge($.date_range.start_date, null)))",
+            "end_date.$": "States.JsonMerge($.parameters.end_date, States.JsonMerge($.parameters.endDate, States.JsonMerge($.date_range.end_date, null)))"
+          },
+          "specific_dates.$": "States.JsonMerge($.parameters.specific_dates, States.JsonMerge($.specific_dates, States.Array()))",
+          "force_scrape.$": "States.JsonMerge($.parameters.force_scrape, true)",
+          "force_full_reprocess.$": "States.JsonMerge($.force_full_reprocess, false)",
+          "date_components": {
+            "day.$": "States.JsonMerge($.parameters.day, null)",
+            "month.$": "States.JsonMerge($.parameters.month, null)",
+            "year.$": "States.JsonMerge($.parameters.year, null)"
+          },
+          "options": {
+            "useNewProcessingCode.$": "States.JsonMerge($.parameters.useNewProcessingCode, true)"
+          }
+        },
+        "storage": {
+          "src_bucket.$": "States.JsonMerge($.src_bucket, \"ncsh-app-data\")",
+          "src_prefix.$": "States.JsonMerge($.src_prefix, \"data/json/\")",
+          "dst_bucket.$": "States.JsonMerge($.dst_bucket, \"ncsh-app-data\")",
+          "dst_prefix.$": "States.JsonMerge($.dst_prefix, \"data/parquet/\")",
+          "version.$": "States.JsonMerge($.version, \"latest\")"
+        }
+      },
+      "Next": "DetermineOperationType"
+    },
+
     "DetermineOperationType": {
       "Type": "Choice",
       "Choices": [
         {
           "Variable": "$.operation",
           "StringEquals": "daily",
-          "Next": "ConfigureDailyScrape"
+          "Next": "ConfigureDailyMode"
         },
         {
           "Variable": "$.operation",
           "StringEquals": "monthly",
-          "Next": "ConfigureMonthlyScrape"
+          "Next": "ConfigureMonthlyMode"
         },
         {
           "Variable": "$.operation",
           "StringEquals": "backfill",
-          "Next": "ConfigureBackfill"
+          "Next": "ConfigureBackfillMode"
         },
         {
           "Variable": "$.operation",
           "StringEquals": "configurable",
-          "Next": "ConfigurableDateScrape"
+          "Next": "ConfigureConfigurableMode"
         }
       ],
       "Default": "HandleInvalidOperation"
     },
 
-    "ConfigureDailyScrape": {
+    "ConfigureDailyMode": {
       "Type": "Pass",
       "Result": {
         "mode": "day",
         "backfill_mode": false
       },
       "ResultPath": "$.config",
-      "Next": "MergeDailyParameters"
+      "Next": "PrepareExecutionParameters"
     },
 
-    "MergeDailyParameters": {
-      "Type": "Pass",
-      "Parameters": {
-        "day.$": "$.parameters.day",
-        "month.$": "$.parameters.month",
-        "year.$": "$.parameters.year",
-        "force_scrape.$": "$.parameters.force_scrape",
-        "mode.$": "$.config.mode",
-        "backfill_mode.$": "$.config.backfill_mode"
-      },
-      "Next": "RunScraper"
-    },
-
-    "ConfigureMonthlyScrape": {
+    "ConfigureMonthlyMode": {
       "Type": "Pass",
       "Result": {
         "mode": "month",
         "backfill_mode": false
       },
       "ResultPath": "$.config",
-      "Next": "MergeMonthlyParameters"
+      "Next": "PrepareExecutionParameters"
     },
 
-    "MergeMonthlyParameters": {
-      "Type": "Pass",
-      "Parameters": {
-        "month.$": "$.parameters.month",
-        "year.$": "$.parameters.year",
-        "force_scrape.$": "$.parameters.force_scrape",
-        "mode.$": "$.config.mode",
-        "backfill_mode.$": "$.config.backfill_mode"
-      },
-      "Next": "RunScraper"
-    },
-
-    "ConfigureBackfill": {
+    "ConfigureBackfillMode": {
       "Type": "Pass",
       "Result": {
         "backfill_mode": true
       },
       "ResultPath": "$.config",
-      "Next": "MergeBackfillParameters"
+      "Next": "PrepareExecutionParameters"
     },
 
-    "MergeBackfillParameters": {
-      "Type": "Pass",
-      "Parameters": {
-        "startDate.$": "$.parameters.startDate",
-        "endDate.$": "$.parameters.endDate",
-        "useNewProcessingCode.$": "$.parameters.useNewProcessingCode",
-        "backfill_mode.$": "$.config.backfill_mode"
-      },
-      "Next": "RunBackfill"
-    },
-
-    "ConfigurableDateScrape": {
+    "ConfigureConfigurableMode": {
       "Type": "Pass",
       "Result": {
         "mode": "configurable",
@@ -102,28 +98,56 @@
         "timestamp": "${format(timestamp(), 'yyyy-MM-dd-HH-mm-ss')}"
       },
       "ResultPath": "$.config",
-      "Next": "MergeConfigurableParameters"
+      "Next": "PrepareExecutionParameters"
     },
 
-    "MergeConfigurableParameters": {
+    "PrepareExecutionParameters": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.config.backfill_mode",
+          "BooleanEquals": true,
+          "Next": "PrepareBackfillParameters"
+        }
+      ],
+      "Default": "PrepareStandardParameters"
+    },
+
+    "PrepareStandardParameters": {
       "Type": "Pass",
       "Parameters": {
-        "scrape_mode": "date_range",
-        "start_date.$": "States.JsonMerge($.date_range.start_date, $.parameters.specific_dates[0])",
-        "end_date.$": "States.JsonMerge($.date_range.end_date, $.parameters.specific_dates[-1])",
-        "specific_dates.$": "States.JsonMerge($.specific_dates, $.parameters.specific_dates)",
-        "force_scrape.$": "$.parameters.force_scrape",
-        "force_full_reprocess.$": "$.force_full_reprocess",
-        "version.$": "$.version",
-        "src_bucket.$": "$.src_bucket",
-        "src_prefix.$": "$.src_prefix",
-        "dst_bucket.$": "$.dst_bucket",
-        "dst_prefix.$": "$.dst_prefix",
-        "mode.$": "$.config.mode",
-        "backfill_mode.$": "$.config.backfill_mode"
+        "standardized_input": {
+          "mode.$": "$.config.mode",
+          "backfill_mode.$": "$.config.backfill_mode",
+          "day.$": "$.parameters.date_components.day",
+          "month.$": "$.parameters.date_components.month",
+          "year.$": "$.parameters.date_components.year",
+          "start_date.$": "$.parameters.date_range.start_date",
+          "end_date.$": "$.parameters.date_range.end_date",
+          "specific_dates.$": "$.parameters.specific_dates",
+          "force_scrape.$": "$.parameters.force_scrape"
+        },
+        "storage.$": "$.storage",
+        "operation.$": "$.operation",
+        "config.$": "$.config"
       },
-      "ResultPath": "$.merged_input",
       "Next": "RunScraper"
+    },
+
+    "PrepareBackfillParameters": {
+      "Type": "Pass",
+      "Parameters": {
+        "standardized_input": {
+          "backfill_mode.$": "$.config.backfill_mode",
+          "startDate.$": "$.parameters.date_range.start_date",
+          "endDate.$": "$.parameters.date_range.end_date",
+          "useNewProcessingCode.$": "$.parameters.options.useNewProcessingCode"
+        },
+        "storage.$": "$.storage",
+        "operation.$": "$.operation",
+        "config.$": "$.config"
+      },
+      "Next": "RunBackfill"
     },
 
     "RunScraper": {
@@ -131,7 +155,7 @@
       "Resource": "arn:aws:states:::lambda:invoke",
       "Parameters": {
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_scraper",
-        "Payload.$": "$.merged_input"
+        "Payload.$": "$.standardized_input"
       },
       "Retry": [
         {
@@ -147,22 +171,8 @@
           "Next": "HandleScraperFailure"
         }
       ],
-      "ResultPath": "$.scraper_result",
-      "Next": "PreserveParametersAfterScraper"
-    },
-
-    "PreserveParametersAfterScraper": {
-      "Type": "Pass",
-      "Parameters": {
-        "scraper_result.$": "$.scraper_result",
-        "src_bucket.$": "$.src_bucket",
-        "src_prefix.$": "$.src_prefix",
-        "dst_bucket.$": "$.dst_bucket",
-        "dst_prefix.$": "$.dst_prefix",
-        "version.$": "$.version",
-        "force_full_reprocess.$": "$.force_full_reprocess"
-      },
-      "Next": "ListJSONFiles"
+      "ResultPath": "$.execution_result",
+      "Next": "ProcessFiles"
     },
 
     "RunBackfill": {
@@ -170,7 +180,7 @@
       "Resource": "arn:aws:states:::lambda:invoke",
       "Parameters": {
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_backfill",
-        "Payload.$": "$"
+        "Payload.$": "$.standardized_input"
       },
       "Retry": [
         {
@@ -186,20 +196,17 @@
           "Next": "HandleBackfillFailure"
         }
       ],
-      "ResultPath": "$.backfill_result",
-      "Next": "PreserveParametersAfterBackfill"
+      "ResultPath": "$.execution_result",
+      "Next": "ProcessFiles"
     },
 
-    "PreserveParametersAfterBackfill": {
+    "ProcessFiles": {
       "Type": "Pass",
       "Parameters": {
-        "backfill_result.$": "$.backfill_result",
-        "src_bucket.$": "$.src_bucket",
-        "src_prefix.$": "$.src_prefix",
-        "dst_bucket.$": "$.dst_bucket",
-        "dst_prefix.$": "$.dst_prefix",
-        "version.$": "$.version",
-        "force_full_reprocess.$": "$.force_full_reprocess"
+        "execution_result.$": "$.execution_result",
+        "storage.$": "$.storage",
+        "operation.$": "$.operation",
+        "config.$": "$.config"
       },
       "Next": "ListJSONFiles"
     },
@@ -211,12 +218,12 @@
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
         "Payload": {
           "operation": "list_files",
-          "src_bucket.$": "$.src_bucket",
-          "src_prefix.$": "$.src_prefix",
-          "dst_bucket.$": "$.dst_bucket",
-          "dst_prefix.$": "$.dst_prefix",
-          "force_full_reprocess.$": "$.force_full_reprocess",
-          "version.$": "$.version"
+          "src_bucket.$": "$.storage.src_bucket",
+          "src_prefix.$": "$.storage.src_prefix",
+          "dst_bucket.$": "$.storage.dst_bucket",
+          "dst_prefix.$": "$.storage.dst_prefix",
+          "force_full_reprocess.$": "$.parameters.force_full_reprocess",
+          "version.$": "$.storage.version"
         }
       },
       "Retry": [
@@ -250,12 +257,12 @@
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
         "Payload": {
           "operation": "convert",
-          "src_bucket.$": "$.src_bucket",
-          "src_prefix.$": "$.src_prefix",
-          "dst_bucket.$": "$.dst_bucket",
-          "dst_prefix.$": "$.dst_prefix",
+          "src_bucket.$": "$.storage.src_bucket",
+          "src_prefix.$": "$.storage.src_prefix",
+          "dst_bucket.$": "$.storage.dst_bucket",
+          "dst_prefix.$": "$.storage.dst_prefix",
           "files.$": "$.listing.Payload.files",
-          "version.$": "$.version"
+          "version.$": "$.storage.version"
         }
       },
       "Retry": [
@@ -277,11 +284,11 @@
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
         "Payload": {
           "operation": "build_dataset",
-          "src_bucket.$": "$.dst_bucket",
-          "src_prefix.$": "$.dst_prefix",
-          "dst_bucket.$": "$.dst_bucket",
-          "dst_prefix.$": "$.dst_prefix",
-          "version.$": "$.version"
+          "src_bucket.$": "$.storage.dst_bucket",
+          "src_prefix.$": "$.storage.dst_prefix",
+          "dst_bucket.$": "$.storage.dst_bucket",
+          "dst_prefix.$": "$.storage.dst_prefix",
+          "version.$": "$.storage.version"
         }
       },
       "Retry": [
