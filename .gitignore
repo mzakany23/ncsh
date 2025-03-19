@@ -38,8 +38,10 @@ venv.bak/
 
 # Project specific
 .scrapy/
-data/
+/data/
 test_data/
+!tests/data/
+!tests/data/html/
 !tests/data/html/2024-03-01.html
 conversation_history.txt
 *-ui.json
