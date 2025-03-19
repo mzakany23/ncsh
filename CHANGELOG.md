@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.5] - 2025-03-19
+### Fixed
+- Fixed timestamp handling in build_dataset function when creating final Parquet files
+- Added more robust error handling and fallback mechanisms for Parquet conversion
+- Improved schema definition to properly handle timestamp objects
+- Added JSON-based intermediate conversion for problematic timestamp fields
+
 ## [2.10.4] - 2025-03-19
 ### Fixed
 - Fixed timezone handling issues in Parquet conversion process
