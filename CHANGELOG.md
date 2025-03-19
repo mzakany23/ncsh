@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.3] - 2025-03-19
+### Fixed
+- Fixed string formatting issue in scraper Lambda function that caused "Unknown format code 'd' for object of type 'str'" error
+- Added proper type conversion for day, month, and year parameters in lambda_handler to ensure they're passed as integers
+- Added unit tests to verify proper handling of string parameters from Step Function input
+
 ## [2.10.2] - 2025-03-19
 ### Fixed
 - Fixed date conversion issue in processing Lambda that caused workflow failures
