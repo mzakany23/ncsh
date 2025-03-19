@@ -197,9 +197,9 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
         current_key = f"{dst_prefix}data.parquet"
         existing_df = get_existing_dataset(dst_bucket, current_key)
 
-        # Define PyArrow schema
+        # Define PyArrow schema with more flexible typing
         schema = pa.schema([
-            ('date', pa.timestamp('ns')),
+            ('date', pa.timestamp('ns', True)),  # Make timestamp nullable
             ('home_team', pa.string()),
             ('away_team', pa.string()),
             ('home_score', pa.int64()),
@@ -260,6 +260,18 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
             if e.response['Error']['Code'] != '404':
                 raise
             logger.info("No existing Parquet file to backup")
+
+        # Ensure date column is in datetime format before writing
+        try:
+            if 'date' in new_df.columns and new_df['date'].dtype == 'object':
+                logger.info("Converting date column to datetime format before writing Parquet")
+                new_df['date'] = pd.to_datetime(new_df['date'], errors='coerce')
+
+            if not existing_df.empty and 'date' in existing_df.columns and existing_df['date'].dtype == 'object':
+                logger.info("Converting date column in existing data to datetime format")
+                existing_df['date'] = pd.to_datetime(existing_df['date'], errors='coerce')
+        except Exception as e:
+            logger.warning(f"Error converting dates: {str(e)}. Will proceed with default conversion")
 
         # Write the combined data
         out_buffer = io.BytesIO()
@@ -428,8 +440,39 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
         # Use a combination of fields that should be unique for each game
         combined_df.drop_duplicates(subset=['date', 'field', 'home_team', 'away_team', 'time'], inplace=True)
 
-        # Sort by date and time
-        combined_df.sort_values(by=['date', 'time'], inplace=True)
+        # Ensure date column is in datetime format
+        logger.info(f'Ensuring date column is in proper datetime format')
+
+        try:
+            # First check if we need to convert the date column
+            if combined_df['date'].dtype == 'object':
+                logger.info("Date column is string type, converting to datetime")
+                # Try to convert string dates to datetime
+                combined_df['date'] = pd.to_datetime(combined_df['date'], errors='coerce')
+                logger.info(f'Successfully converted date column to datetime')
+
+            # Now sort by date and time
+            logger.info("Sorting by date and time")
+            combined_df.sort_values(by=['date', 'time'], inplace=True, na_position='last')
+
+        except Exception as e:
+            logger.error(f"Error handling date column: {str(e)}")
+            logger.info("Creating a datetime_sort column for sorting purposes")
+
+            try:
+                # If direct conversion fails, create a temporary column for sorting
+                combined_df['datetime_sort'] = pd.to_datetime(combined_df['date'], errors='coerce')
+
+                # Sort by the new column and time
+                combined_df.sort_values(by=['datetime_sort', 'time'], inplace=True, na_position='last')
+
+                # Drop the temporary sorting column
+                combined_df.drop(columns=['datetime_sort'], inplace=True)
+
+                logger.info("Sorted data using alternative method")
+            except Exception as sort_err:
+                logger.error(f"Error sorting data: {str(sort_err)}")
+                logger.info("Proceeding without sorting")
 
         logger.info(f'Final dataset size after deduplication: {len(combined_df)}')
 
