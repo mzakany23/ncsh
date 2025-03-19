@@ -61,7 +61,7 @@ resource "aws_cloudwatch_event_rule" "daily_scrape" {
 resource "aws_cloudwatch_event_target" "daily_scrape_target" {
   rule      = aws_cloudwatch_event_rule.daily_scrape.name
   target_id = "NCSoccerDailyScrape"
-  arn       = aws_sfn_state_machine.ncsoccer_workflow.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
@@ -85,7 +85,7 @@ resource "aws_cloudwatch_event_rule" "daily_process" {
 resource "aws_cloudwatch_event_target" "daily_process_target" {
   rule      = aws_cloudwatch_event_rule.daily_process.name
   target_id = "NCSoccerDailyProcess"
-  arn       = aws_sfn_state_machine.processing.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
@@ -109,7 +109,7 @@ resource "aws_cloudwatch_event_rule" "monthly_scrape" {
 resource "aws_cloudwatch_event_target" "monthly_scrape_target" {
   rule      = aws_cloudwatch_event_rule.monthly_scrape.name
   target_id = "NCSoccerMonthlyScrape"
-  arn       = aws_sfn_state_machine.ncsoccer_workflow.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
@@ -132,7 +132,7 @@ resource "aws_cloudwatch_event_rule" "monthly_process" {
 resource "aws_cloudwatch_event_target" "monthly_process_target" {
   rule      = aws_cloudwatch_event_rule.monthly_process.name
   target_id = "NCSoccerMonthlyProcess"
-  arn       = aws_sfn_state_machine.processing.arn
+  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.eventbridge_step_function_role.arn
 
   input = jsonencode({
@@ -159,7 +159,7 @@ resource "aws_cloudwatch_metric_alarm" "scraper_failure_alarm" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    StateMachineArn = aws_sfn_state_machine.ncsoccer_workflow.arn
+    StateMachineArn = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   }
 }
 
@@ -178,7 +178,7 @@ resource "aws_cloudwatch_metric_alarm" "processing_failure_alarm" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    StateMachineArn = aws_sfn_state_machine.processing.arn
+    StateMachineArn = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   }
 }
 
