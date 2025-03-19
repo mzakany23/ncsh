@@ -469,50 +469,142 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
         # Use a combination of fields that should be unique for each game
         combined_df.drop_duplicates(subset=['date', 'field', 'home_team', 'away_team', 'time'], inplace=True)
 
-        # Ensure date column is in datetime format
-        logger.info(f'Ensuring date column is in proper datetime format')
-
+        # Ensure datetime columns have consistent timezone handling
         try:
-            # First check if we need to convert the date column
-            if combined_df['date'].dtype == 'object':
-                logger.info("Date column is string type, converting to datetime")
-                # Try to convert string dates to datetime
+            logger.info("Standardizing datetime columns for consistent Parquet handling")
+
+            # Handle date column
+            if 'date' in combined_df.columns:
+                logger.info("Ensuring date column is properly formatted")
                 combined_df['date'] = pd.to_datetime(combined_df['date'], errors='coerce')
-                logger.info(f'Successfully converted date column to datetime')
+                # Make timezone-naive for Parquet compatibility
+                if hasattr(combined_df['date'], 'dt'):
+                    combined_df['date'] = combined_df['date'].dt.tz_localize(None)
+
+            # Handle timestamp column
+            if 'timestamp' in combined_df.columns:
+                logger.info("Ensuring timestamp column is properly formatted")
+                combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce')
+                # Make timezone-naive for Parquet compatibility
+                if hasattr(combined_df['timestamp'], 'dt'):
+                    combined_df['timestamp'] = combined_df['timestamp'].dt.tz_localize(None)
 
             # Now sort by date and time
             logger.info("Sorting by date and time")
             combined_df.sort_values(by=['date', 'time'], inplace=True, na_position='last')
 
         except Exception as e:
-            logger.error(f"Error handling date column: {str(e)}")
-            logger.info("Creating a datetime_sort column for sorting purposes")
+            logger.error(f"Error handling datetime columns: {str(e)}")
+            logger.info("Attempting alternative approach for timestamp handling")
 
             try:
-                # If direct conversion fails, create a temporary column for sorting
-                combined_df['datetime_sort'] = pd.to_datetime(combined_df['date'], errors='coerce')
+                # If direct conversion fails, try an alternate approach
+                # First convert any problematic columns to string
+                if 'timestamp' in combined_df.columns:
+                    # Check the column type and try different approaches based on that
+                    col_type = combined_df['timestamp'].dtype
+                    logger.info(f"Timestamp column data type: {col_type}")
 
-                # Sort by the new column and time
-                combined_df.sort_values(by=['datetime_sort', 'time'], inplace=True, na_position='last')
+                    if pd.api.types.is_datetime64_any_dtype(col_type):
+                        logger.info("Converting timestamp from datetime to string")
+                        combined_df['timestamp'] = combined_df['timestamp'].astype(str)
+                    else:
+                        logger.info("Attempting to parse timestamp strings")
+                        # Parse strings to datetime then back to strings to ensure consistency
+                        combined_df['timestamp'] = pd.to_datetime(combined_df['timestamp'], errors='coerce').astype(str)
 
-                # Drop the temporary sorting column
-                combined_df.drop(columns=['datetime_sort'], inplace=True)
+                # Also handle the date column if it exists
+                if 'date' in combined_df.columns:
+                    logger.info("Creating a datetime_sort column for sorting purposes")
+                    # Create a temporary column for sorting
+                    combined_df['datetime_sort'] = pd.to_datetime(combined_df['date'], errors='coerce')
+                    # Sort by the new column and time
+                    combined_df.sort_values(by=['datetime_sort', 'time'], inplace=True, na_position='last')
+                    # Drop the temporary sorting column
+                    combined_df.drop(columns=['datetime_sort'], inplace=True)
 
-                logger.info("Sorted data using alternative method")
-            except Exception as sort_err:
-                logger.error(f"Error sorting data: {str(sort_err)}")
-                logger.info("Proceeding without sorting")
+                logger.info("Alternative timestamp handling approach applied")
+            except Exception as alt_err:
+                logger.error(f"Error in alternative timestamp handling approach: {str(alt_err)}")
+                logger.info("Proceeding with original data without timestamp modifications")
 
         logger.info(f'Final dataset size after deduplication: {len(combined_df)}')
 
-        # Save as both Parquet and CSV
-        parquet_buffer = io.BytesIO()
-        combined_df.to_parquet(parquet_buffer)
-        parquet_buffer.seek(0)
+        # Define schema with consistent timestamp handling
+        try:
+            logger.info("Setting up PyArrow schema for consistent Parquet conversion")
+            parquet_schema = pa.schema([
+                ('date', pa.timestamp('ns')),
+                ('home_team', pa.string()),
+                ('away_team', pa.string()),
+                ('home_score', pa.int64()),
+                ('away_score', pa.int64()),
+                ('league', pa.string()),
+                ('time', pa.string()),
+                ('url', pa.string()),
+                ('type', pa.string()),
+                ('status', pa.float64()),
+                ('headers', pa.string()),
+                ('timestamp', pa.string())  # Use string type for timestamp to avoid PyArrow issues
+            ])
+        except Exception as schema_err:
+            logger.error(f"Error creating schema: {str(schema_err)}")
+            logger.info("Will proceed without explicit schema")
+            parquet_schema = None
 
-        csv_buffer = io.StringIO()
-        combined_df.to_csv(csv_buffer, index=False)
-        csv_buffer.seek(0)
+        # Save as both Parquet and CSV
+        try:
+            logger.info("Converting to Parquet format")
+            parquet_buffer = io.BytesIO()
+
+            if parquet_schema:
+                # Try with schema first
+                try:
+                    combined_df.to_parquet(parquet_buffer, schema=parquet_schema, index=False)
+                except Exception as e:
+                    logger.warning(f"Parquet conversion with schema failed: {str(e)}")
+                    logger.info("Trying without schema")
+                    parquet_buffer = io.BytesIO()
+                    combined_df.to_parquet(parquet_buffer, index=False)
+            else:
+                # No schema available
+                combined_df.to_parquet(parquet_buffer, index=False)
+
+            parquet_buffer.seek(0)
+        except Exception as parquet_err:
+            logger.error(f"Error in Parquet conversion: {str(parquet_err)}")
+            logger.info("Attempting simpler conversion approach")
+
+            try:
+                # If direct Parquet conversion fails, try JSON serialization as intermediate step
+                json_str = combined_df.to_json(orient='records', date_format='iso')
+                clean_df = pd.read_json(json_str, orient='records')
+
+                parquet_buffer = io.BytesIO()
+                clean_df.to_parquet(parquet_buffer, index=False)
+                parquet_buffer.seek(0)
+                logger.info("Successfully converted to Parquet using alternative approach")
+            except Exception as alt_parquet_err:
+                logger.error(f"Alternative Parquet conversion also failed: {str(alt_parquet_err)}")
+                return {
+                    'status': 'ERROR',
+                    'message': f'Failed to convert data to Parquet format: {str(alt_parquet_err)}',
+                    'filesProcessed': len(all_files)
+                }
+
+        # Convert to CSV (generally more robust)
+        try:
+            logger.info("Converting to CSV format")
+            csv_buffer = io.StringIO()
+            combined_df.to_csv(csv_buffer, index=False)
+            csv_buffer.seek(0)
+        except Exception as csv_err:
+            logger.error(f"Error in CSV conversion: {str(csv_err)}")
+            return {
+                'status': 'ERROR',
+                'message': f'Failed to convert data to CSV format: {str(csv_err)}',
+                'filesProcessed': len(all_files)
+            }
 
         # Upload the final datasets with version in filename
         parquet_key = f"{dst_prefix}ncsoccer_games_{version}.parquet"
