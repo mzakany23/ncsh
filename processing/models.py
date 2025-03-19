@@ -45,6 +45,39 @@ class GameData(BaseModel):
                 raise ValueError("URL must start with http:// or https://")
         return v
 
+    @validator('date', pre=True)
+    def validate_date(cls, v):
+        """Convert string dates to datetime objects"""
+        if isinstance(v, str):
+            try:
+                # First try ISO format (YYYY-MM-DD)
+                return datetime.fromisoformat(v)
+            except ValueError:
+                try:
+                    # Try other formats (e.g., "Sat-Jun 1")
+                    import re
+                    import datetime as dt
+
+                    # Handle format like "Sat-Jun 1"
+                    match = re.match(r'(?:\w+)-(\w+) (\d+)', v)
+                    if match:
+                        month_str, day_str = match.groups()
+                        month_map = {
+                            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+                            'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+                        }
+                        month = month_map.get(month_str, 1)  # Default to January if not recognized
+                        day = int(day_str)
+                        # Since we don't have year in this format, use current year
+                        current_year = dt.datetime.now().year
+                        return datetime(current_year, month, day)
+
+                    # If all parsing attempts fail, raise error
+                    raise ValueError(f"Unable to parse date string: {v}")
+                except Exception as e:
+                    raise ValueError(f"Invalid date format: {v}, error: {str(e)}")
+        return v
+
     def to_dict(self) -> dict:
         """Convert to a flat dictionary structure for Parquet storage"""
         base_dict = self.model_dump(exclude={'games'})
