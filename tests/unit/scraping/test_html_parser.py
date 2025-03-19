@@ -32,36 +32,36 @@ class TestHtmlParser:
         # Find completed games
         schedule_table = mock_response.css('table#ctl04_GridView1')
         rows = schedule_table.css('tr')[1:]  # Skip header
-        
+
         # Looking for "Complete" text in any cell
         complete_games = []
         for row in rows:
             cells = row.css('td')
             if any(cell.css('a::text').get('').strip() == 'Complete' for cell in cells):
                 complete_games.append(row)
-        
+
         # Skip if no complete games
         if not complete_games:
             pytest.skip("No completed games found in the sample")
-            
+
         game_row = complete_games[0]
         cells = game_row.css('td')
-        
+
         # Find the score cells (they can be in different positions)
         score_cells = [cell for cell in cells if any(' - ' in text for text in cell.css('::text').extract())]
-        
+
         if not score_cells:
             pytest.skip("No scores found in the completed game")
-            
+
         # Get the text with the score
         score_text = ""
         for text in score_cells[0].css('::text').extract():
             if ' - ' in text:
                 score_text = text.strip()
                 break
-        
+
         assert ' - ' in score_text, "Score should contain ' - ' separator"
-        
+
         # Test score values
         scores = score_text.split(' - ')
         assert len(scores) == 2, "Should have home and away scores"
@@ -72,7 +72,7 @@ class TestHtmlParser:
         # Find the schedule table
         schedule_table = mock_response.css('table#ctl04_GridView1')
         rows = schedule_table.css('tr')[1:]  # Skip header
-        
+
         # Check for any Complete text in the table
         complete_found = False
         for row in rows:
@@ -80,7 +80,7 @@ class TestHtmlParser:
             if 'Complete' in all_texts:
                 complete_found = True
                 break
-                
+
         # Verify we found the 'Complete' status somewhere in the table
         assert complete_found, "Should find at least one game with 'Complete' status"
 
@@ -96,16 +96,16 @@ class TestHtmlParser:
             for i, cell in enumerate(cells):
                 if cell.css('a::text').get('') and not cell.css('a::text').get('').startswith('Fri-') and not cell.css('a::text').get('') == 'Complete':
                     team_cells.append(cell.css('a::text').get('').strip())
-        
+
         # Verify we found team names
         assert len(team_cells) > 0, "Should find at least one team name"
-        
+
         # Verify team names are not empty
         for team in team_cells:
             assert team, "Team name should not be empty"
             # They should be non-empty strings with reasonable length
             assert len(team) >= 2, "Team name should be at least 2 characters"
-            
+
             # Test that team names don't contain HTML
             assert '<' not in team and '>' not in team, "Team name should not contain HTML"
             assert team == team.strip(), "Team name should not have leading/trailing whitespace"

@@ -5,12 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.10.2] - 2025-03-19
-### Fixed
-- Fixed date type conversion in processing Lambda for BuildFinalDataset stage
-- Ensured consistent handling of date fields in Pandas DataFrame operations
-- Improved error handling for data type mismatches during processing
-
 ## [2.10.1] - 2025-03-18
 ### Fixed
 - Fixed format string error in runner.py when handling string parameters
