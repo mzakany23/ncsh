@@ -109,9 +109,10 @@
       "Type": "Pass",
       "Parameters": {
         "scrape_mode": "date_range",
-        "start_date.$": "$.date_range.start_date",
-        "end_date.$": "$.date_range.end_date",
-        "specific_dates.$": "States.JsonMerge($.specific_dates, States.Array())",
+        "start_date.$": "States.JsonMerge($.date_range.start_date, $.parameters.specific_dates[0])",
+        "end_date.$": "States.JsonMerge($.date_range.end_date, $.parameters.specific_dates[-1])",
+        "specific_dates.$": "States.JsonMerge($.specific_dates, $.parameters.specific_dates)",
+        "force_scrape.$": "$.parameters.force_scrape",
         "force_full_reprocess.$": "$.force_full_reprocess",
         "version.$": "$.version",
         "src_bucket.$": "$.src_bucket",
