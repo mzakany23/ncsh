@@ -99,18 +99,6 @@ resource "aws_iam_role_policy" "processing_lambda" {
           "arn:aws:s3:::ncsh-app-data",
           "arn:aws:s3:::ncsh-app-data/*"
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Scan",
-          "dynamodb:Query"
-        ]
-        Resource = aws_dynamodb_table.scraped_dates.arn
       }
     ]
   })
