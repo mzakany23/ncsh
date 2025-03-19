@@ -24,7 +24,6 @@ def test_local_file_lookup(tmp_path):
         assert data["scraped_dates"]["2024-03-01"]["success"]
         assert data["scraped_dates"]["2024-03-01"]["games_count"] == 5
 
-@pytest.mark.skip("Requires pytest-mock")
 def test_dynamodb_lookup(mocker):
     """Test DynamoDBLookup functionality with mocked DynamoDB"""
     # Mock DynamoDB resource and table

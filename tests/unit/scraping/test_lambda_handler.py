@@ -6,12 +6,13 @@ import os
 
 # Add the parent directory to the path to import the lambda_function module
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'scraping'))
-from lambda_function import lambda_handler
+# Make sure we're only importing from scraping and not accidentally from processing
+from scraping.lambda_function import lambda_handler
 
 class TestLambdaHandler(unittest.TestCase):
     """Test cases for the lambda_handler function in the scraper Lambda"""
 
-    @patch('lambda_function.run_scraper')
+    @patch('scraping.lambda_function.run_scraper')
     def test_string_params_conversion(self, mock_run_scraper):
         """Test that string parameters are properly converted to integers."""
         # Setup
@@ -37,7 +38,7 @@ class TestLambdaHandler(unittest.TestCase):
         self.assertEqual(kwargs['day'], 1)
         self.assertEqual(kwargs['force_scrape'], True)
 
-    @patch('lambda_function.run_month')
+    @patch('scraping.lambda_function.run_month')
     def test_string_params_month_mode(self, mock_run_month):
         """Test that string parameters are properly converted to integers in month mode."""
         # Setup

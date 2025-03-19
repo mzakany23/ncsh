@@ -30,14 +30,14 @@ class TestHtmlParser:
     def test_extract_complete_game_scores(self, mock_response):
         """Test extraction of scores from a completed game"""
         # Find completed games
-        schedule_table = mock_response.css('table#ctl04_GridView1')
+        schedule_table = mock_response.css('table#ctl00_c_Schedule1_GridView1')
         rows = schedule_table.css('tr')[1:]  # Skip header
 
         # Looking for "Complete" text in any cell
         complete_games = []
         for row in rows:
             cells = row.css('td')
-            if any(cell.css('a::text').get('').strip() == 'Complete' for cell in cells):
+            if any('Complete' in cell.css('a::text').get('') for cell in cells):
                 complete_games.append(row)
 
         # Skip if no complete games
@@ -47,29 +47,47 @@ class TestHtmlParser:
         game_row = complete_games[0]
         cells = game_row.css('td')
 
-        # Find the score cells (they can be in different positions)
-        score_text = None
-        for i, cell in enumerate(cells):
-            cell_text = cell.css('::text').get('')
-            if '-' in cell_text and cell_text.replace('-', '').strip().isdigit():
-                score_text = cell_text.strip()
-                break
+        # Find the score cells - either in a dedicated cell or in span elements next to team names
+        home_score = None
+        away_score = None
+
+        # First try to find scores in spans next to team names
+        home_cell = cells[1]  # Home team cell (second cell)
+        away_cell = cells[3]  # Away team cell (fourth cell)
+
+        home_score_text = home_cell.css('span::text').get('')
+        away_score_text = away_cell.css('span::text').get('')
+
+        if home_score_text.strip() and home_score_text.strip().isdigit():
+            home_score = int(home_score_text.strip())
+
+        if away_score_text.strip() and away_score_text.strip().isdigit():
+            away_score = int(away_score_text.strip())
+
+        # If no scores found in spans, try to find in cell text with format "X-Y"
+        if home_score is None or away_score is None:
+            for i, cell in enumerate(cells):
+                cell_text = cell.css('::text').get('')
+                if '-' in cell_text and cell_text.replace('-', '').strip().isdigit():
+                    scores = cell_text.strip().split('-')
+                    if len(scores) == 2:
+                        home_score = int(scores[0])
+                        away_score = int(scores[1])
+                        break
 
         # Skip if no scores found
-        if not score_text:
+        if home_score is None or away_score is None:
             pytest.skip("No scores found in the completed game")
 
-        assert '-' in score_text
-
-        # Parse scores
-        home_score, away_score = map(int, score_text.split('-'))
         assert isinstance(home_score, int)
         assert isinstance(away_score, int)
+        assert home_score == 3  # Updated to match our sample data
+        assert away_score == 1  # Updated to match our sample data
 
     def test_extract_game_status(self, mock_response):
         """Test extraction of game status from the schedule table"""
         # Find the schedule table
-        schedule_table = mock_response.css('table#ctl04_GridView1')
+        schedule_table = mock_response.css('table#ctl00_c_Schedule1_GridView1')
         rows = schedule_table.css('tr')[1:]  # Skip header
 
         # Check for any Complete text in the table
@@ -89,7 +107,7 @@ class TestHtmlParser:
 
     def test_extract_team_names(self, mock_response):
         """Test extraction of team names"""
-        schedule_table = mock_response.css('table#ctl04_GridView1')
+        schedule_table = mock_response.css('table#ctl00_c_Schedule1_GridView1')
         rows = schedule_table.css('tr')[1:]  # Skip header
 
         # Find cells with team data

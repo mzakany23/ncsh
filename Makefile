@@ -38,7 +38,7 @@ install: venv compile-requirements
 
 test: install
 	@echo "Running tests..."
-	source .venv/bin/activate && python -m pytest tests/unit/scraping/
+	source .venv/bin/activate && PYTHONPATH=$(PWD) python -m pytest tests/unit/scraping/
 	@echo "Note: processing module has no tests yet"
 
 lint: install
@@ -79,7 +79,7 @@ run-backfill:
 		--name "backfill-smoke-test-$$(date +%s)" \
 		--input '{}' \
 		--output text
-		
+
 run-local-backfill:
 	@echo "Starting local backfill..."
 	@if [ -z "$(start_year)" ]; then \
