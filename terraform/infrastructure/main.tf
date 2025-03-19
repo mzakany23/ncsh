@@ -62,72 +62,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "app_data" {
   }
 }
 
-# DynamoDB Table for Scraping Lookup
-resource "aws_dynamodb_table" "scraped_dates" {
-  name           = "ncsh-scraped-dates"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "date"
-
-  attribute {
-    name = "date"
-    type = "S"
-  }
-
-  tags = {
-    Name = "NC Soccer Scraper Lookup Table"
-  }
-}
-
-# DynamoDB Table for Testing
-resource "aws_dynamodb_table" "scraped_dates_test" {
-  name           = "ncsh-scraped-dates-test"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "date"
-
-  attribute {
-    name = "date"
-    type = "S"
-  }
-
-  tags = {
-    Name = "NC Soccer Scraper Test Lookup Table"
-    Environment = "test"
-  }
-}
-
-# Add DynamoDB permissions to Lambda role
-resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = aws_iam_policy.lambda_dynamodb_policy.arn
-}
-
-resource "aws_iam_policy" "lambda_dynamodb_policy" {
-  name = "ncsoccer_lambda_dynamodb_policy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
-          "dynamodb:CreateTable",
-          "dynamodb:DeleteTable"
-        ]
-        Resource = [
-          aws_dynamodb_table.scraped_dates.arn,
-          aws_dynamodb_table.scraped_dates_test.arn
-        ]
-      }
-    ]
-  })
-}
-
 # ECR Repository
 resource "aws_ecr_repository" "ncsoccer" {
   name                 = "ncsoccer-scraper"
@@ -321,20 +255,6 @@ resource "aws_iam_role_policy" "step_function_policy" {
   })
 }
 
-# Note: The ncsoccer_workflow state machine has been consolidated into the unified workflow
-# and is now managed in unified-workflow.tf
-      HandleError = {
-        Type = "Pass"
-        Result = {
-          error = "Failed to scrape schedule"
-          status = "FAILED"
-        }
-        End = true
-      }
-    }
-  })
-}
-
 # IAM Role for EventBridge
 resource "aws_iam_role" "eventbridge_role" {
   name = "ncsoccer_eventbridge_role"
@@ -367,7 +287,7 @@ resource "aws_iam_role_policy" "eventbridge_policy" {
           "states:StartExecution"
         ]
         Resource = [
-          aws_sfn_state_machine.ncsoccer_workflow.arn
+          aws_sfn_state_machine.ncsoccer_unified_workflow.arn
         ]
       }
     ]

@@ -153,6 +153,43 @@ resource "aws_iam_role_policy" "processing_step_function" {
   })
 }
 
+# IAM role for the Step Function
+resource "aws_iam_role" "processing_step_function" {
+  name = "ncsoccer-processing-step-function"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "states.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM policy for the Step Function
+resource "aws_iam_role_policy" "processing_step_function" {
+  name = "ncsoccer-processing-step-function"
+  role = aws_iam_role.processing_step_function.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = aws_lambda_function.processing.arn
+      }
+    ]
+  })
+}
+
 # Lambda function for JSON to Parquet conversion
 resource "aws_lambda_function" "processing" {
   function_name = "ncsoccer-processing"
