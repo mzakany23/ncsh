@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel, Field, validator
 
@@ -33,7 +33,7 @@ class GameData(BaseModel):
     type: Optional[str] = None
     status: Optional[float] = Field(None, ge=0, le=1)
     headers: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @validator('url')
     def validate_url(cls, v):
@@ -51,7 +51,11 @@ class GameData(BaseModel):
         if isinstance(v, str):
             try:
                 # First try ISO format (YYYY-MM-DD)
-                return datetime.fromisoformat(v)
+                dt = datetime.fromisoformat(v.replace('Z', '+00:00') if 'Z' in v else v)
+                # Ensure the datetime is timezone-naive for consistent Parquet handling
+                if dt.tzinfo is not None:
+                    dt = dt.replace(tzinfo=None)
+                return dt
             except ValueError:
                 try:
                     # Try other formats (e.g., "Sat-Jun 1")
@@ -76,10 +80,43 @@ class GameData(BaseModel):
                     raise ValueError(f"Unable to parse date string: {v}")
                 except Exception as e:
                     raise ValueError(f"Invalid date format: {v}, error: {str(e)}")
+        # Ensure any provided datetime is timezone-naive for Parquet
+        elif isinstance(v, datetime) and v.tzinfo is not None:
+            return v.replace(tzinfo=None)
+        return v
+
+    @validator('timestamp', pre=True)
+    def validate_timestamp(cls, v):
+        """Ensure timestamp is properly formatted and timezone-aware"""
+        if isinstance(v, str):
+            try:
+                # Handle ISO format with 'Z' or timezone offset
+                dt = datetime.fromisoformat(v.replace('Z', '+00:00') if 'Z' in v else v)
+                # Ensure UTC timezone for storage
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                raise ValueError(f"Invalid timestamp format: {v}")
+        # Ensure any provided datetime is timezone-aware
+        elif isinstance(v, datetime) and v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
         return v
 
     def to_dict(self) -> dict:
         """Convert to a flat dictionary structure for Parquet storage"""
         base_dict = self.model_dump(exclude={'games'})
         game_dict = self.games.model_dump()
+
+        # Convert datetime objects to consistent format
+        if 'date' in base_dict and isinstance(base_dict['date'], datetime):
+            # For Parquet, use timezone-naive datetime for better compatibility
+            if base_dict['date'].tzinfo is not None:
+                base_dict['date'] = base_dict['date'].replace(tzinfo=None)
+
+        if 'timestamp' in base_dict and isinstance(base_dict['timestamp'], datetime):
+            # For Parquet, use timezone-naive datetime for better compatibility
+            if base_dict['timestamp'].tzinfo is not None:
+                base_dict['timestamp'] = base_dict['timestamp'].replace(tzinfo=None)
+
         return {**base_dict, **game_dict}
