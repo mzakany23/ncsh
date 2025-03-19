@@ -186,6 +186,21 @@
           "Next": "HandleBackfillFailure"
         }
       ],
+      "ResultPath": "$.backfill_result",
+      "Next": "PreserveParametersAfterBackfill"
+    },
+
+    "PreserveParametersAfterBackfill": {
+      "Type": "Pass",
+      "Parameters": {
+        "backfill_result.$": "$.backfill_result",
+        "src_bucket.$": "$.src_bucket",
+        "src_prefix.$": "$.src_prefix",
+        "dst_bucket.$": "$.dst_bucket",
+        "dst_prefix.$": "$.dst_prefix",
+        "version.$": "$.version",
+        "force_full_reprocess.$": "$.force_full_reprocess"
+      },
       "Next": "ListJSONFiles"
     },
 
