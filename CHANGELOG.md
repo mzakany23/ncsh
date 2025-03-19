@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.2] - 2025-03-19
+### Fixed
+- Fixed date conversion issue in processing Lambda that caused workflow failures
+- Enhanced date parsing in GameData model to handle multiple date formats
+- Added robust error handling for date conversion in the build_dataset function
+- Improved PyArrow schema definition to better handle nullable timestamps
+
 ## [2.10.1] - 2025-03-18
 ### Fixed
 - Fixed format string error in runner.py when handling string parameters
