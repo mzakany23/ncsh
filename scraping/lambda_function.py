@@ -38,6 +38,16 @@ def lambda_handler(event, context):
             end_month = event.get('end_month')
             force_scrape = event.get('force_scrape', False)
 
+            # Convert string values to integers if needed
+            if isinstance(start_year, str):
+                start_year = int(start_year)
+            if isinstance(start_month, str):
+                start_month = int(start_month)
+            if end_year and isinstance(end_year, str):
+                end_year = int(end_year)
+            if end_month and isinstance(end_month, str):
+                end_month = int(end_month)
+
             # Get bucket name and table name from environment variables
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
             table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
@@ -73,6 +83,12 @@ def lambda_handler(event, context):
             month = event.get('month', now.month)
             force_scrape = event.get('force_scrape', False)
 
+            # Convert string values to integers if needed
+            if isinstance(year, str):
+                year = int(year)
+            if isinstance(month, str):
+                month = int(month)
+
             # Get bucket name and table name from environment variables
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
             table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
@@ -91,10 +107,15 @@ def lambda_handler(event, context):
             # If day is provided, run in day mode, otherwise run in month mode
             if 'day' in event:
                 logger.info("Running in day mode")
+                # Ensure day is an integer
+                day = event['day']
+                if isinstance(day, str):
+                    day = int(day)
+
                 result = run_scraper(
                     year=year,
                     month=month,
-                    day=event['day'],
+                    day=day,
                     **common_params
                 )
             else:
