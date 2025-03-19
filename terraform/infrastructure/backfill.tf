@@ -69,6 +69,7 @@ resource "aws_lambda_function" "ncsoccer_backfill" {
   environment {
     variables = {
       DATA_BUCKET    = aws_s3_bucket.app_data.bucket
+      DYNAMODB_TABLE = "ncsh-scraped-dates"
       BACKFILL_MODE  = "true"
     }
   }

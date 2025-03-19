@@ -1,0 +1,17 @@
+{
+  "url": "https://nc-soccer-hudson.ezleagues.ezfacility.com/print.aspx?type=schedule&title=Games%20on%20Sunday%2C%20October%203%2C%202010&team_id=0&league_id=0&facility_id=690&day=10/3/2010&framed=1",
+  "date": "2010-10-03",
+  "type": "daily",
+  "status": 200,
+  "headers": {
+    "Date": "Tue, 18 Mar 2025 17:01:59 GMT",
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private",
+    "X-Aspnet-Version": "4.0.30319",
+    "X-Powered-By": "ASP.NET",
+    "Cf-Cache-Status": "DYNAMIC",
+    "Server": "cloudflare",
+    "Cf-Ray": "92264b8c4a1a61de-ORD"
+  },
+  "timestamp": "2025-03-18T13:01:59.494668"
+}

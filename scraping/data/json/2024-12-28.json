@@ -1,0 +1,66 @@
+{
+  "date": "2024-12-28",
+  "games_found": true,
+  "games": [
+    {
+      "league": "U10 Boys (2015) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "2015 NHSA Boys",
+      "away_team": "Hudson United 2016 Boys Blue MS",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 0,
+      "away_score": 6
+    },
+    {
+      "league": "U11 Girls (2014) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "FYS Falcons (beegle)",
+      "away_team": "GSA Black 2014",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Svilar",
+      "time": null,
+      "home_score": 1,
+      "away_score": 7
+    },
+    {
+      "league": "U14 Girls (2011) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Woodridge",
+      "away_team": "SnowBallers",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 2,
+      "away_score": 8
+    },
+    {
+      "league": "U11 Girls (2014) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Field Falcons (Nader)",
+      "away_team": "Stow SC - U11 Girls (2014 Birth Year) - Maroon - NC - Saber",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Svilar",
+      "time": null,
+      "home_score": 5,
+      "away_score": 2
+    },
+    {
+      "league": "U14 Girls (2011) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Field Falcons",
+      "away_team": "GSA Black 2011",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Svilar",
+      "time": null,
+      "home_score": 4,
+      "away_score": 4
+    }
+  ]
+}

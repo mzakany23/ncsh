@@ -88,23 +88,13 @@ def lambda_handler(event, context):
                 'force_scrape': force_scrape
             }
 
-            # Convert version to a timestamp string if provided
-            version = event.get('version', None)
-            if version:
-                logger.info(f"Using specified version: {version}")
-
             # If day is provided, run in day mode, otherwise run in month mode
             if 'day' in event:
                 logger.info("Running in day mode")
-                day_value = event['day']
-                # Ensure day is an integer if it's passed as a string
-                if isinstance(day_value, str) and day_value.isdigit():
-                    day_value = int(day_value)
-
                 result = run_scraper(
                     year=year,
                     month=month,
-                    day=day_value,
+                    day=event['day'],
                     **common_params
                 )
             else:

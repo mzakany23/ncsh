@@ -1,0 +1,30 @@
+{
+  "date": "2024-12-11",
+  "games_found": true,
+  "games": [
+    {
+      "league": "High School Girls (2006-10) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Striking Gold",
+      "away_team": "Jackson Fury 2010G",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Grove",
+      "time": null,
+      "home_score": 2,
+      "away_score": 4
+    },
+    {
+      "league": "High School Girls (2006-10) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Jackson Fury 2006G",
+      "away_team": "Wiz KaFIFA",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 1,
+      "away_score": 2
+    }
+  ]
+}

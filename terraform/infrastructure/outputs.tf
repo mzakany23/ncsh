@@ -22,10 +22,5 @@ output "lambda_function_name" {
 
 output "step_function_arn" {
   description = "ARN of the Step Function state machine"
-  value       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
-}
-
-output "unified_workflow_arn" {
-  description = "ARN of the Unified Workflow Step Function"
-  value       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
+  value       = aws_sfn_state_machine.ncsoccer_workflow.arn
 }
