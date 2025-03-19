@@ -321,20 +321,6 @@ resource "aws_iam_role_policy" "step_function_policy" {
   })
 }
 
-# Note: The ncsoccer_workflow state machine has been consolidated into the unified workflow
-# and is now managed in unified-workflow.tf
-      HandleError = {
-        Type = "Pass"
-        Result = {
-          error = "Failed to scrape schedule"
-          status = "FAILED"
-        }
-        End = true
-      }
-    }
-  })
-}
-
 # IAM Role for EventBridge
 resource "aws_iam_role" "eventbridge_role" {
   name = "ncsoccer_eventbridge_role"
