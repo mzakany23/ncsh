@@ -1,0 +1,126 @@
+{
+  "date": "2024-03-01",
+  "games_found": true,
+  "games": [
+    {
+      "league": "Mens 40+ Friday night 7v7 Indoor session 2 2024",
+      "session": "2 2024",
+      "home_team": "Beers with Kenny",
+      "away_team": "Green Machine",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 7,
+      "away_score": 4
+    },
+    {
+      "league": "U13/14 Boys (2011-2010) Indoor session 3 2024",
+      "session": "3 2024",
+      "home_team": "Hudson United 2011 Boys JS",
+      "away_team": "Aurora United u13/14 white",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 4,
+      "away_score": 6
+    },
+    {
+      "league": "Mens 40+ Friday night 7v7 Indoor session 2 2024",
+      "session": "2 2024",
+      "home_team": "Blairs Bandits",
+      "away_team": "Real A.C. Brocelona Sporting Scrubs F.C.",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 7,
+      "away_score": 3
+    },
+    {
+      "league": "U13/14 Girls (2011-2010) Indoor session 3 2024",
+      "session": "3 2024",
+      "home_team": "Hudson United 2010 Girls",
+      "away_team": "Aurora United U14 girls",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Winslow",
+      "time": null,
+      "home_score": 5,
+      "away_score": 2
+    },
+    {
+      "league": "U13/14 Boys (2011-2010) Indoor session 3 2024",
+      "session": "3 2024",
+      "home_team": "Aurora United u13/14 green",
+      "away_team": "Hudson United 2011 Boys JS",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 9,
+      "away_score": 3
+    },
+    {
+      "league": "Mens 40+ Friday night 7v7 Indoor session 2 2024",
+      "session": "2 2024",
+      "home_team": "Magic 12",
+      "away_team": "Redemption",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 7,
+      "away_score": 5
+    },
+    {
+      "league": "U13/14 Girls (2011-2010) Indoor session 3 2024",
+      "session": "3 2024",
+      "home_team": "Aurora United U13 girls",
+      "away_team": "Aurora United U14 girls",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Winslow",
+      "time": null,
+      "home_score": 3,
+      "away_score": 3
+    },
+    {
+      "league": "U13/14 Boys (2011-2010) Indoor session 3 2024",
+      "session": "3 2024",
+      "home_team": "Hudson United 2010 Boys White TJ",
+      "away_team": "Field Falcons U14",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 6,
+      "away_score": 1
+    },
+    {
+      "league": "Mens 40+ Friday night 7v7 Indoor session 2 2024",
+      "session": "2 2024",
+      "home_team": "Redemption",
+      "away_team": "ACH FC40",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 3,
+      "away_score": 9
+    },
+    {
+      "league": "Mens 40+ Friday night 7v7 Indoor session 2 2024",
+      "session": "2 2024",
+      "home_team": "Internazionale",
+      "away_team": "Serbs United",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 2,
+      "away_score": 8
+    }
+  ]
+}

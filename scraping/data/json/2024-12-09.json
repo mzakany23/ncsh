@@ -1,0 +1,90 @@
+{
+  "date": "2024-12-09",
+  "games_found": true,
+  "games": [
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Mario Super Strikers F.C. (2)",
+      "away_team": "John Bettes (2)",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 9,
+      "away_score": 0
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "French Mill District (1)",
+      "away_team": "Rejected Rejects (1)",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 12,
+      "away_score": 6
+    },
+    {
+      "league": "Mens Open \"B\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Al Shabab FC",
+      "away_team": "spartans (Leon)",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 7,
+      "away_score": 5
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Spartans FC",
+      "away_team": "Hawk Tuah Gooners",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 8,
+      "away_score": 11
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Olive Us FC (1)",
+      "away_team": "Team Rejects (1)",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 6,
+      "away_score": 2
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Kent Read Kent Write Kent Win",
+      "away_team": "Waka-Waka",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 7,
+      "away_score": 11
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "AO Akron FC (1)",
+      "away_team": "Monday Night Football (1)",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 3,
+      "away_score": 3
+    }
+  ]
+}

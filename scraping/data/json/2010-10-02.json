@@ -1,0 +1,62 @@
+{
+  "date": "2010-10-02",
+  "games_found": true,
+  "games": [
+    {
+      "league": "U8 Developmental Division FALL",
+      "home_team": "Aurora United White",
+      "away_team": "NEO United",
+      "status": "Result Pending",
+      "venue": "1",
+      "officials": "",
+      "time": null,
+      "home_score": null,
+      "away_score": null,
+      "session": "",
+      "date": "Sat-Oct 2",
+      "game_type": "Regular"
+    },
+    {
+      "league": "U8 Developmental Division FALL",
+      "home_team": "Aurora United White",
+      "away_team": "Streetsboro United",
+      "status": "Result Pending",
+      "venue": "1",
+      "officials": "",
+      "time": null,
+      "home_score": null,
+      "away_score": null,
+      "session": "",
+      "date": "Sat-Oct 2",
+      "game_type": "Regular"
+    },
+    {
+      "league": "U8 Developmental Division FALL",
+      "home_team": "Aurora United Girl's",
+      "away_team": "Ambassadors Developmental",
+      "status": "Result Pending",
+      "venue": "1",
+      "officials": "",
+      "time": null,
+      "home_score": null,
+      "away_score": null,
+      "session": "",
+      "date": "Sat-Oct 2",
+      "game_type": "Regular"
+    },
+    {
+      "league": "U8 Developmental Division FALL",
+      "home_team": "Cleveland Select",
+      "away_team": "Everest",
+      "status": "Result Pending",
+      "venue": "1",
+      "officials": "",
+      "time": null,
+      "home_score": null,
+      "away_score": null,
+      "session": "",
+      "date": "Sat-Oct 2",
+      "game_type": "Regular"
+    }
+  ]
+}

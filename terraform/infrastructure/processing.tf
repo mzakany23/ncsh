@@ -99,6 +99,55 @@ resource "aws_iam_role_policy" "processing_lambda" {
           "arn:aws:s3:::ncsh-app-data",
           "arn:aws:s3:::ncsh-app-data/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Scan",
+          "dynamodb:Query"
+        ]
+        Resource = aws_dynamodb_table.scraped_dates.arn
+      }
+    ]
+  })
+}
+
+# IAM role for the Step Function
+resource "aws_iam_role" "processing_step_function" {
+  name = "ncsoccer-processing-step-function"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "states.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM policy for the Step Function
+resource "aws_iam_role_policy" "processing_step_function" {
+  name = "ncsoccer-processing-step-function"
+  role = aws_iam_role.processing_step_function.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = aws_lambda_function.processing.arn
       }
     ]
   })

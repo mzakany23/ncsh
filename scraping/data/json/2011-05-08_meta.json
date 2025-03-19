@@ -1,0 +1,18 @@
+{
+  "url": "https://nc-soccer-hudson.ezleagues.ezfacility.com/print.aspx?type=schedule&title=Games%20on%20Sunday%2C%20May%208%2C%202011&team_id=0&league_id=0&facility_id=690&day=5/8/2011&framed=1",
+  "date": "2011-05-08",
+  "type": "daily",
+  "status": 200,
+  "headers": {
+    "Date": "Tue, 18 Mar 2025 16:46:24 GMT",
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private",
+    "Set-Cookie": "EZLSID=gjbhlkm1qx1ztf14gybzs3y5; path=/; HttpOnly; SameSite=Lax",
+    "X-Aspnet-Version": "4.0.30319",
+    "X-Powered-By": "ASP.NET",
+    "Cf-Cache-Status": "DYNAMIC",
+    "Server": "cloudflare",
+    "Cf-Ray": "922634b85b3861a6-ORD"
+  },
+  "timestamp": "2025-03-18T12:46:24.285918"
+}

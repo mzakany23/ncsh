@@ -127,26 +127,26 @@ def update_last_processed_timestamp(bucket: str, prefix: str) -> None:
 
 def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optional[str] = None):
     """Convert JSON files to Parquet format and append to existing dataset
-    
+
     Args:
         src_bucket: Source S3 bucket containing JSON files
         files: List of file keys to process
         dst_bucket: Destination S3 bucket for Parquet files
         dst_prefix: Prefix for Parquet files in the destination bucket
         version: Optional version identifier for the dataset (default: current timestamp)
-    
+
     Returns:
         Dictionary with operation results
     """
     logger.info(f"Converting {len(files)} JSON files to Parquet")
     s3 = boto3.client("s3")
-    
+
     # Use provided version or generate a timestamp
     if not version:
         version = datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
-        
+
     logger.info(f'Using version identifier: {version}')
-    
+
     # Add version to the prefix for better organization
     versioned_prefix = f"{dst_prefix}{version}/"
 
@@ -278,7 +278,7 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
             Key=versioned_key,
             Body=out_buffer.getvalue()
         )
-        
+
         # Also upload to the standard path for backward compatibility
         logger.info(f"Also uploading to standard path: s3://{dst_bucket}/{current_key}")
         s3.put_object(
@@ -352,40 +352,40 @@ def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[
 
 def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str, version: Optional[str] = None) -> Dict[str, Any]:
     """Build or update the final dataset from all processed Parquet files
-    
+
     Args:
         src_bucket: Source S3 bucket containing Parquet files
         src_prefix: Prefix for Parquet files in the source bucket
         dst_bucket: Destination S3 bucket for the dataset
         dst_prefix: Prefix for the dataset in the destination bucket
         version: Optional version identifier for the dataset (default: current timestamp)
-        
+
     Returns:
         Dictionary with operation results
     """
     logger.info(f'Building final dataset from {src_bucket}/{src_prefix} to {dst_bucket}/{dst_prefix}')
-    
+
     # Use provided version or generate a timestamp
     if not version:
         version = datetime.utcnow().strftime("%Y-%m-%d-%H-%M-%S")
-        
+
     logger.info(f'Using version identifier: {version}')
-    
+
     s3_client = boto3.client('s3')
-    
+
     try:
         # List all Parquet files in the source prefix
         all_files = []
         paginator = s3_client.get_paginator('list_objects_v2')
         pages = paginator.paginate(Bucket=src_bucket, Prefix=src_prefix)
-        
+
         for page in pages:
             if 'Contents' in page:
                 for obj in page['Contents']:
                     key = obj['Key']
                     if key.endswith('.parquet'):
                         all_files.append(key)
-        
+
         if not all_files:
             logger.warning(f'No Parquet files found in {src_bucket}/{src_prefix}')
             return {
@@ -393,18 +393,18 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
                 'message': 'No Parquet files found to build dataset',
                 'filesProcessed': 0
             }
-            
+
         logger.info(f'Found {len(all_files)} Parquet files to process')
-        
+
         # Load and combine all Parquet files
         combined_df = None
-        
+
         for file_key in all_files:
             logger.info(f'Processing file: {file_key}')
             try:
                 response = s3_client.get_object(Bucket=src_bucket, Key=file_key)
                 file_df = pd.read_parquet(io.BytesIO(response['Body'].read()))
-                
+
                 if combined_df is None:
                     combined_df = file_df
                 else:
@@ -413,7 +413,7 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
                 logger.error(f'Error processing file {file_key}: {str(e)}')
                 # Continue processing other files
                 continue
-        
+
         if combined_df is None or combined_df.empty:
             logger.warning('No valid data found in any Parquet files')
             return {
@@ -421,65 +421,65 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
                 'message': 'No valid data found in Parquet files',
                 'filesProcessed': 0
             }
-        
+
         # Remove duplicates and sort
         logger.info(f'Raw dataset size before deduplication: {len(combined_df)}')
-        
+
         # Use a combination of fields that should be unique for each game
         combined_df.drop_duplicates(subset=['date', 'field', 'home_team', 'away_team', 'time'], inplace=True)
-        
+
         # Sort by date and time
         combined_df.sort_values(by=['date', 'time'], inplace=True)
-        
+
         logger.info(f'Final dataset size after deduplication: {len(combined_df)}')
-        
+
         # Save as both Parquet and CSV
         parquet_buffer = io.BytesIO()
         combined_df.to_parquet(parquet_buffer)
         parquet_buffer.seek(0)
-        
+
         csv_buffer = io.StringIO()
         combined_df.to_csv(csv_buffer, index=False)
         csv_buffer.seek(0)
-        
+
         # Upload the final datasets with version in filename
         parquet_key = f"{dst_prefix}ncsoccer_games_{version}.parquet"
         csv_key = f"{dst_prefix}ncsoccer_games_{version}.csv"
-        
+
         # Also create 'latest' versions for easy access
         parquet_latest_key = f"{dst_prefix}ncsoccer_games_latest.parquet"
         csv_latest_key = f"{dst_prefix}ncsoccer_games_latest.csv"
-        
+
         # Upload versioned datasets
         s3_client.put_object(
             Body=parquet_buffer.getvalue(),
             Bucket=dst_bucket,
             Key=parquet_key
         )
-        
+
         s3_client.put_object(
             Body=csv_buffer.getvalue(),
             Bucket=dst_bucket,
             Key=csv_key
         )
-        
+
         # Upload 'latest' versions
         s3_client.put_object(
             Body=parquet_buffer.getvalue(),
             Bucket=dst_bucket,
             Key=parquet_latest_key
         )
-        
+
         s3_client.put_object(
             Body=csv_buffer.getvalue(),
             Bucket=dst_bucket,
             Key=csv_latest_key
         )
-        
+
         logger.info(f'Successfully built and uploaded final dataset:')
         logger.info(f' - Versioned files: {dst_bucket}/{parquet_key} and {dst_bucket}/{csv_key}')
         logger.info(f' - Latest files: {dst_bucket}/{parquet_latest_key} and {dst_bucket}/{csv_latest_key}')
-        
+
         return {
             'status': 'SUCCESS',
             'message': 'Successfully built and uploaded final dataset',
@@ -491,7 +491,7 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
             'latestCsvPath': f"s3://{dst_bucket}/{csv_latest_key}",
             'version': version
         }
-    
+
     except Exception as e:
         error_msg = f'Error building final dataset: {str(e)}'
         logger.error(error_msg)
@@ -500,14 +500,14 @@ def build_dataset(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix:
 def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
     """Check the status of a backfill operation by examining markers in S3"""
     logger.info(f'Checking backfill status in {src_bucket}/{src_prefix}')
-    
+
     s3_client = boto3.client('s3')
-    
+
     try:
         # Check for backfill marker files
         backfill_in_progress = False
         backfill_completed = False
-        
+
         # Check for in-progress marker
         try:
             s3_client.head_object(Bucket=src_bucket, Key=f"{src_prefix}backfill_in_progress.marker")
@@ -515,7 +515,7 @@ def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
         except s3_client.exceptions.ClientError:
             # Marker doesn't exist, which is fine
             pass
-            
+
         # Check for completed marker
         try:
             s3_client.head_object(Bucket=src_bucket, Key=f"{src_prefix}backfill_completed.marker")
@@ -523,21 +523,21 @@ def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
         except s3_client.exceptions.ClientError:
             # Marker doesn't exist, which is fine
             pass
-        
+
         # Count the number of files processed
         file_count = 0
         paginator = s3_client.get_paginator('list_objects_v2')
         pages = paginator.paginate(Bucket=src_bucket, Prefix=src_prefix)
-        
+
         for page in pages:
             if 'Contents' in page:
                 for obj in page['Contents']:
                     key = obj['Key']
                     if key.endswith('.json') or key.endswith('.jsonl'):
                         file_count += 1
-        
+
         logger.info(f'Found {file_count} JSON files in {src_bucket}/{src_prefix}')
-        
+
         # Determine the backfill status
         status = "UNKNOWN"
         if backfill_completed:
@@ -550,14 +550,14 @@ def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
                 status = "COMPLETED"
             else:
                 status = "NOT_STARTED"
-        
+
         return {
             'status': status,
             'filesCount': file_count,
             'inProgressMarker': backfill_in_progress,
             'completedMarker': backfill_completed
         }
-    
+
     except Exception as e:
         error_msg = f'Error checking backfill status: {str(e)}'
         logger.error(error_msg)
@@ -566,11 +566,11 @@ def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
 def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str) -> Dict[str, Any]:
     """Process all JSON files regardless of their last modified date"""
     logger.info(f'Processing all JSON files from {src_bucket}/{src_prefix} to {dst_bucket}/{dst_prefix}')
-    
+
     try:
         # List all files without time filtering
         files = list_json_files(src_bucket, src_prefix, only_recent=False)
-        
+
         if not files:
             logger.info("No JSON files found to process")
             return {
@@ -578,17 +578,17 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
                 "message": "No files to process",
                 "filesProcessed": 0
             }
-        
+
         # Convert all files to Parquet
         result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
-        
+
         return {
             "status": "SUCCESS",
             "message": f"Successfully processed all {len(files)} files",
             "filesProcessed": len(files),
             "newRowsProcessed": result.get("new_rows_processed", 0)
         }
-    
+
     except Exception as e:
         error_msg = f'Error in process_all operation: {str(e)}'
         logger.error(error_msg)
@@ -604,7 +604,7 @@ def lambda_handler(event, context):
 
         # Check if we should process all files or only recent ones
         force_full_reprocess = event.get('force_full_reprocess', False)
-        
+
         # Get version for dataset versioning
         version = event.get('version')
         if version:
@@ -644,25 +644,25 @@ def lambda_handler(event, context):
             # Convert files to Parquet with versioning
             result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version)
             return result
-            
+
         elif operation == "build_dataset":
             # Build final dataset from all Parquet files with versioning
             return build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix, version)
-            
+
         elif operation == "check_backfill_status":
             # Check status of backfill operation
             return check_backfill_status(src_bucket, src_prefix)
-            
+
         elif operation == "process_all":
             # Process all files regardless of last modified time
             result = process_all(src_bucket, src_prefix, dst_bucket, dst_prefix)
-            
+
             # If successful, also build a versioned dataset
             if result.get('status') == 'SUCCESS' and result.get('filesProcessed', 0) > 0:
                 logger.info("Building versioned dataset after processing all files")
                 dataset_result = build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix, version)
                 result['datasetResult'] = dataset_result
-                
+
             return result
 
         else:
