@@ -1,0 +1,102 @@
+{
+  "date": "2024-12-16",
+  "games_found": true,
+  "games": [
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Village Idiots (2)",
+      "away_team": "Bell Tower FC (2)",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 14,
+      "away_score": 1
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Monday Night Football (1)",
+      "away_team": "French Mill District (1)",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 3,
+      "away_score": 5
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "AO Akron FC (1)",
+      "away_team": "Olive Us FC (1)",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 3,
+      "away_score": 4
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Spartans FC",
+      "away_team": "Waka-Waka",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 5,
+      "away_score": 4
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Brimfield Bottoms",
+      "away_team": "Hawk Tuah Gooners",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 10,
+      "away_score": 4
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Akron United FC",
+      "away_team": "Kent Read Kent Write Kent Win",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 8,
+      "away_score": 12
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Beldangi FC (2)",
+      "away_team": "Mario Super Strikers F.C. (2)",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 2,
+      "away_score": 6
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Rejected Rejects (1)",
+      "away_team": "Diddy Party (2)",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 5,
+      "away_score": 3
+    }
+  ]
+}

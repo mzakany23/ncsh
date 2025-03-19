@@ -1,0 +1,54 @@
+{
+  "scraped_dates": {
+    "2025-02-17": {
+      "success": true,
+      "games_count": 40,
+      "timestamp": "2025-02-17T12:49:19.476421"
+    },
+    "2024-03-01": {
+      "success": true,
+      "games_count": 10,
+      "timestamp": "2025-02-27T07:00:45.722984"
+    },
+    "2024-12-10": {
+      "success": true,
+      "games_count": 11,
+      "timestamp": "2025-02-18T21:00:01.567525"
+    },
+    "2010-10-17": {
+      "success": true,
+      "games_count": 21,
+      "timestamp": "2025-03-13T07:18:37.264279"
+    },
+    "2010-02-14": {
+      "success": true,
+      "games_count": 0,
+      "timestamp": "2025-03-18T12:46:37.005397"
+    },
+    "2011-05-08": {
+      "success": true,
+      "games_count": 0,
+      "timestamp": "2025-03-18T12:46:24.288210"
+    },
+    "2010-10-10": {
+      "success": true,
+      "games_count": 62,
+      "timestamp": "2025-03-18T12:55:04.007551"
+    },
+    "2010-10-01": {
+      "success": true,
+      "games_count": 0,
+      "timestamp": "2025-03-18T13:01:53.831727"
+    },
+    "2010-10-02": {
+      "success": true,
+      "games_count": 4,
+      "timestamp": "2025-03-18T13:01:56.670784"
+    },
+    "2010-10-03": {
+      "success": true,
+      "games_count": 21,
+      "timestamp": "2025-03-18T13:01:59.527301"
+    }
+  }
+}

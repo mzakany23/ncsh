@@ -1,0 +1,17 @@
+{
+  "url": "https://nc-soccer-hudson.ezleagues.ezfacility.com/schedule.aspx?facility_id=690",
+  "date": "2024-12-15",
+  "type": "daily",
+  "status": 200,
+  "headers": {
+    "Date": "Wed, 19 Feb 2025 01:59:59 GMT",
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "private",
+    "X-Aspnet-Version": "4.0.30319",
+    "X-Powered-By": "ASP.NET",
+    "Cf-Cache-Status": "DYNAMIC",
+    "Server": "cloudflare",
+    "Cf-Ray": "9142a91a5c43e613-IAD"
+  },
+  "timestamp": "2025-02-18T21:00:00.050882"
+}
