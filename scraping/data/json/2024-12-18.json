@@ -1,0 +1,54 @@
+{
+  "date": "2024-12-18",
+  "games_found": true,
+  "games": [
+    {
+      "league": "High School Girls (2006-10) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Jackson Fury 2010G",
+      "away_team": "Wiz KaFIFA",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Grove",
+      "time": null,
+      "home_score": 2,
+      "away_score": 4
+    },
+    {
+      "league": "High School Girls (2006-10) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Cornballs",
+      "away_team": "Stow Ridge Bulldogs",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 2,
+      "away_score": 3
+    },
+    {
+      "league": "High School Girls (2006-10) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Fearer",
+      "away_team": "Jackson Fury 2010G",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Grove",
+      "time": null,
+      "home_score": 4,
+      "away_score": 7
+    },
+    {
+      "league": "High School Girls (2006-10) Indoor session 1 2024-25",
+      "session": "1 2024-25",
+      "home_team": "Wiz KaFIFA",
+      "away_team": "NEO United Academy (Black)",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Wilson",
+      "time": null,
+      "home_score": 5,
+      "away_score": 0
+    }
+  ]
+}

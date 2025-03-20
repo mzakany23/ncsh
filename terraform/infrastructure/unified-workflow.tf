@@ -1,6 +1,6 @@
 ###############################################################
 # NC Soccer Unified Workflow - Step Function
-# Integrates scraping and processing for daily and monthly operations
+# Integrates scraping and processing for daily, monthly and backfill
 ###############################################################
 
 resource "aws_sfn_state_machine" "ncsoccer_unified_workflow" {
@@ -74,7 +74,8 @@ resource "aws_iam_policy" "step_function_lambda_policy" {
         ]
         Resource = [
           aws_lambda_function.ncsoccer_scraper.arn,
-          aws_lambda_function.processing.arn
+          aws_lambda_function.processing.arn,
+          aws_lambda_function.ncsoccer_backfill.arn
         ]
       },
       {
@@ -144,10 +145,10 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_monthly_unified" {
   }
 }
 
-# Date Range Trigger Schedule - DISABLED by default, manual trigger only
-resource "aws_cloudwatch_event_rule" "ncsoccer_date_range_unified" {
-  name        = "ncsoccer-date-range-unified"
-  description = "Manual trigger for NC Soccer date range workflow (disabled by default)"
+# Backfill Trigger Schedule - DISABLED by default, manual trigger only
+resource "aws_cloudwatch_event_rule" "ncsoccer_backfill_unified" {
+  name        = "ncsoccer-backfill-unified"
+  description = "Manual trigger for NC Soccer backfill workflow (disabled by default)"
 
   schedule_expression = "cron(0 1 1 1 ? 2099)" # Far future date to effectively disable automatic triggering
   state               = "DISABLED"
@@ -240,18 +241,17 @@ resource "aws_cloudwatch_event_target" "ncsoccer_monthly_unified_target" {
   })
 }
 
-# Date Range EventBridge Target
-resource "aws_cloudwatch_event_target" "ncsoccer_date_range_unified_target" {
-  rule      = aws_cloudwatch_event_rule.ncsoccer_date_range_unified.name
+# Backfill EventBridge Target
+resource "aws_cloudwatch_event_target" "ncsoccer_backfill_unified_target" {
+  rule      = aws_cloudwatch_event_rule.ncsoccer_backfill_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
 
   input = jsonencode({
-    operation = "date_range",
+    operation = "backfill",
     parameters = {
-      start_date  = "2010-01-01",
-      end_date    = "#{aws:DateNow(YYYY)}-#{aws:DateNow(MM)}-#{aws:DateNow(DD)}",
-      force_scrape = true
+      startDate   = "2010-01-01",
+      endDate     = "#{aws:DateNow(YYYY)}-#{aws:DateNow(MM)}-#{aws:DateNow(DD)}"
     }
   })
 }

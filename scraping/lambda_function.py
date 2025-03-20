@@ -2,8 +2,7 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime, date
-from dateutil.relativedelta import relativedelta
+from datetime import datetime
 from ncsoccer.runner import run_scraper, run_month
 
 logger = logging.getLogger()
@@ -16,175 +15,129 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
-    """AWS Lambda handler for scraper invocation
+    """AWS Lambda handler function
 
-    Args:
-        event (dict): Event data
-        context (LambdaContext): Lambda context
-
-    Returns:
-        dict: Response with status code and result
+    This handler serves as the unified entrypoint for both standard scraping and backfill operations.
+    The mode is determined by the BACKFILL_MODE environment variable.
     """
-    logger.info(f"Event: {json.dumps(event)}")
+    logger.info("Entered lambda_handler")
 
-    # Get operation mode from the event
-    mode = event.get('mode', 'day')
-    parameters = event.get('parameters', {})
+    # Determine if we're running in backfill mode
+    backfill_mode = os.environ.get('BACKFILL_MODE', 'false').lower() == 'true'
+    logger.info(f"Running in {'backfill' if backfill_mode else 'standard'} mode")
 
-    # Get bucket name from environment variables
-    bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+    if backfill_mode:
+        # Import backfill runner functionality locally to avoid circular imports
+        try:
+            from backfill_runner import run_backfill
 
-    # Common parameters for all modes
-    common_params = {
-        'storage_type': 's3',
-        'bucket_name': bucket_name,
-        'html_prefix': 'data/html',
-        'json_prefix': 'data/json',
-        'lookup_type': 'file',
-        'force_scrape': parameters.get('force_scrape', False)
-    }
+            # Extract parameters from event with defaults
+            start_year = event.get('start_year', 2007)
+            start_month = event.get('start_month', 1)
+            end_year = event.get('end_year')
+            end_month = event.get('end_month')
+            force_scrape = event.get('force_scrape', False)
 
-    try:
-        # Handle based on mode
-        if mode == "day":
-            # Daily mode - scrape a single day
+            # Convert string values to integers if needed
+            if isinstance(start_year, str):
+                start_year = int(start_year)
+            if isinstance(start_month, str):
+                start_month = int(start_month)
+            if end_year and isinstance(end_year, str):
+                end_year = int(end_year)
+            if end_month and isinstance(end_month, str):
+                end_month = int(end_month)
+
+            # Get bucket name and table name from environment variables
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+            table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+
+            # Calculate an appropriate timeout - leave 30 seconds for cleanup
+            max_lambda_time = context.get_remaining_time_in_millis() if context else 900000
+            timeout = (max_lambda_time / 1000) - 30  # Convert to seconds and leave margin
+
+            result = run_backfill(
+                start_year=start_year,
+                start_month=start_month,
+                end_year=end_year,
+                end_month=end_month,
+                storage_type='s3',
+                bucket_name=bucket_name,
+                lookup_type='dynamodb',
+                table_name=table_name,
+                force_scrape=force_scrape,
+                timeout=timeout
+            )
+
+            return {"statusCode": 200, "body": json.dumps({"result": result})}
+
+        except Exception as e:
+            logger.error(f"Error in backfill mode: {str(e)}", exc_info=True)
+            return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+    else:
+        # Standard scraping mode
+        try:
+            # Extract parameters from event with defaults
             now = datetime.now()
-            year = parameters.get('year', now.year)
-            month = parameters.get('month', now.month)
-            day = parameters.get('day', now.day)
+            year = event.get('year', now.year)
+            month = event.get('month', now.month)
+            force_scrape = event.get('force_scrape', False)
 
             # Convert string values to integers if needed
             if isinstance(year, str):
                 year = int(year)
             if isinstance(month, str):
                 month = int(month)
-            if isinstance(day, str):
-                day = int(day)
 
-            logger.info(f"Running day-level scraper for {year}-{month:02d}-{day:02d}")
-            success = run_scraper(
-                year=year,
-                month=month,
-                day=day,
-                **common_params
-            )
+            # Get bucket name and table name from environment variables
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+            table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
 
-            return {
-                "statusCode": 200 if success else 500,
-                "body": json.dumps({"success": success})
+            # Common parameters for both day and month modes
+            common_params = {
+                'storage_type': 's3',
+                'bucket_name': bucket_name,
+                'html_prefix': 'data/html',
+                'json_prefix': 'data/json',
+                'lookup_type': 'dynamodb',
+                'table_name': table_name,
+                'force_scrape': force_scrape
             }
 
-        elif mode == "month":
-            # Monthly mode - scrape an entire month
-            now = datetime.now()
-            year = parameters.get('year', now.year)
-            month = parameters.get('month', now.month)
+            # If day is provided, run in day mode, otherwise run in month mode
+            if 'day' in event:
+                logger.info("Running in day mode")
+                # Ensure day is an integer
+                day = event['day']
+                if isinstance(day, str):
+                    day = int(day)
 
-            # Convert string values to integers if needed
-            if isinstance(year, str):
-                year = int(year)
-            if isinstance(month, str):
-                month = int(month)
+                result = run_scraper(
+                    year=year,
+                    month=month,
+                    day=day,
+                    **common_params
+                )
+            else:
+                logger.info("Running in month mode")
+                result = run_month(
+                    year=year,
+                    month=month,
+                    **common_params
+                )
 
-            logger.info(f"Running month-level scraper for {year}-{month:02d}")
-            success = run_month(
-                year=year,
-                month=month,
-                **common_params
-            )
+            logger.info("Operation completed with result: %s", result)
+            return {"statusCode": 200, "body": json.dumps({"result": result})}
+        except Exception as e:
+            logger.error(f"Error in standard mode: {str(e)}", exc_info=True)
+            return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
-            return {
-                "statusCode": 200 if success else 500,
-                "body": json.dumps({"success": success})
-            }
+if __name__ == '__main__':
+    # Handle command line execution
+    if len(sys.argv) != 2:
+        print("Usage: python lambda_function.py '<event_json>'")
+        sys.exit(1)
 
-        elif mode == "date_range":
-            # Date range mode - iterate through months in the range
-            start_date_str = parameters.get('start_date')
-            end_date_str = parameters.get('end_date')
-
-            # Parse date strings
-            if not start_date_str or not end_date_str:
-                return {
-                    "statusCode": 400,
-                    "body": json.dumps({"error": "start_date and end_date are required for date_range mode"})
-                }
-
-            try:
-                # Parse dates with format YYYY-MM-DD
-                start_parts = start_date_str.split('-')
-                end_parts = end_date_str.split('-')
-
-                start_date = date(int(start_parts[0]), int(start_parts[1]), int(start_parts[2]))
-                end_date = date(int(end_parts[0]), int(end_parts[1]), int(end_parts[2]))
-
-                # Calculate max execution time (leave 30 seconds for cleanup)
-                max_lambda_time = context.get_remaining_time_in_millis() if context else 900000
-                timeout_time = datetime.now().timestamp() + (max_lambda_time / 1000) - 30
-
-                # Track our progress
-                all_success = True
-                current_date = start_date.replace(day=1)  # Start at first day of month
-                processed_months = []
-
-                # Process each month in the range
-                while current_date <= end_date and datetime.now().timestamp() < timeout_time:
-                    logger.info(f"Processing month: {current_date.year}-{current_date.month:02d}")
-
-                    success = run_month(
-                        year=current_date.year,
-                        month=current_date.month,
-                        **common_params
-                    )
-
-                    if not success:
-                        all_success = False
-                        logger.warning(f"Failed to process month: {current_date.year}-{current_date.month:02d}")
-
-                    processed_months.append(f"{current_date.year}-{current_date.month:02d}")
-
-                    # Move to next month
-                    current_date = current_date + relativedelta(months=1)
-
-                # Check if we've processed all months or if we hit the timeout
-                complete = current_date > end_date
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({
-                        "success": all_success,
-                        "complete": complete,
-                        "processed_months": processed_months,
-                        "remaining": None if complete else f"{current_date.year}-{current_date.month:02d}"
-                    })
-                }
-
-            except Exception as e:
-                logger.error(f"Error parsing dates: {str(e)}", exc_info=True)
-                return {
-                    "statusCode": 400,
-                    "body": json.dumps({"error": f"Invalid date format: {str(e)}"})
-                }
-        else:
-            # Unknown mode
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": f"Unknown mode: {mode}"})
-            }
-
-    except Exception as e:
-        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
-        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
-
-if __name__ == "__main__":
-    # For local testing
-    result = lambda_handler({
-        'mode': 'day',
-        'parameters': {
-            'year': 2023,
-            'month': 2,
-            'day': 1,
-            'force_scrape': True
-        }
-    }, None)
-    print(json.dumps(result, indent=2))
+    event = json.loads(sys.argv[1])
+    response = lambda_handler(event, None)
+    print(json.dumps(response))

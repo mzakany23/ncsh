@@ -1,0 +1,138 @@
+{
+  "date": "2024-12-03",
+  "games_found": true,
+  "games": [
+    {
+      "league": "Mens Open \"B\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "FC Swole",
+      "away_team": "spartans (Leon)",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 5,
+      "away_score": 5
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Village Idiots (2)",
+      "away_team": "Diddy Party (2)",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 10,
+      "away_score": 1
+    },
+    {
+      "league": "Mens Open \"B\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Al Shabab FC",
+      "away_team": "Key West FC",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "McEnhill",
+      "time": null,
+      "home_score": 6,
+      "away_score": 6
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Team sneaks (2)",
+      "away_team": "Beldangi FC (2)",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 5,
+      "away_score": 13
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "BUFFOONS (2)",
+      "away_team": "Bell Tower FC (2)",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 15,
+      "away_score": 0
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "John Bettes (2)",
+      "away_team": "TreeCity FC (2)",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "McEnhill",
+      "time": null,
+      "home_score": 8,
+      "away_score": 5
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Sticky Tree Frogs FC (1)",
+      "away_team": "United crew (1)",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Zemanski",
+      "time": null,
+      "home_score": 3,
+      "away_score": 4
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Spartans FC",
+      "away_team": "Akron United FC",
+      "status": "Complete",
+      "venue": "Field 1",
+      "officials": "Juby",
+      "time": null,
+      "home_score": 9,
+      "away_score": 6
+    },
+    {
+      "league": "Mens Open \"A\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "FUFC",
+      "away_team": "Brimfield Bottoms",
+      "status": "Complete",
+      "venue": "Field 2",
+      "officials": "Valahovic",
+      "time": null,
+      "home_score": 4,
+      "away_score": 4
+    },
+    {
+      "league": "Mens Open \"C\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "The Dude Abides (1)",
+      "away_team": "BDE (1)",
+      "status": "Complete",
+      "venue": "Field 3",
+      "officials": "McEnhill",
+      "time": null,
+      "home_score": 3,
+      "away_score": 4
+    },
+    {
+      "league": "Mens Open \"B\" Indoor session 1 2024",
+      "session": "1 2024",
+      "home_team": "Killer boots man",
+      "away_team": "TreeCity Tap-ins",
+      "status": "Complete",
+      "venue": "Field 4",
+      "officials": "Zemanski",
+      "time": null,
+      "home_score": 9,
+      "away_score": 3
+    }
+  ]
+}
