@@ -89,6 +89,7 @@ test_agent_fallback.py
 scripts/direct_scrape.py
 scripts/enhanced_backfill_test.py
 scripts/quick_test.py
+scraping/data
 
 # Test output
 output

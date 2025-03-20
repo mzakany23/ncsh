@@ -1,5 +1,5 @@
 {
-  "Comment": "NC Soccer Unified Workflow - Simplified for all operations",
+  "Comment": "NC Soccer Unified Workflow - Consolidated for daily and monthly operations",
   "StartAt": "DetermineOperationType",
   "States": {
     "DetermineOperationType": {
@@ -17,8 +17,8 @@
         },
         {
           "Variable": "$.operation",
-          "StringEquals": "backfill",
-          "Next": "ConfigureBackfillMode"
+          "StringEquals": "date_range",
+          "Next": "ConfigureDateRangeMode"
         }
       ],
       "Default": "HandleInvalidOperation"
@@ -27,8 +27,7 @@
     "ConfigureDailyMode": {
       "Type": "Pass",
       "Result": {
-        "mode": "day",
-        "backfill_mode": false
+        "mode": "day"
       },
       "ResultPath": "$.config",
       "Next": "RunScraper"
@@ -37,18 +36,16 @@
     "ConfigureMonthlyMode": {
       "Type": "Pass",
       "Result": {
-        "mode": "month",
-        "backfill_mode": false
+        "mode": "month"
       },
       "ResultPath": "$.config",
       "Next": "RunScraper"
     },
 
-    "ConfigureBackfillMode": {
+    "ConfigureDateRangeMode": {
       "Type": "Pass",
       "Result": {
-        "mode": "backfill",
-        "backfill_mode": true
+        "mode": "date_range"
       },
       "ResultPath": "$.config",
       "Next": "RunScraper"
@@ -61,7 +58,6 @@
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_scraper",
         "Payload": {
           "mode.$": "$.config.mode",
-          "backfill_mode.$": "$.config.backfill_mode",
           "parameters.$": "$.parameters"
         }
       },
@@ -94,7 +90,8 @@
           "src_prefix": "data/json/",
           "dst_bucket": "ncsh-app-data",
           "dst_prefix": "data/parquet/",
-          "mode.$": "$.config.mode"
+          "mode.$": "$.config.mode",
+          "parameters.$": "$.parameters"
         }
       },
       "Retry": [
@@ -118,7 +115,7 @@
     "HandleInvalidOperation": {
       "Type": "Fail",
       "Error": "InvalidOperation",
-      "Cause": "Operation type not recognized. Use 'daily', 'monthly', or 'backfill'."
+      "Cause": "Operation type not recognized. Use 'daily', 'monthly', or 'date_range'."
     },
 
     "HandleScraperFailure": {

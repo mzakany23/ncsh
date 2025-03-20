@@ -1,6 +1,6 @@
 ###############################################################
 # NC Soccer Unified Workflow - Step Function
-# Integrates scraping and processing for daily, monthly and backfill
+# Integrates scraping and processing for daily and monthly operations
 ###############################################################
 
 resource "aws_sfn_state_machine" "ncsoccer_unified_workflow" {
@@ -144,10 +144,10 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_monthly_unified" {
   }
 }
 
-# Backfill Trigger Schedule - DISABLED by default, manual trigger only
-resource "aws_cloudwatch_event_rule" "ncsoccer_backfill_unified" {
-  name        = "ncsoccer-backfill-unified"
-  description = "Manual trigger for NC Soccer backfill workflow (disabled by default)"
+# Date Range Trigger Schedule - DISABLED by default, manual trigger only
+resource "aws_cloudwatch_event_rule" "ncsoccer_date_range_unified" {
+  name        = "ncsoccer-date-range-unified"
+  description = "Manual trigger for NC Soccer date range workflow (disabled by default)"
 
   schedule_expression = "cron(0 1 1 1 ? 2099)" # Far future date to effectively disable automatic triggering
   state               = "DISABLED"
@@ -240,17 +240,18 @@ resource "aws_cloudwatch_event_target" "ncsoccer_monthly_unified_target" {
   })
 }
 
-# Backfill EventBridge Target
-resource "aws_cloudwatch_event_target" "ncsoccer_backfill_unified_target" {
-  rule      = aws_cloudwatch_event_rule.ncsoccer_backfill_unified.name
+# Date Range EventBridge Target
+resource "aws_cloudwatch_event_target" "ncsoccer_date_range_unified_target" {
+  rule      = aws_cloudwatch_event_rule.ncsoccer_date_range_unified.name
   arn       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
   role_arn  = aws_iam_role.unified_workflow_eventbridge_role.arn
 
   input = jsonencode({
-    operation = "backfill",
+    operation = "date_range",
     parameters = {
-      startDate   = "2010-01-01",
-      endDate     = "#{aws:DateNow(YYYY)}-#{aws:DateNow(MM)}-#{aws:DateNow(DD)}"
+      start_date  = "2010-01-01",
+      end_date    = "#{aws:DateNow(YYYY)}-#{aws:DateNow(MM)}-#{aws:DateNow(DD)}",
+      force_scrape = true
     }
   })
 }
