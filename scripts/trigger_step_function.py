@@ -49,8 +49,12 @@ def main():
                       help='Month to scrape (default: current month)')
     parser.add_argument('--day', type=int,
                       help='Day to scrape (if not provided, will scrape entire month)')
-    parser.add_argument('--mode', choices=['day', 'month'], default='month',
-                      help='Scraping mode (default: month)')
+    parser.add_argument('--mode', choices=['daily', 'monthly', 'date_range'], default='monthly',
+                      help='Scraping mode (default: monthly)')
+    parser.add_argument('--start-date',
+                      help='Start date for date_range mode (format: YYYY-MM-DD)')
+    parser.add_argument('--end-date',
+                      help='End date for date_range mode (format: YYYY-MM-DD)')
     parser.add_argument('--force-scrape', action='store_true',
                       help='Force re-scraping even if data was already scraped')
     parser.add_argument('--profile', help='AWS profile to use')
@@ -65,18 +69,32 @@ def main():
     else:
         boto3.setup_default_session(region_name=args.region)
 
-    # Prepare input data
-    input_data = {
-        "year": args.year,
-        "month": args.month,
-        "mode": args.mode
-    }
-    if args.day:
-        input_data["day"] = args.day
+    # Prepare input data with the correct structure for unified workflow
+    parameters = {}
+
+    if args.mode == 'date_range':
+        # For date_range mode, use start_date and end_date
+        if not args.start_date or not args.end_date:
+            logger.error("For date_range mode, both --start-date and --end-date are required")
+            exit(1)
+        parameters["start_date"] = args.start_date
+        parameters["end_date"] = args.end_date
+    else:
+        # For daily or monthly modes, use year, month, and optionally day
+        parameters["year"] = args.year
+        parameters["month"] = args.month
+        if args.day:
+            parameters["day"] = args.day
 
     # Add force_scrape flag if specified
     if args.force_scrape:
-        input_data["force_scrape"] = True
+        parameters["force_scrape"] = True
+
+    # Create the input structure expected by the unified workflow
+    input_data = {
+        "operation": args.mode,
+        "parameters": parameters
+    }
 
     try:
         # Trigger the step function
