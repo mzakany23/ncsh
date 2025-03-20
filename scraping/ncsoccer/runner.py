@@ -148,7 +148,10 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                 'TELNETCONSOLE_ENABLED': False,  # Disable telnet console for Lambda
                 'RETRY_ENABLED': True,
                 'RETRY_TIMES': 3,  # Number of times to retry failed requests
-                'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429]  # HTTP codes to retry on
+                'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429],  # HTTP codes to retry on
+                'SPIDER_MODULES': ['ncsoccer.spiders'],  # Explicitly set spider modules
+                'NEWSPIDER_MODULE': 'ncsoccer.spiders',  # Set new spider module
+                'BOT_NAME': 'ncsoccer'  # Set bot name
             })
             logger.info(f"Using Scrapy settings: {settings.copy_to_dict()}")
 
