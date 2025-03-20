@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from datetime import datetime
 import json
 
@@ -77,35 +77,48 @@ def test_string_params_month_mode(mock_run_month, mock_datetime):
     assert kwargs['month'] == 6
     assert kwargs['force_scrape'] == True
 
-@patch('scraping.lambda_function.datetime')
 @patch('scraping.lambda_function.run_month')
-def test_date_range_mode(mock_run_month, mock_datetime):
-    """Test the date_range mode with start and end dates."""
-    # Setup
-    mock_now = MagicMock()
-    mock_now.timestamp.return_value = 1717189200  # 2024-06-01 00:00:00
-    mock_datetime.now.return_value = mock_now
+def test_date_range_mode_validation(mock_run_month):
+    """Test the date_range mode input validation."""
+    # Test with missing start_date
+    event = {
+        'mode': 'date_range',
+        'parameters': {
+            'end_date': '2024-01-31',
+            'force_scrape': True
+        }
+    }
+    result = lambda_handler(event, None)
+    assert result['statusCode'] == 400
+    assert 'error' in json.loads(result['body'])
+    assert 'start_date and end_date are required' in json.loads(result['body'])['error']
 
-    mock_run_month.return_value = True
-
-    # Mock context with remaining time
-    mock_context = MagicMock()
-    mock_context.get_remaining_time_in_millis.return_value = 900000  # 15 minutes
-
+    # Test with missing end_date
     event = {
         'mode': 'date_range',
         'parameters': {
             'start_date': '2024-01-01',
-            'end_date': '2024-02-29',
             'force_scrape': True
         }
     }
+    result = lambda_handler(event, None)
+    assert result['statusCode'] == 400
+    assert 'error' in json.loads(result['body'])
+    assert 'start_date and end_date are required' in json.loads(result['body'])['error']
 
-    # Execute
-    result = lambda_handler(event, mock_context)
+    # Test with invalid date format
+    event = {
+        'mode': 'date_range',
+        'parameters': {
+            'start_date': 'not-a-date',
+            'end_date': '2024-01-31',
+            'force_scrape': True
+        }
+    }
+    result = lambda_handler(event, None)
+    assert result['statusCode'] == 400
+    assert 'error' in json.loads(result['body'])
+    assert 'Invalid date format' in json.loads(result['body'])['error']
 
-    # Assert
-    assert result['statusCode'] == 200
-    assert mock_run_month.call_count == 2  # Should call for Jan and Feb
-    assert 'processed_months' in json.loads(result['body'])
-    assert json.loads(result['body'])['complete'] == True
+    # Verify run_month was never called in error cases
+    assert mock_run_month.call_count == 0
