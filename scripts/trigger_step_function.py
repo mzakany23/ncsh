@@ -60,6 +60,8 @@ def main():
     parser.add_argument('--profile', help='AWS profile to use')
     parser.add_argument('--region', default='us-east-2',
                       help='AWS region (default: us-east-2)')
+    parser.add_argument('--architecture', choices=['v1', 'v2'], default='v1',
+                      help='Data architecture version to use (default: v1)')
 
     args = parser.parse_args()
 
@@ -89,6 +91,9 @@ def main():
     # Add force_scrape flag if specified
     if args.force_scrape:
         parameters["force_scrape"] = True
+
+    # Add architecture version
+    parameters["architecture_version"] = args.architecture
 
     # Create the input structure expected by the unified workflow
     input_data = {
