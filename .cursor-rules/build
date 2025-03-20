@@ -1,25 +1,6 @@
 build
 
-Build tool and Makefile usage
-
-# Build Tool and Makefile Rules
-
-## Build Tool
-- We use `uv` as our primary build tool for Python package management
-- Install uv globally: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-## Makefile Usage
-- All project commands are managed through the Makefile
-- Key commands:
-  - `make install`: Install all dependencies using uv
-  - `make test`: Run all project tests
-  - `make lint`: Run code linting
-  - `make format`: Format code
-  - `make clean`: Clean up generated files
-  - `make compile-requirements`: Compile requirements files
-
-## Best Practices
-- Always use `make install` for setting up development environment
-- Run `make test` before submitting PRs
-- Use `make compile-requirements` when updating dependencies
-- Follow the Makefile targets for consistency across the project
+1. all builds happen in ci
+2. need to bump CHANGELOG.md to run pipeline
+3. make pr: gh pr create...
+4. merge pr gh pr merge --delete --squash
