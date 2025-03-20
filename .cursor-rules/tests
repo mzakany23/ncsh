@@ -1,0 +1,5 @@
+# Test rules
+
+1. don't make new test files - fix the ones we have first
+2. be weary of regression in code.
+3. don't fix tests by changing the test, fix the lib if need be.
