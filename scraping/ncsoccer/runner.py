@@ -74,17 +74,39 @@ def is_date_scraped(date_str, lookup_data):
 def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
              html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
              lookup_type='file', region='us-east-2', table_name=None, force_scrape=False,
-             use_test_data=False):
-    """Run the scraper for a specific day"""
+             use_test_data=False, architecture_version='v1'):
+    """Run the scraper for a specific day
+
+    Args:
+        year (int): Year to scrape
+        month (int): Month to scrape
+        day (int): Day to scrape
+        storage_type (str): Storage type ('file' or 's3')
+        bucket_name (str): S3 bucket name if using S3 storage
+        html_prefix (str): Prefix for HTML files
+        json_prefix (str): Prefix for JSON files
+        lookup_file (str): Path to lookup file
+        lookup_type (str): Type of lookup ('file' only supported)
+        region (str): AWS region
+        table_name (str): DynamoDB table name (deprecated)
+        force_scrape (bool): Whether to force scrape even if date exists
+        use_test_data (bool): Whether to use test data paths
+        architecture_version (str): Data architecture version ('v1' or 'v2')
+
+    Returns:
+        bool: Success status
+    """
     try:
         logger.info(f"Starting run_scraper with params: year={year}, month={month}, day={day}, "
                    f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
-                   f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}")
+                   f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}, "
+                   f"architecture_version={architecture_version}")
 
         # Just call run_month with a single day
         return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
                         lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
-                        force_scrape=force_scrape, use_test_data=use_test_data)
+                        force_scrape=force_scrape, use_test_data=use_test_data,
+                        architecture_version=architecture_version)
     except Exception as e:
         logger.error(f"Error in run_scraper: {str(e)}", exc_info=True)
         raise RuntimeError(f"Error in run_scraper: {str(e)}")
@@ -93,52 +115,124 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
 def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
               html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
               lookup_type='file', region='us-east-2', target_days=None, table_name=None,
-              force_scrape=False, use_test_data=False, max_retries=3):
-    """Run the scraper for specific days in a month"""
+              force_scrape=False, use_test_data=False, max_retries=3, architecture_version='v1'):
+    """Run the scraper for specific days in a month
+
+    Args:
+        year (int): Year to scrape
+        month (int): Month to scrape
+        storage_type (str): Storage type ('file' or 's3')
+        bucket_name (str): S3 bucket name if using S3 storage
+        html_prefix (str): Prefix for HTML files
+        json_prefix (str): Prefix for JSON files
+        lookup_file (str): Path to lookup file
+        lookup_type (str): Type of lookup ('file' only supported)
+        region (str): AWS region
+        target_days (list): List of days to scrape. If None, scrape all days in month
+        table_name (str): DynamoDB table name (deprecated)
+        force_scrape (bool): Whether to force scrape even if date exists
+        use_test_data (bool): Whether to use test data paths
+        max_retries (int): Maximum number of retries for failed scrapes
+        architecture_version (str): Data architecture version ('v1' or 'v2')
+
+    Returns:
+        bool: Success status
+    """
     retry_count = 0
     last_error = None
 
+    # Validate architecture_version
+    if architecture_version not in ('v1', 'v2'):
+        logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
+        architecture_version = 'v1'
+
+    logger.info(f"Running with architecture version: {architecture_version}")
+
+    # Get current date for defaults
+    now = datetime.now()
+    year = year or now.year
+    month = month or now.month
+
+    # Fill in all days in the month if not specified
+    if target_days is None:
+        last_day = monthrange(year, month)[1]
+        target_days = list(range(1, last_day + 1))
+
+    # Sort target days to ensure consistent order
+    target_days = sorted(target_days)
+
+    logger.info(f"Target days: {target_days}")
+
     while retry_count < max_retries:
+        # Overall success indicator
+        success = True
+        errors = []
+
         try:
-            logger.info(f"Attempt {retry_count + 1} of {max_retries}")
-            logger.info(f"Starting run_month with params: year={year}, month={month}, "
-                       f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
-                       f"json_prefix={json_prefix}, lookup_type={lookup_type}, target_days={target_days}, "
-                       f"force_scrape={force_scrape}, use_test_data={use_test_data}")
+            # Load lookup data
+            lookup_data = {}
+            if not force_scrape and lookup_type == 'file':
+                lookup_data = load_lookup_data(lookup_file)
 
-            # Get the number of days in the month if we need all days
-            if target_days is None:
-                if month == 12:
-                    next_month = datetime(year + 1, 1, 1)
-                else:
-                    next_month = datetime(year, month + 1, 1)
-                last_day = (next_month - timedelta(days=1)).day
-                target_days = range(1, last_day + 1)
-            else:
-                # Ensure target_days is a list
-                target_days = list(target_days)
+            # Filter target days if we should skip existing
+            if not force_scrape and lookup_data:
+                filtered_days = []
+                for day in target_days:
+                    date_str = f"{year}-{month:02d}-{day:02d}"
+                    if not is_date_scraped(date_str, lookup_data):
+                        filtered_days.append(day)
+                    else:
+                        logger.info(f"Skipping {date_str} (already scraped)")
 
-            logger.info(f"Target days to process: {target_days}")
+                # If no days to scrape after filtering, return success
+                if not filtered_days:
+                    logger.info(f"No days to scrape for {year}-{month:02d} (all already scraped)")
+                    return True
 
-            success = True
-            errors = []
+                target_days = filtered_days
 
-            # Configure logging for Scrapy
+            # If using v2 architecture, initialize the checkpoint interface
+            checkpoint = None
+            if architecture_version == 'v2':
+                # Import here to avoid circular imports
+                from ncsoccer.pipeline.config import DataPathManager, get_storage_interface
+                from ncsoccer.pipeline.checkpoint import get_checkpoint_manager
+
+                # Create path manager for checkpoint path
+                path_manager = DataPathManager(
+                    architecture_version=architecture_version,
+                    base_prefix='test_data' if use_test_data else ''
+                )
+
+                # Create storage interface
+                storage = get_storage_interface(storage_type, bucket_name, region=region)
+
+                # Create checkpoint manager
+                checkpoint_path = path_manager.get_checkpoint_path()
+                checkpoint = get_checkpoint_manager(checkpoint_path, storage_interface=storage)
+                logger.info(f"Checkpoint manager initialized for {checkpoint_path}")
+
+                # Filter target days based on checkpoint data
+                if not force_scrape and checkpoint:
+                    filtered_days = []
+                    for day in target_days:
+                        date_str = f"{year}-{month:02d}-{day:02d}"
+                        if not checkpoint.is_date_scraped(date_str):
+                            filtered_days.append(day)
+                        else:
+                            logger.info(f"Skipping {date_str} (already scraped according to checkpoint)")
+
+                    # If no days to scrape after filtering, return success
+                    if not filtered_days:
+                        logger.info(f"No days to scrape for {year}-{month:02d} (all already scraped)")
+                        return True
+
+                    target_days = filtered_days
+
+            # Configure logging for scrapy
             configure_logging()
 
-            # Get bucket name from environment if not provided
-            if storage_type == 's3' and not bucket_name:
-                bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-                logger.info(f"Using bucket name from environment: {bucket_name}")
-
-            # Create necessary directories if using file storage
-            if storage_type == 'file':
-                logger.info("Creating necessary directories for file storage")
-                os.makedirs(os.path.dirname(html_prefix), exist_ok=True)
-                os.makedirs(os.path.dirname(json_prefix), exist_ok=True)
-                os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
-
-            # Create a single crawler process with settings
+            # Configure scrapy settings
             settings = get_project_settings()
             settings.update({
                 'LOG_LEVEL': 'INFO',
@@ -166,52 +260,62 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             from twisted.internet import defer
             deferreds = []
 
-            # Schedule all spiders and collect their deferreds
-            for day in target_days:
-                date_str = f"{year}-{month:02d}-{day:02d}"
-                logger.info(f"Scheduling scrape for {date_str}")
-                d = process.crawl(
-                    'schedule',
-                    year=year,
-                    month=month,
-                    day=day,
-                    storage_type=storage_type,
-                    bucket_name=bucket_name,
-                    html_prefix=html_prefix,
-                    json_prefix=json_prefix,
-                    lookup_file=lookup_file,
-                    lookup_type=lookup_type,
-                    region=region,
-                    table_name=table_name or os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates'),
-                    force_scrape=force_scrape,
-                    use_test_data=use_test_data
-                )
-                deferreds.append(d)
-                logger.info(f"Successfully scheduled spider for {date_str}")
+            # Schedule a spider for each target day
+            try:
+                for day in target_days:
+                    logger.info(f"Scheduling spider for {year}-{month:02d}-{day:02d}")
 
-            # Wait for all spiders to complete
-            logger.info("Waiting for spiders to complete")
-            deferred_list = defer.DeferredList(deferreds)
-            deferred_list.addCallback(lambda _: logger.info("All spiders completed"))
+                    # Create spider for the day, using date_str to uniquely identify spiders
+                    date_str = f"{year}-{month:02d}-{day:02d}"
 
-            # Start the reactor if not already started
-            global _reactor_started
-            if not _reactor_started:
-                logger.info("Starting Scrapy reactor")
+                    # Configure spider
+                    spider = process.create_crawler('schedule_spider')
+                    d = process.crawl(
+                        spider,
+                        mode='day',
+                        year=year,
+                        month=month,
+                        day=day,
+                        storage_type=storage_type,
+                        bucket_name=bucket_name,
+                        html_prefix=html_prefix,
+                        json_prefix=json_prefix,
+                        lookup_file=lookup_file,
+                        lookup_type=lookup_type,
+                        region=region,
+                        table_name=table_name,
+                        force_scrape=force_scrape,
+                        use_test_data=use_test_data,
+                        architecture_version=architecture_version
+                    )
+                    deferreds.append(d)
+                    logger.info(f"Spider scheduled for {date_str}")
+
+                logger.info(f"Scheduled {len(deferreds)} spiders")
+
+                # Start the crawl process
+                logger.info("Starting crawler process")
                 try:
                     process.start()
-                    _reactor_started = True
-                    logger.info("Scrapy reactor completed successfully")
+                    logger.info("Process completed")
                 except Exception as e:
-                    logger.error(f"Error in Scrapy reactor: {str(e)}", exc_info=True)
-                    raise
-            else:
-                logger.info("Using existing reactor")
-                # Wait a bit for spiders to complete their work
-                time.sleep(5)
+                    logger.error(f"Error in process.start(): {str(e)}", exc_info=True)
+                    success = False
+                    errors.append(str(e))
+            except Exception as e:
+                logger.error(f"Error scheduling spiders: {str(e)}", exc_info=True)
+                success = False
+                errors.append(str(e))
 
-            # Add timeout for file verification
-            max_wait = 60  # Maximum wait time in seconds
+            if not success:
+                logger.error(f"Crawl process failed with errors: {errors}")
+                retry_count += 1
+                last_error = errors
+                continue
+
+            # Verify files were created
+            logger.info("Verifying files were created")
+            max_wait = 120  # Maximum wait time in seconds
             start_time = time.time()
 
             # Verify files were created for all target days
@@ -222,12 +326,22 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                 prefix = 'test_data' if use_test_data else 'data'
                 logger.info(f"Verifying files with prefix: {prefix}")
 
+                # Create path manager to check files
+                from ncsoccer.pipeline.config import DataPathManager
+                path_manager = DataPathManager(
+                    architecture_version=architecture_version,
+                    base_prefix='test_data' if use_test_data else ''
+                )
+
+                date_obj = datetime(year, month, day)
+
+                # Get expected file paths using the path manager
                 expected_files = [
-                    f"{prefix}/html/{date_str}.html",
-                    f"{prefix}/json/{date_str}_meta.json",
-                    f"{prefix}/games/year={year}/month={month:02d}/day={day:02d}/data.jsonl",
-                    f"{prefix}/metadata/year={year}/month={month:02d}/day={day:02d}/data.jsonl"
+                    path_manager.get_html_path(date_obj),
+                    path_manager.get_json_meta_path(date_obj),
+                    path_manager.get_games_path(date_obj)
                 ]
+
                 logger.info(f"Expected files to verify: {expected_files}")
 
                 # Get the storage interface based on configuration
@@ -254,16 +368,14 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             return True
 
         except Exception as e:
+            logger.error(f"Error in run_month (attempt {retry_count + 1}): {str(e)}", exc_info=True)
             retry_count += 1
             last_error = str(e)
-            logger.error(f"Attempt {retry_count} failed: {last_error}")
+            time.sleep(2)  # Brief delay before retry
 
-            if retry_count < max_retries:
-                logger.info(f"Retrying in 10 seconds...")
-                time.sleep(10)  # Wait before retrying
-            else:
-                logger.error(f"All {max_retries} attempts failed")
-                raise RuntimeError(f"Scraper failed after {max_retries} attempts. Last error: {last_error}")
+    # If we get here, all retries failed
+    logger.error(f"All {max_retries} attempts failed. Last error: {last_error}")
+    raise RuntimeError(f"Failed to run month after {max_retries} attempts. Last error: {last_error}")
 
 
 def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
@@ -308,6 +420,7 @@ if __name__ == '__main__':
     parser.add_argument('--json-prefix', default='data/json', help='JSON prefix')
     parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup type')
     parser.add_argument('--table-name', default='ncsh-scraped-dates', help='DynamoDB table name')
+    parser.add_argument('--architecture-version', default='v1', help='Architecture version')
 
     args = parser.parse_args()
 
@@ -319,7 +432,8 @@ if __name__ == '__main__':
         'json_prefix': args.json_prefix,
         'lookup_type': args.lookup_type,
         'table_name': args.table_name,
-        'force_scrape': args.force_scrape
+        'force_scrape': args.force_scrape,
+        'architecture_version': args.architecture_version
     }
 
     if args.mode == 'day' and args.day:

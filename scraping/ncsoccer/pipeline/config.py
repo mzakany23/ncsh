@@ -15,6 +15,10 @@ class StorageType(Enum):
     S3 = "s3"
     # Add other storage types here (e.g., DATABASE = "database")
 
+class DataArchitectureVersion(Enum):
+    V1 = "v1"  # Legacy architecture
+    V2 = "v2"  # New partitioned architecture
+
 @dataclass
 class ScraperConfig:
     mode: ScrapeMode
@@ -22,6 +26,7 @@ class ScraperConfig:
     storage_type: StorageType = StorageType.S3
     skip_existing: bool = True
     bucket_name: str = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+    architecture_version: DataArchitectureVersion = DataArchitectureVersion.V1
 
     @property
     def end_date(self) -> datetime:
@@ -35,21 +40,178 @@ class ScraperConfig:
             else:
                 return datetime(self.start_date.year, self.start_date.month + 1, 1) - timedelta(days=1)
 
-@dataclass
-class PipelineConfig:
-    run_scraper: bool = True
-    run_parser: bool = True
-    run_validator: bool = True
-    scraper_config: Optional[ScraperConfig] = None
+class DataPathManager:
+    """
+    Manages path construction for different data architecture versions.
+    This handles the transition from the legacy architecture to the new partitioned structure.
+    """
+
+    def __init__(self, architecture_version=DataArchitectureVersion.V1, base_prefix=""):
+        """
+        Initialize the path manager.
+
+        Args:
+            architecture_version: Which architecture version to use (V1 or V2)
+            base_prefix: Optional base prefix to prepend to all paths
+        """
+        self.architecture_version = architecture_version
+        if isinstance(architecture_version, str):
+            self.architecture_version = DataArchitectureVersion(architecture_version.lower())
+
+        self.base_prefix = base_prefix
+
+    def get_html_path(self, date_obj):
+        """
+        Get the path for storing HTML content.
+
+        Args:
+            date_obj: datetime object for the date
+
+        Returns:
+            Path string
+        """
+        if self.architecture_version == DataArchitectureVersion.V1:
+            return os.path.join(self.base_prefix, 'data/html', f"{date_obj.strftime('%Y-%m-%d')}.html")
+        else:  # V2
+            year = date_obj.year
+            month = date_obj.month
+            day = date_obj.day
+            return os.path.join(
+                self.base_prefix,
+                'v2/raw/html',
+                f"year={year}",
+                f"month={month:02d}",
+                f"day={day:02d}",
+                f"{date_obj.strftime('%Y-%m-%d')}.html"
+            )
+
+    def get_json_meta_path(self, date_obj):
+        """
+        Get the path for storing JSON metadata.
+
+        Args:
+            date_obj: datetime object for the date
+
+        Returns:
+            Path string
+        """
+        if self.architecture_version == DataArchitectureVersion.V1:
+            return os.path.join(self.base_prefix, 'data/json', f"{date_obj.strftime('%Y-%m-%d')}_meta.json")
+        else:  # V2
+            year = date_obj.year
+            month = date_obj.month
+            day = date_obj.day
+            return os.path.join(
+                self.base_prefix,
+                'v2/processed/json',
+                f"year={year}",
+                f"month={month:02d}",
+                f"day={day:02d}",
+                f"{date_obj.strftime('%Y-%m-%d')}_meta.json"
+            )
+
+    def get_games_path(self, date_obj):
+        """
+        Get the path for storing game data.
+
+        Args:
+            date_obj: datetime object for the date
+
+        Returns:
+            Path string
+        """
+        if self.architecture_version == DataArchitectureVersion.V1:
+            year = date_obj.year
+            month = date_obj.month
+            day = date_obj.day
+            return os.path.join(self.base_prefix, 'data/games', f"year={year}", f"month={month:02d}", f"day={day:02d}", "data.jsonl")
+        else:  # V2
+            year = date_obj.year
+            month = date_obj.month
+            day = date_obj.day
+            return os.path.join(
+                self.base_prefix,
+                'v2/processed/json',
+                f"year={year}",
+                f"month={month:02d}",
+                f"day={day:02d}",
+                "games.jsonl"
+            )
+
+    def get_metadata_path(self, date_obj):
+        """
+        Get the path for storing additional metadata.
+
+        Args:
+            date_obj: datetime object for the date
+
+        Returns:
+            Path string
+        """
+        if self.architecture_version == DataArchitectureVersion.V1:
+            year = date_obj.year
+            month = date_obj.month
+            day = date_obj.day
+            return os.path.join(self.base_prefix, 'data/metadata', f"year={year}", f"month={month:02d}", f"day={day:02d}", "data.jsonl")
+        else:  # V2
+            year = date_obj.year
+            month = date_obj.month
+            day = date_obj.day
+            return os.path.join(
+                self.base_prefix,
+                'v2/processed/json',
+                f"year={year}",
+                f"month={month:02d}",
+                f"day={day:02d}",
+                "metadata.jsonl"
+            )
+
+    def get_checkpoint_path(self):
+        """
+        Get the path for the checkpoint file.
+
+        Returns:
+            Path string
+        """
+        if self.architecture_version == DataArchitectureVersion.V1:
+            return os.path.join(self.base_prefix, 'data/checkpoints/html_processing.json')
+        else:  # V2
+            return os.path.join(self.base_prefix, 'v2/control/checkpoints.json')
+
+    def get_parquet_path(self, version=None):
+        """
+        Get the path for parquet dataset.
+
+        Args:
+            version: Optional version identifier
+
+        Returns:
+            Path string
+        """
+        if self.architecture_version == DataArchitectureVersion.V1:
+            if version:
+                return os.path.join(self.base_prefix, 'data/parquet', f"ncsoccer_games_{version}.parquet")
+            else:
+                return os.path.join(self.base_prefix, 'data/parquet', "ncsoccer_games_latest.parquet")
+        else:  # V2
+            if version:
+                return os.path.join(self.base_prefix, 'v2/analytical/parquet', f"ncsoccer_games_{version}.parquet")
+            else:
+                return os.path.join(self.base_prefix, 'v2/analytical/parquet', "ncsoccer_games_latest.parquet")
 
 class StorageInterface:
+    """Abstract base class for storage implementations"""
+
     def exists(self, path: str) -> bool:
+        """Check if a path exists"""
         raise NotImplementedError
 
     def write(self, path: str, content: str) -> bool:
+        """Write content to a path"""
         raise NotImplementedError
 
     def read(self, path: str) -> str:
+        """Read content from a path"""
         raise NotImplementedError
 
 class FileStorage(StorageInterface):
@@ -120,6 +282,14 @@ def get_storage_interface(storage_type: str | StorageType, bucket_name: str = No
         return S3Storage(bucket_name, region=region)
     raise ValueError(f"Unsupported storage type: {storage_type}")
 
+@dataclass
+class PipelineConfig:
+    """Pipeline configuration for running the data pipeline"""
+    run_scraper: bool = True
+    run_parser: bool = True
+    run_validator: bool = True
+    scraper_config: Optional[ScraperConfig] = None
+
 def create_scraper_config(
     mode: str,
     year: int,
@@ -127,11 +297,13 @@ def create_scraper_config(
     day: Optional[int] = None,
     skip_existing: bool = True,
     storage_type: str = "s3",
-    bucket_name: str = None
+    bucket_name: str = None,
+    architecture_version: str = "v1"
 ) -> ScraperConfig:
     """Create a scraper configuration from command line arguments"""
     mode = ScrapeMode(mode.lower())
     storage = StorageType(storage_type.lower())
+    architecture = DataArchitectureVersion(architecture_version.lower())
 
     if day:
         start_date = datetime(year, month, day)
@@ -143,7 +315,8 @@ def create_scraper_config(
         start_date=start_date,
         storage_type=storage,
         skip_existing=skip_existing,
-        bucket_name=bucket_name
+        bucket_name=bucket_name,
+        architecture_version=architecture
     )
 
 def create_pipeline_config(

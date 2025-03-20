@@ -15,6 +15,7 @@ from ..pipeline.config import (
     create_scraper_config
 )
 from ..pipeline.lookup import get_lookup_interface
+from ..pipeline.checkpoint import get_checkpoint_manager
 
 # Import the score extraction agent (will be used as a fallback)
 try:
@@ -26,11 +27,11 @@ except (ImportError, ModuleNotFoundError):
 class ScheduleSpider(scrapy.Spider):
     """
     Unified soccer schedule spider that supports both single date and date range scraping.
-    
+
     This spider can operate in two modes:
     1. Single date mode: Scrapes data for a specific date using the year, month, day parameters
     2. Date range mode: Scrapes data for a range of dates using start_* and end_* parameters
-    
+
     All scraping is done using direct URL access to the print.aspx endpoint, which is more reliable
     and efficient than UI navigation.
     """
@@ -67,58 +68,86 @@ class ScheduleSpider(scrapy.Spider):
         'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429, 403]
     }
 
-    def __init__(self, mode='day', year=None, month=None, day=None, 
-                 start_year=None, start_month=None, start_day=None, 
+    def __init__(self, mode='day', year=None, month=None, day=None,
+                 start_year=None, start_month=None, start_day=None,
                  end_year=None, end_month=None, end_day=None,
                  skip_existing=True, html_prefix='data/html', json_prefix='data/json',
-                 lookup_file='data/lookup.json', storage_type='s3', bucket_name=None, 
+                 lookup_file='data/lookup.json', storage_type='s3', bucket_name=None,
                  lookup_type='file', region='us-east-2', table_name=None,
-                 force_scrape=False, use_test_data=False, use_agent=True, 
-                 anthropic_api_key=None, *args, **kwargs):
-        """
-        Initialize the spider with flexible date parameters.
-        
+                 force_scrape=False, use_test_data=False, use_agent=True,
+                 anthropic_api_key=None, architecture_version='v1', *args, **kwargs):
+        """Initialize the spider
+
         Args:
-            mode (str): Scrape mode - 'day' for single day, 'range' for date range
-            year, month, day: Target date for single day scraping (default: current date)
-            start_year, start_month, start_day: Start date for range scraping (default: 2007-01-01)
-            end_year, end_month, end_day: End date for range scraping (default: current date)
-            skip_existing (bool): Whether to skip already scraped dates
-            force_scrape (bool): Whether to force scrape even if already scraped
-            html_prefix, json_prefix: Directory prefixes for storage
-            other args: See documentation for details
+            mode (str): 'day' for single day mode or 'range' for date range mode
+            year (int): Year to scrape for single day mode
+            month (int): Month to scrape for single day mode
+            day (int): Day to scrape for single day mode
+
+            start_year (int): Start year for date range mode
+            start_month (int): Start month for date range mode
+            start_day (int): Start day for date range mode
+
+            end_year (int): End year for date range mode
+            end_month (int): End month for date range mode
+            end_day (int): End day for date range mode
+
+            skip_existing (bool): Whether to skip dates that have already been scraped
+            html_prefix (str): Prefix for HTML files
+            json_prefix (str): Prefix for JSON files
+            lookup_file (str): Path to lookup file
+            storage_type (str): 'file' or 's3'
+            bucket_name (str): S3 bucket name if storage_type is 's3'
+            lookup_type (str): Only 'file' is supported
+            region (str): AWS region
+            table_name (str): Deprecated, will be ignored
+            force_scrape (bool): Whether to scrape even if date already exists
+            use_test_data (bool): Whether to use test data paths
+            use_agent (bool): Whether to use Claude agent for score extraction
+            anthropic_api_key (str): API key for Anthropic
+            architecture_version (str): 'v1' for legacy or 'v2' for new data architecture
         """
-        super(ScheduleSpider, self).__init__(*args, **kwargs)
-        
-        # Convert force_scrape from string to bool
-        force_scrape = str(force_scrape).lower() == 'true'
-        self.skip_existing = not force_scrape
-        self.use_test_data = use_test_data
-        
-        # Now logic and default dates
-        now = datetime.now()
-        
-        # Determine scrape mode
+        super().__init__(*args, **kwargs)
+
+        # Set mode ('day' or 'range')
         self.scrape_mode = mode
-        
-        # Parse single day target configuration (for backward compatibility)
+
+        # Current date for defaults
+        now = datetime.now()
+
+        # Force scrape flag (override skip_existing)
+        self.force_scrape = force_scrape
+        # Whether to skip already scraped dates
+        self.skip_existing = skip_existing and not force_scrape
+
+        # Parse parameters for single date mode
         self.target_year = int(year) if year else now.year
         self.target_month = int(month) if month else now.month
         self.target_day = int(day) if day else now.day
-        
+
         # Parse date range configuration
         self.start_year = int(start_year) if start_year else 2007  # Default to 2007
         self.start_month = int(start_month) if start_month else 1   # Default to January
         self.start_day = int(start_day) if start_day else 1         # Default to first day
-        
+
         self.end_year = int(end_year) if end_year else now.year
         self.end_month = int(end_month) if end_month else now.month
         self.end_day = int(end_day) if end_day else None  # None means last day of month
-        
+
         # Statistics
         self.start_time = time.time()
-        
-        # Set up storage paths
+
+        # Architecture version
+        self.architecture_version = architecture_version
+
+        # Set up path manager for data architecture
+        from ncsoccer.pipeline.config import DataPathManager
+        self.path_manager = DataPathManager(
+            architecture_version=architecture_version,
+            base_prefix='test_data' if use_test_data else ''
+        )
+
+        # For backward compatibility (these are used in various parts of the code)
         if use_test_data:
             self.html_prefix = 'test_data/html'
             self.json_prefix = 'test_data/json'
@@ -126,8 +155,9 @@ class ScheduleSpider(scrapy.Spider):
             self.html_prefix = html_prefix
             self.json_prefix = json_prefix
         self.lookup_file = lookup_file
-        
+
         # Create scraper configuration
+        from ncsoccer.pipeline.config import create_scraper_config
         self.config = create_scraper_config(
             mode='day',  # Always use day mode, we'll handle multiple days externally
             year=self.target_year,
@@ -135,18 +165,34 @@ class ScheduleSpider(scrapy.Spider):
             day=self.target_day,
             skip_existing=self.skip_existing,
             storage_type=storage_type,
-            bucket_name=bucket_name
+            bucket_name=bucket_name,
+            architecture_version=architecture_version
         )
-        
+
         # Set up storage and lookup interfaces
+        from ncsoccer.pipeline.config import get_storage_interface
+        from ncsoccer.pipeline.lookup import get_lookup_interface
         self.storage = get_storage_interface(self.config.storage_type, self.config.bucket_name, region=region)
-        self.lookup = get_lookup_interface(lookup_type, lookup_file=lookup_file, region=region, table_name=table_name)
-        
+        self.lookup = get_lookup_interface(
+            lookup_type=lookup_type,
+            lookup_file=lookup_file,
+            region=region,
+            table_name=table_name,
+            architecture_version=architecture_version
+        )
+
+        # Set up checkpoint manager if using v2 architecture
+        self.checkpoint = None
+        if architecture_version == 'v2':
+            checkpoint_path = self.path_manager.get_checkpoint_path()
+            self.checkpoint = get_checkpoint_manager(checkpoint_path, storage_interface=self.storage)
+            self.logger.info(f"Checkpoint manager initialized for {checkpoint_path}")
+
         # Set up score extraction agent if available and requested
         self.use_agent = use_agent and AGENT_AVAILABLE
         self.agent = None
         self.anthropic_api_key = anthropic_api_key
-        
+
         if self.use_agent:
             try:
                 self.agent = ScoreExtractionAgent(api_key=self.anthropic_api_key)
@@ -154,67 +200,127 @@ class ScheduleSpider(scrapy.Spider):
             except Exception as e:
                 self.logger.error(f"Failed to initialize score extraction agent: {e}")
                 self.use_agent = False
-                
+
         # Log scrape configuration
         if self.scrape_mode == 'range':
             self.logger.info(f"Date range scrape: {self.start_year}-{self.start_month:02d}-{self.start_day:02d} to {self.end_year}-{self.end_month:02d}-{self.end_day or 'last day'}")
         else:
             self.logger.info(f"Single date scrape: {self.target_year}-{self.target_month:02d}-{self.target_day:02d}")
 
-    def _is_date_scraped(self, date):
-        """Check if a date has already been scraped using the lookup data"""
-        date_str = date.strftime('%Y-%m-%d')
-        return self.lookup.is_date_scraped(date_str)
+    def date_already_scraped(self, date_obj):
+        """Check if a date has already been scraped
 
-    def get_direct_date_url(self, target_date):
-        """Generate a direct URL to access the schedule for a specific date"""
-        # Format the date for the URL
-        date_str = f"{target_date.month}/{target_date.day}/{target_date.year}"
-        
-        # Format the title with day name
-        day_name = target_date.strftime('%A')
-        month_name = target_date.strftime('%B')
-        day = target_date.day
-        year = target_date.year
-        title_date = f"{day_name}, {month_name} {day}, {year}"
-        title = f"Games on {title_date}"
-        title_encoded = urllib.parse.quote(title)
-        
-        # Construct the URL
-        url = (f"{self.print_url}?type=schedule&title={title_encoded}&team_id=0&"
-               f"league_id=0&facility_id={self.facility_id}&"
-               f"day={urllib.parse.quote(date_str)}&framed=1")
-               
-        return url
+        Args:
+            date_obj: datetime object for the date to check
+
+        Returns:
+            bool: Whether the date has already been scraped
+        """
+        date_str = date_obj.strftime('%Y-%m-%d')
+
+        # If using v2 architecture and checkpoint system
+        if self.architecture_version == 'v2' and self.checkpoint:
+            is_scraped = self.checkpoint.is_date_scraped(date_str)
+            if is_scraped:
+                self.logger.info(f"Date {date_str} was already scraped according to checkpoint")
+            return is_scraped
+
+        # Fall back to traditional lookup for v1 architecture
+        was_scraped = self.lookup.is_date_scraped(date_str)
+        if was_scraped:
+            self.logger.info(f"Date {date_str} was already scraped according to lookup")
+        return was_scraped
+
+    def handle_date_response(self, response, date_obj):
+        """Process a response for a specific date
+
+        Args:
+            response: Scrapy response
+            date_obj: datetime object for the date being processed
+        """
+        date_str = date_obj.strftime('%Y-%m-%d')
+        self.logger.info(f"Processing data for {date_str}")
+
+        # Check if HTML has content
+        if not response.body or len(response.body.decode('utf-8')) < 1000:
+            self.logger.warning(f"Empty or minimal HTML for {date_str}, skipping")
+
+            # Update checkpoint if using v2
+            if self.architecture_version == 'v2' and self.checkpoint:
+                self.checkpoint.update_scraping(date_str, success=False, games_count=0)
+
+            return
+
+        # Store raw HTML data
+        html_stored = self.store_raw_html(response)
+        if not html_stored:
+            self.logger.error(f"Failed to store HTML for {date_str}")
+
+            # Update checkpoint if using v2
+            if self.architecture_version == 'v2' and self.checkpoint:
+                self.checkpoint.update_scraping(date_str, success=False, games_count=0)
+
+            return
+
+        # Extract game data
+        games, metadata = self.extract_games(response, date_str)
+
+        # Store metadata
+        meta_stored = self.store_metadata(metadata, date_str)
+        if not meta_stored:
+            self.logger.error(f"Failed to store metadata for {date_str}")
+
+        # Store games data
+        games_stored = self.store_games(games, date_str)
+        if not games_stored:
+            self.logger.error(f"Failed to store games for {date_str}")
+
+        # Update lookup and checkpoint for this date
+        self.lookup.add_scraped_date(date_str)
+
+        # Update checkpoint if using v2
+        if self.architecture_version == 'v2' and self.checkpoint:
+            success = html_stored and meta_stored and games_stored
+            self.checkpoint.update_scraping(date_str, success=success, games_count=len(games))
+
+        self.logger.info(f"Completed processing for {date_str} with {len(games)} games")
 
     def generate_dates_to_scrape(self):
-        """Generate a list of dates to scrape based on start and end parameters."""
-        import calendar
-        
-        dates = []
-        
-        # Convert parameters to datetime objects
-        start_day = int(getattr(self, 'start_day', 1))
-        
-        start_date = datetime(self.start_year, self.start_month, start_day)
-        
-        # Calculate end date (use last day of month if not specified)
-        if hasattr(self, 'end_day') and self.end_day:
-            end_date = datetime(self.end_year, self.end_month, int(self.end_day))
+        """Generate a list of dates to scrape based on the configuration
+
+        Returns:
+            List of datetime objects for dates to scrape
+        """
+        dates_to_scrape = []
+
+        if self.scrape_mode == 'range':
+            # For date range mode, generate all dates in the range
+            start_date = datetime(self.start_year, self.start_month, self.start_day)
+
+            # If end_day is None, set it to the last day of the month
+            end_day = self.end_day or monthrange(self.end_year, self.end_month)[1]
+            end_date = datetime(self.end_year, self.end_month, end_day)
+
+            # Generate dates
+            current_date = start_date
+            while current_date <= end_date:
+                # If we should skip existing and date was already scraped, skip it
+                if self.skip_existing and self.date_already_scraped(current_date):
+                    current_date += timedelta(days=1)
+                    continue
+
+                dates_to_scrape.append(current_date)
+                current_date += timedelta(days=1)
         else:
-            # Get last day of the end month
-            last_day = calendar.monthrange(self.end_year, self.end_month)[1]
-            end_date = datetime(self.end_year, self.end_month, last_day)
-        
-        # Generate all dates in the range
-        current_date = start_date
-        while current_date <= end_date:
-            dates.append(current_date)
-            current_date += timedelta(days=1)
-            
-        self.logger.info(f"Generated {len(dates)} dates to scrape from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-        return dates
-        
+            # For single date mode
+            target_date = datetime(self.target_year, self.target_month, self.target_day)
+
+            # If we should skip existing and date was already scraped, don't add it
+            if not (self.skip_existing and self.date_already_scraped(target_date)):
+                dates_to_scrape.append(target_date)
+
+        return dates_to_scrape
+
     def start_requests(self):
         """Use direct date access method to get schedule data for either a single date or a date range"""
         try:
@@ -222,20 +328,20 @@ class ScheduleSpider(scrapy.Spider):
                 # Date range mode (formerly BackfillSpider functionality)
                 all_dates = self.generate_dates_to_scrape()
                 self.logger.info(f"Starting direct URL scrape for {len(all_dates)} dates")
-                
+
                 # Process each date directly using direct URL access
                 for target_date in all_dates:
                     date_str = target_date.strftime('%Y-%m-%d')
-                    
+
                     # Skip dates already scraped if flag is set
-                    if self.skip_existing and self._is_date_scraped(target_date):
+                    if self.skip_existing and self.date_already_scraped(target_date):
                         self.logger.info(f"Skipping date {date_str} (already scraped)")
                         continue
-                        
+
                     # Use direct URL access for each date
                     direct_url = self.get_direct_date_url(target_date)
                     self.logger.info(f"Scheduling scrape for {date_str} using direct URL access")
-                    
+
                     yield scrapy.Request(
                         url=direct_url,
                         callback=self.parse_schedule,
@@ -250,7 +356,7 @@ class ScheduleSpider(scrapy.Spider):
             else:
                 # Single date mode (original ScheduleSpider functionality)
                 target_date = datetime(self.target_year, self.target_month, self.target_day)
-                if self.skip_existing and self._is_date_scraped(target_date):
+                if self.skip_existing and self.date_already_scraped(target_date):
                     self.logger.info(f"Skipping {self.target_year}-{self.target_month}-{self.target_day} (already scraped)")
                     return
 
@@ -275,12 +381,12 @@ class ScheduleSpider(scrapy.Spider):
                 except Exception as e:
                     self.logger.error(f"Failed to load HTML: {e}")
                     self.logger.info("Proceeding with network request...")
-                
+
                 # Use the direct date access method
                 self.logger.info(f"Fetching data for date {target_date.strftime('%Y-%m-%d')} using direct URL access")
                 direct_url = self.get_direct_date_url(target_date)
                 self.logger.info(f"Direct URL: {direct_url}")
-                
+
                 yield scrapy.Request(
                     url=direct_url,
                     callback=self.parse_schedule,
@@ -474,29 +580,29 @@ class ScheduleSpider(scrapy.Spider):
         try:
             # Store raw HTML immediately
             self.store_raw_html(response)
-            
+
             # Check if this is a direct access response (print.aspx) or standard response
             is_direct_access = response.meta.get('direct_access', False)
-            
+
             # Initialize empty games list
             games = []
-            
+
             # Different parsing logic based on the source
             if is_direct_access:
                 # Process the print.aspx format
                 self.logger.info(f"Processing print.aspx format for {date_str}")
-                
+
                 # Find the game table - different selector for print.aspx
                 game_tables = response.css('table')
                 game_table = None
-                
+
                 # Find the table with the game data (has League in header)
                 for table in game_tables:
                     headers = table.css('th::text').getall()
                     if headers and any('League' in h for h in headers):
                         game_table = table
                         break
-                
+
                 if not game_table:
                     # Check for "No games scheduled" message
                     no_games_text = "No games scheduled"
@@ -536,11 +642,11 @@ class ScheduleSpider(scrapy.Spider):
                             'games_count': 0
                         }
                         return
-                
+
                 # Get headers to understand the table structure
                 headers = [th.css('::text').get('').strip() for th in game_table.css('tr:first-child th')]
                 self.logger.info(f"Found headers: {headers}")
-                
+
                 # Map header positions to field names
                 header_map = {}
                 for i, header in enumerate(headers):
@@ -561,7 +667,7 @@ class ScheduleSpider(scrapy.Spider):
                         header_map['officials'] = i
                     elif 'game' in lower_header:
                         header_map['game_type'] = i
-                
+
                 # Process game rows
                 rows = game_table.css('tr:not(:first-child)')  # Skip header row
                 for row in rows:
@@ -571,9 +677,9 @@ class ScheduleSpider(scrapy.Spider):
                         first_cell_text = cells[0].css('::text').get('').strip()
                         if "no games scheduled" in first_cell_text.lower():
                             continue
-                            
+
                         games_count += 1
-                        
+
                         # Extract data using header map
                         game_data = {
                             'league': '',
@@ -587,18 +693,18 @@ class ScheduleSpider(scrapy.Spider):
                             'away_score': None,
                             'session': ''
                         }
-                        
+
                         # Fill in data from cells
                         for field, index in header_map.items():
                             if index < len(cells):
                                 # Get cell text without internal tags
                                 value = ' '.join(cells[index].css('::text').getall()).strip()
                                 game_data[field] = value
-                        
+
                         # Extract session from league name
                         if 'session' in game_data['league'].lower():
                             game_data['session'] = game_data['league'].split('session')[-1].strip()
-                        
+
                         # Look for score in the row (might be in home/away team cells or separate)
                         score_pattern = r'(\d+)\s*-\s*(\d+)'
                         for i, cell in enumerate(cells):
@@ -612,15 +718,15 @@ class ScheduleSpider(scrapy.Spider):
                                     break
                                 except (ValueError, IndexError):
                                     self.logger.warning(f"Failed to parse scores from: {cell_text}")
-                        
+
                         games.append(game_data)
             else:
                 # Standard schedule.aspx format parsing
                 self.logger.info(f"Processing schedule.aspx format for {date_str}")
-                
+
                 # Find the schedule table
                 schedule_table = response.css('table#ctl00_c_Schedule1_GridView1')
-                
+
                 if not schedule_table:
                     self.logger.warning(f"No schedule table found for {date_str}")
                     metadata = {
@@ -639,7 +745,7 @@ class ScheduleSpider(scrapy.Spider):
                         'games_count': 0
                     }
                     return
-                
+
                 # Process games one at a time
                 rows = schedule_table.css('tr')[1:]  # Skip header row
                 for row in rows:
@@ -649,15 +755,15 @@ class ScheduleSpider(scrapy.Spider):
                         league = cells[0].css('a::text').get('').strip()
                         # Extract session from league name
                         session = league.split('session')[-1].strip() if 'session' in league else ''
-                        
+
                         # Enhanced score extraction to handle different HTML structures
                         home_score = None
                         away_score = None
                         extraction_method = "standard"
-                        
+
                         # Try the standard method first (direct span text in third column)
                         versus_text = cells[2].css('span::text').get('').strip()
-                        
+
                         # If that doesn't have scores, check if we have a td with schedule-versus-column class
                         if not versus_text or ' - ' not in versus_text:
                             # First, check if the current cell has the schedule-versus-column class
@@ -671,7 +777,7 @@ class ScheduleSpider(scrapy.Spider):
                                         versus_text = cell.css('span::text').get('').strip()
                                         extraction_method = f"schedule-versus-column-cell-{i}"
                                         break
-                        
+
                         # Parse scores if we found them
                         if versus_text and ' - ' in versus_text:
                             try:
@@ -690,25 +796,25 @@ class ScheduleSpider(scrapy.Spider):
                             extraction_method = "pending-game"
                         else:
                             self.logger.warning(f"Standard extraction methods failed with text: {versus_text}")
-                            
+
                             # If all standard methods fail and the agent is available, try it as a fallback
                             status = cells[4].css('a::text').get('').strip()
                             if self.use_agent and self.agent and status.lower() == 'complete':
                                 try:
                                     # Get the HTML of the current row for the agent
                                     row_html = row.get()
-                                    
+
                                     # Also get the table HTML for context if this is the first row
                                     table_html = None
                                     if games_count == 1:  # First game in this page
                                         table_html = schedule_table.get()
-                                    
+
                                     self.logger.info("Attempting score extraction using Claude agent")
                                     agent_home_score, agent_away_score, agent_method = self.agent.extract_scores(
                                         row_html=row_html,
                                         table_html=table_html
                                     )
-                                    
+
                                     if agent_home_score is not None and agent_away_score is not None:
                                         home_score = agent_home_score
                                         away_score = agent_away_score
@@ -716,10 +822,10 @@ class ScheduleSpider(scrapy.Spider):
                                         self.logger.info(f"Agent successfully extracted scores: {home_score} - {away_score} using {extraction_method}")
                                 except Exception as e:
                                     self.logger.error(f"Agent-based score extraction failed: {e}")
-                        
+
                         # Extract status
                         status = cells[4].css('a::text').get('').strip()
-                        
+
                         games.append({
                             'league': league,
                             'session': session,
@@ -769,71 +875,101 @@ class ScheduleSpider(scrapy.Spider):
             # Always update the lookup with the result
             self.lookup.update_date(date_str, success=success, games_count=games_count)
 
-    def store_raw_html(self, response, date_str=None):
-        """Store raw HTML response to storage"""
-        if not response or not response.text:
-            self.logger.error("Cannot store empty response")
-            return
+    def store_raw_html(self, response):
+        """Store the raw HTML for later analysis
 
+        Args:
+            response: Scrapy response object
+
+        Returns:
+            bool: Whether the HTML was successfully stored
+        """
+        # Extract date from response metadata
+        date_str = response.meta.get('date')
         if not date_str:
-            date_str = response.meta.get('date', datetime.now().strftime('%Y-%m-%d'))
+            self.logger.error("Missing date in response metadata")
+            return False
 
-        # Validate date string format
         try:
-            datetime.strptime(date_str, '%Y-%m-%d')
-        except ValueError:
-            self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
-            return
+            year, month, day = map(int, date_str.split('-'))
+            date_obj = datetime(year, month, day)
 
-        # Store raw HTML with YYYY-MM-DD.html naming
-        html_path = f"{self.html_prefix}/{date_str}.html"
-        if not self.storage.write(html_path, response.text):
-            self.logger.error(f"Failed to write HTML file to {html_path}")
-            return
+            # Get HTML path using path manager
+            html_path = self.path_manager.get_html_path(date_obj)
 
-        # Store response metadata
-        meta_path = f"{self.json_prefix}/{date_str}_meta.json"
-        meta_data = {
-            'url': response.url,
-            'date': date_str,
-            'type': 'daily',
-            'status': response.status,
-            'headers': {k.decode('utf-8'): (v[0].decode('utf-8') if (v[0] is not None and isinstance(v[0], bytes)) else (v[0] or '')) for k, v in response.headers.items()},
-            'timestamp': datetime.now().isoformat()
-        }
-        if not self.storage.write(meta_path, json.dumps(meta_data, indent=2)):
-            self.logger.error(f"Failed to write metadata JSON file to {meta_path}")
-            return
+            # Store raw HTML
+            html_content = response.body.decode('utf-8')
+            if self.storage.write(html_path, html_content):
+                self.logger.info(f"Successfully stored HTML for {date_str} at {html_path}")
+                return True
+            else:
+                self.logger.error(f"Failed to store HTML for {date_str}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error storing raw HTML: {e}")
+            return False
 
     def store_metadata(self, metadata, date_str):
-        """Store metadata in JSON format using partitioned storage"""
-        try:
-            dt = datetime.strptime(date_str, '%Y-%m-%d')
-        except ValueError:
-            self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
-            return
+        """Store metadata for a given date
 
-        # Store in partitioned format
-        year = dt.year
-        month = dt.month
-        day = dt.day
-        base_output = self.json_prefix.split('/json')[0]  # Get the base directory (e.g., test_data or data)
-        write_record(metadata, base_output, "metadata", year, month, day, storage=self.storage)
+        Args:
+            metadata: Dictionary of metadata
+            date_str: Date string in format YYYY-MM-DD
+
+        Returns:
+            bool: Whether the metadata was successfully stored
+        """
+        try:
+            year, month, day = map(int, date_str.split('-'))
+            date_obj = datetime(year, month, day)
+
+            # Get metadata path using path manager
+            meta_path = self.path_manager.get_json_meta_path(date_obj)
+
+            # Store metadata
+            if not self.storage.write(meta_path, json.dumps(metadata, indent=2)):
+                self.logger.error(f"Failed to write metadata JSON file to {meta_path}")
+                return False
+
+            self.logger.info(f"Successfully stored metadata for {date_str} at {meta_path}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error storing metadata: {e}")
+            return False
 
     def store_games(self, games, date_str):
-        """Store games data in JSON format using partitioned storage"""
-        try:
-            dt = datetime.strptime(date_str, '%Y-%m-%d')
-        except ValueError:
-            self.logger.error(f"Invalid date format for {date_str}, expected YYYY-MM-DD")
-            return
+        """Store games data for a given date
 
-        # Store in partitioned format
-        year = dt.year
-        month = dt.month
-        day = dt.day
-        base_output = self.json_prefix.split('/json')[0]  # Get the base directory (e.g., test_data or data)
-        write_record(games, base_output, "games", year, month, day, storage=self.storage)
+        Args:
+            games: List of game dictionaries
+            date_str: Date string in format YYYY-MM-DD
+
+        Returns:
+            bool: Whether the games data was successfully stored
+        """
+        try:
+            year, month, day = map(int, date_str.split('-'))
+            date_obj = datetime(year, month, day)
+
+            # Get games path using path manager
+            games_path = self.path_manager.get_games_path(date_obj)
+
+            # Prepare content to write
+            content = ''.join(json.dumps(game) + '\n' for game in games)
+
+            # Store games data
+            if not self.storage.write(games_path, content):
+                self.logger.error(f"Failed to write games data to {games_path}")
+                return False
+
+            self.logger.info(f"Successfully stored {len(games)} games for {date_str} at {games_path}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error storing games data: {e}")
+            return False
 
 def write_record(data, base_output, record_type, year, month, day, storage=None):
     """Write a record to partitioned storage.

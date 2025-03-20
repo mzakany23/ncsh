@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2025-03-20
+### Added
+- Implemented v2 data architecture with improved partitioning and organization
+- Created DataPathManager class to standardize S3 path construction
+- Added unified checkpoint file system for more efficient date tracking
+- Added architecture_version parameter to Lambda function and Step Function interfaces
+- Extended trigger_step_function.py script to support architecture version selection
+
+### Changed
+- Refactored S3 storage paths to follow a more structured partitioning scheme
+- Updated pipeline components to support both v1 and v2 architectures for backward compatibility
+- Modified schedule_spider.py to use the new path construction methodology
+- Improved error handling and logging around file operations
+
+### Fixed
+- Standardized path resolution across all components
+- Enhanced checkpoint lookup system for more accurate scraping decisions
+
 ## [2.12.1] - 2025-03-20
 ### Fixed
 - Updated CI/CD pipeline to remove references to the now non-existent backfill Lambda function
