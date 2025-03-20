@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2025-03-20
+### Changed
+- Replaced backfill runner with date_range mode in unified workflow
+- Updated Lambda function to handle date ranges directly
+- Modified Step Function definition to support date_range operations
+- Updated Terraform configuration for new workflow architecture
+- Improved unit tests for all operation modes
+
+### Removed
+- Removed backfill_runner.py as it is now redundant
+- Removed backfill operations from unified workflow Step Function
+
+### Fixed
+- Fixed issue with test runner finding Scrapy spiders
+- Fixed Lambda function tests to match new parameter structure
+- Improved error handling for date parsing and validation
+
 ## [2.11.0] - 2025-03-19
 ### Changed
 - Completely refactored Step Function workflow to use a standardized input approach
