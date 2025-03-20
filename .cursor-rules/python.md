@@ -13,7 +13,6 @@ We use `uv` for Python package management (see build rule for details).
 Create and activate a virtual environment using Makefile:
 ```bash
 make install  # Creates venv and installs dependencies
-source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
 ```
 
 ### Dependencies
