@@ -38,7 +38,7 @@ install: venv compile-requirements
 
 test: install
 	@echo "Running tests..."
-	source .venv/bin/activate && PYTHONPATH=$(PWD) python -m pytest tests/unit/scraping/
+	source .venv/bin/activate && PYTHONPATH=$(PWD) python -m pytest tests
 	@echo "Note: processing module has no tests yet"
 
 lint: install
