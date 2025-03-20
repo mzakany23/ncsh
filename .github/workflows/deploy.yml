@@ -78,7 +78,7 @@ jobs:
         docker tag $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
         docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG
         docker push $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:latest
-        
+
         # Print image details to verify architecture in logs
         docker inspect $ECR_REGISTRY/${{ env.SCRAPER_REPOSITORY }}:$IMAGE_TAG | grep -A 3 Architecture
 
@@ -86,12 +86,6 @@ jobs:
       run: |
         aws lambda update-function-code \
           --function-name ncsoccer_scraper \
-          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
-
-    - name: Update Backfill Lambda Function
-      run: |
-        aws lambda update-function-code \
-          --function-name ncsoccer_backfill \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
 
   build-processing:
