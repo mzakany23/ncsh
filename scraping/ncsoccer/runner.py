@@ -72,9 +72,9 @@ def is_date_scraped(date_str, lookup_data):
 
 
 def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
-             html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-             lookup_type='file', region='us-east-2', table_name=None, force_scrape=False,
-             use_test_data=False, architecture_version='v1'):
+                html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
+                lookup_type='file', region='us-east-2', table_name=None, force_scrape=False,
+                use_test_data=False, architecture_version='v1', max_wait=300):
     """Run the scraper for a specific day
 
     Args:
@@ -92,21 +92,28 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
         force_scrape (bool): Whether to force scrape even if date exists
         use_test_data (bool): Whether to use test data paths
         architecture_version (str): Data architecture version ('v1' or 'v2')
+        max_wait (int): Maximum seconds to wait for file creation
 
     Returns:
         bool: Success status
     """
     try:
+        # Get current date for defaults
+        now = datetime.now()
+        year = year or now.year
+        month = month or now.month
+        day = day or now.day
+
         logger.info(f"Starting run_scraper with params: year={year}, month={month}, day={day}, "
                    f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
                    f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}, "
-                   f"architecture_version={architecture_version}")
+                   f"architecture_version={architecture_version}, max_wait={max_wait}")
 
         # Just call run_month with a single day
         return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
                         lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
                         force_scrape=force_scrape, use_test_data=use_test_data,
-                        architecture_version=architecture_version)
+                        architecture_version=architecture_version, max_wait=max_wait)
     except Exception as e:
         logger.error(f"Error in run_scraper: {str(e)}", exc_info=True)
         raise RuntimeError(f"Error in run_scraper: {str(e)}")
@@ -115,7 +122,8 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
 def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
               html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
               lookup_type='file', region='us-east-2', target_days=None, table_name=None,
-              force_scrape=False, use_test_data=False, max_retries=3, architecture_version='v1'):
+              force_scrape=False, use_test_data=False, max_retries=3, architecture_version='v1',
+              max_wait=300):
     """Run the scraper for specific days in a month
 
     Args:
@@ -134,6 +142,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         use_test_data (bool): Whether to use test data paths
         max_retries (int): Maximum number of retries for failed scrapes
         architecture_version (str): Data architecture version ('v1' or 'v2')
+        max_wait (int): Maximum seconds to wait for file creation
 
     Returns:
         bool: Success status
@@ -315,7 +324,6 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
 
             # Verify files were created
             logger.info("Verifying files were created")
-            max_wait = 120  # Maximum wait time in seconds
             start_time = time.time()
 
             # Verify files were created for all target days
@@ -352,13 +360,27 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                 # Verify files using the storage interface with timeout
                 for file_path in expected_files:
                     logger.info(f"Checking for file: {file_path}")
+                    check_start_time = time.time()
+                    check_count = 0
                     while True:
-                        if time.time() - start_time > max_wait:
+                        elapsed = time.time() - start_time
+                        check_count += 1
+
+                        if elapsed > max_wait:
+                            logger.error(f"TIMEOUT: Waited {elapsed:.2f}s for file {file_path} (max_wait={max_wait}s)")
+                            logger.error(f"Made {check_count} checks over {time.time() - check_start_time:.2f}s")
                             raise TimeoutError(f"Timeout waiting for file {file_path}")
 
-                        if storage.exists(file_path):
-                            logger.info(f"Found file: {file_path}")
+                        exists = storage.exists(file_path)
+                        logger.info(f"Check #{check_count}: File {file_path} exists? {exists} (elapsed: {elapsed:.2f}s)")
+
+                        if exists:
+                            logger.info(f"Found file: {file_path} after {elapsed:.2f}s and {check_count} checks")
                             break
+
+                        # If we're more than halfway through the timeout, log more details
+                        if elapsed > (max_wait / 2) and check_count % 2 == 0:
+                            logger.warning(f"File still not found after {elapsed:.2f}s: {file_path}")
 
                         time.sleep(5)  # Wait 5 seconds before checking again
 
