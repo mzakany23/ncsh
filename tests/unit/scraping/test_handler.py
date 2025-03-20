@@ -1,19 +1,15 @@
-import os
-import json
-import pytest
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 def test_runner_basic_functionality():
     """Test that runner works with basic parameters"""
     # Get the path to the runner script
     runner_path = Path(__file__).parents[3] / "scraping" / "ncsoccer" / "runner.py"
-    
+
     # Make sure the runner exists
     assert runner_path.exists(), f"Runner script not found at {runner_path}"
-    
+
     # Run the scraper with basic parameters
     result = subprocess.run([
         sys.executable,
