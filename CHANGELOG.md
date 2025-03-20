@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.7] - 2025-03-20
+### Changed
+- Replaced backfill runner with date_range mode in unified workflow
+- Updated Lambda function to handle date ranges directly
+- Modified Step Function definition to support date_range operations
+- Updated Terraform configuration for the new workflow architecture
+- Improved error handling for date parsing and validation
+
 ## [2.10.6] - 2025-03-19
 ### Fixed
 - Fixed backfill operation in unified workflow by adding parameter preservation between states
