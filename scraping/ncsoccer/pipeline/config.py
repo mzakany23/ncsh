@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 import os
 import boto3
+import logging
+import time
 
 class ScrapeMode(Enum):
     DAY = "day"
@@ -235,6 +237,7 @@ class S3Storage(StorageInterface):
     def __init__(self, bucket_name: str, region: str = "us-east-2"):
         self.s3 = boto3.client('s3', region_name=region)
         self.bucket = bucket_name
+        self.logger = logging.getLogger(__name__)
 
     def exists(self, path: str) -> bool:
         try:
@@ -245,14 +248,30 @@ class S3Storage(StorageInterface):
 
     def write(self, path: str, content: str) -> bool:
         try:
+            self.logger.info(f"S3Storage: Writing to {self.bucket}/{path} (content length: {len(content)} bytes)")
+            write_start = time.time()
+
             self.s3.put_object(
                 Bucket=self.bucket,
                 Key=path,
                 Body=content.encode('utf-8'),
                 ContentType='text/html' if path.endswith('.html') else 'application/json'
             )
-            return True
-        except Exception:
+
+            write_duration = time.time() - write_start
+            self.logger.info(f"S3Storage: Successfully wrote to {self.bucket}/{path} in {write_duration:.2f}s")
+
+            # Verify the file was actually written
+            try:
+                self.s3.head_object(Bucket=self.bucket, Key=path)
+                self.logger.info(f"S3Storage: Successfully verified {self.bucket}/{path} exists after write")
+                return True
+            except Exception as e:
+                self.logger.error(f"S3Storage: File verification failed for {self.bucket}/{path}: {str(e)}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"S3Storage: Failed to write to {self.bucket}/{path}: {str(e)}")
             return False
 
     def read(self, path: str) -> str:

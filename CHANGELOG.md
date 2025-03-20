@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.2] - 2025-03-20
+### Fixed
+- Increased S3 file creation timeout from 120 to 300 seconds to address Lambda timeout issues in v2 architecture
+- Added detailed logging to help diagnose S3 write and verification issues
+- Included script for local Lambda testing to reproduce production issues
+
 ## [2.13.1] - 2025-03-20
 ### Fixed
 - Fixed incorrect spider name reference in runner.py from 'schedule_spider' to 'schedule'

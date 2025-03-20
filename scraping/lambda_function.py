@@ -55,6 +55,10 @@ def lambda_handler(event, context):
         architecture_version = parameters.get('architecture_version', 'v1')
         logger.info(f"Using data architecture version: {architecture_version}")
 
+        # Extract max_wait parameter if provided, otherwise use default value of 300 seconds
+        max_wait = int(parameters.get('max_wait', 300))
+        logger.info(f"Using max_wait value: {max_wait} seconds")
+
         # Validate architecture version
         try:
             arch_version = DataArchitectureVersion(architecture_version.lower())
@@ -82,7 +86,8 @@ def lambda_handler(event, context):
                 month=month,
                 day=day,
                 force_scrape=force_scrape,
-                architecture_version=architecture_version
+                architecture_version=architecture_version,
+                max_wait=max_wait
             )
 
             return {
@@ -107,7 +112,8 @@ def lambda_handler(event, context):
                 year=year,
                 month=month,
                 force_scrape=force_scrape,
-                architecture_version=architecture_version
+                architecture_version=architecture_version,
+                max_wait=max_wait
             )
 
             return {
@@ -185,7 +191,8 @@ def lambda_handler(event, context):
                             year=current_date.year,
                             month=current_date.month,
                             force_scrape=force_scrape,
-                            architecture_version=architecture_version
+                            architecture_version=architecture_version,
+                            max_wait=max_wait
                         )
                     else:
                         # Partial month, calculate days to process
@@ -196,7 +203,8 @@ def lambda_handler(event, context):
                             month=current_date.month,
                             target_days=target_days,
                             force_scrape=force_scrape,
-                            architecture_version=architecture_version
+                            architecture_version=architecture_version,
+                            max_wait=max_wait
                         )
 
                     processed_months.append(current_month)
