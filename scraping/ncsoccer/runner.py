@@ -269,7 +269,7 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                     date_str = f"{year}-{month:02d}-{day:02d}"
 
                     # Configure spider
-                    spider = process.create_crawler('schedule_spider')
+                    spider = process.create_crawler('schedule')
                     d = process.crawl(
                         spider,
                         mode='day',
