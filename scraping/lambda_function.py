@@ -15,42 +15,42 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
-    """AWS Lambda handler function
+    """AWS Lambda handler for scraper invocation
 
-    This handler serves as the unified entrypoint for both standard scraping and backfill operations.
-    The mode is determined by the BACKFILL_MODE environment variable.
+    Args:
+        event (dict): Event data
+        context (LambdaContext): Lambda context
+
+    Returns:
+        dict: Response with status code and result
     """
-    logger.info("Entered lambda_handler")
+    logger.info(f"Event: {json.dumps(event)}")
 
-    # Determine if we're running in backfill mode
-    backfill_mode = os.environ.get('BACKFILL_MODE', 'false').lower() == 'true'
-    logger.info(f"Running in {'backfill' if backfill_mode else 'standard'} mode")
+    # Special mode for running backfill from the state machine
+    if event.get('backfill'):
+        from backfill_runner import run_backfill
 
-    if backfill_mode:
-        # Import backfill runner functionality locally to avoid circular imports
         try:
-            from backfill_runner import run_backfill
-
-            # Extract parameters from event with defaults
-            start_year = event.get('start_year', 2007)
-            start_month = event.get('start_month', 1)
+            # Extract parameters
+            start_year = event.get('start_year')
+            start_month = event.get('start_month')
             end_year = event.get('end_year')
             end_month = event.get('end_month')
             force_scrape = event.get('force_scrape', False)
 
             # Convert string values to integers if needed
-            if isinstance(start_year, str):
+            if start_year and isinstance(start_year, str):
                 start_year = int(start_year)
-            if isinstance(start_month, str):
+            if start_month and isinstance(start_month, str):
                 start_month = int(start_month)
             if end_year and isinstance(end_year, str):
                 end_year = int(end_year)
             if end_month and isinstance(end_month, str):
                 end_month = int(end_month)
 
-            # Get bucket name and table name from environment variables
+            # Get bucket name from environment variables
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-            table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+            # Table name no longer needed as we're using file-based lookup
 
             # Calculate an appropriate timeout - leave 30 seconds for cleanup
             max_lambda_time = context.get_remaining_time_in_millis() if context else 900000
@@ -63,8 +63,7 @@ def lambda_handler(event, context):
                 end_month=end_month,
                 storage_type='s3',
                 bucket_name=bucket_name,
-                lookup_type='dynamodb',
-                table_name=table_name,
+                lookup_type='file',
                 force_scrape=force_scrape,
                 timeout=timeout
             )
@@ -89,9 +88,9 @@ def lambda_handler(event, context):
             if isinstance(month, str):
                 month = int(month)
 
-            # Get bucket name and table name from environment variables
+            # Get bucket name from environment variables
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-            table_name = os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates')
+            # Table name no longer needed as we're using file-based lookup
 
             # Common parameters for both day and month modes
             common_params = {
@@ -99,45 +98,47 @@ def lambda_handler(event, context):
                 'bucket_name': bucket_name,
                 'html_prefix': 'data/html',
                 'json_prefix': 'data/json',
-                'lookup_type': 'dynamodb',
-                'table_name': table_name,
+                'lookup_type': 'file',
                 'force_scrape': force_scrape
             }
 
-            # If day is provided, run in day mode, otherwise run in month mode
+            # Check if day is specified for day-level scraping
             if 'day' in event:
-                logger.info("Running in day mode")
-                # Ensure day is an integer
-                day = event['day']
+                day = event.get('day')
                 if isinstance(day, str):
                     day = int(day)
 
-                result = run_scraper(
+                logger.info(f"Running day-level scraper for {year}-{month:02d}-{day:02d}")
+                success = run_scraper(
                     year=year,
                     month=month,
                     day=day,
                     **common_params
                 )
             else:
-                logger.info("Running in month mode")
-                result = run_month(
+                # Month-level scraping
+                logger.info(f"Running month-level scraper for {year}-{month:02d}")
+                success = run_month(
                     year=year,
                     month=month,
                     **common_params
                 )
 
-            logger.info("Operation completed with result: %s", result)
-            return {"statusCode": 200, "body": json.dumps({"result": result})}
+            if success:
+                return {"statusCode": 200, "body": json.dumps({"success": True})}
+            else:
+                return {"statusCode": 500, "body": json.dumps({"success": False})}
+
         except Exception as e:
-            logger.error(f"Error in standard mode: {str(e)}", exc_info=True)
+            logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
             return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
-if __name__ == '__main__':
-    # Handle command line execution
-    if len(sys.argv) != 2:
-        print("Usage: python lambda_function.py '<event_json>'")
-        sys.exit(1)
-
-    event = json.loads(sys.argv[1])
-    response = lambda_handler(event, None)
-    print(json.dumps(response))
+if __name__ == "__main__":
+    # For local testing
+    result = lambda_handler({
+        'year': 2023,
+        'month': 2,
+        'day': 1,
+        'force_scrape': True
+    }, None)
+    print(json.dumps(result, indent=2))

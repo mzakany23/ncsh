@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 import json
 from datetime import datetime
-import boto3
-from botocore.exceptions import ClientError
 import os
 
 class Lookup(ABC):
@@ -17,43 +15,6 @@ class Lookup(ABC):
     def update_date(self, date_str: str, success: bool = True, games_count: int = 0) -> None:
         """Update the lookup data for a date"""
         pass
-
-class DynamoDBLookup(Lookup):
-    """DynamoDB implementation of the lookup interface"""
-
-    def __init__(self, table_name: str = None, region: str = "us-east-2", **kwargs):
-        """Initialize DynamoDB lookup
-
-        Args:
-            table_name (str): Name of the DynamoDB table
-            region (str): AWS region name
-            **kwargs: Additional arguments (ignored, for compatibility)
-        """
-        self.dynamodb = boto3.resource('dynamodb', region_name=region)
-        self.table = self.dynamodb.Table(table_name or os.environ.get('DYNAMODB_TABLE', 'ncsh-scraped-dates'))
-
-    def is_date_scraped(self, date_str: str) -> bool:
-        try:
-            response = self.table.get_item(Key={'date': date_str})
-            if 'Item' in response:
-                return response['Item'].get('success', False)
-            return False
-        except ClientError as e:
-            print(f"Error checking date {date_str}: {str(e)}")
-            return False
-
-    def update_date(self, date_str: str, success: bool = True, games_count: int = 0) -> None:
-        try:
-            self.table.put_item(
-                Item={
-                    'date': date_str,
-                    'success': success,
-                    'games_count': games_count,
-                    'timestamp': datetime.now().isoformat()
-                }
-            )
-        except ClientError as e:
-            print(f"Error updating date {date_str}: {str(e)}")
 
 class LocalFileLookup(Lookup):
     """Local file implementation of the lookup interface"""
@@ -107,11 +68,9 @@ def get_lookup_interface(lookup_type: str = 'file', **kwargs) -> Lookup:
     """Factory function to get the appropriate lookup interface
 
     Args:
-        lookup_type (str, optional): Type of lookup to use ('file' or 'dynamodb'). Defaults to 'file'.
+        lookup_type (str, optional): Type of lookup to use. Only 'file' is supported. Defaults to 'file'.
         **kwargs: Additional arguments to pass to the lookup interface:
             - lookup_file (str): Path to lookup file (for file lookup)
-            - table_name (str): DynamoDB table name (for dynamodb lookup)
-            - region (str): AWS region (for dynamodb lookup)
 
     Returns:
         Lookup: The configured lookup interface
@@ -119,9 +78,7 @@ def get_lookup_interface(lookup_type: str = 'file', **kwargs) -> Lookup:
     Raises:
         ValueError: If an unsupported lookup type is specified
     """
-    if lookup_type == 'dynamodb':
-        return DynamoDBLookup(**kwargs)
-    elif lookup_type == 'file':
+    if lookup_type == 'file':
         return LocalFileLookup(**kwargs)
     else:
-        raise ValueError(f"Unsupported lookup type: {lookup_type}")
+        raise ValueError(f"Unsupported lookup type: {lookup_type}. Only 'file' is supported.")
