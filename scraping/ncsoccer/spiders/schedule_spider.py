@@ -144,7 +144,7 @@ class ScheduleSpider(scrapy.Spider):
         from ncsoccer.pipeline.config import DataPathManager
         self.path_manager = DataPathManager(
             architecture_version=architecture_version,
-            base_prefix='test_data' if use_test_data else ''
+            base_prefix=html_prefix if html_prefix and not html_prefix.endswith('/html') else ('test_data' if use_test_data else '')
         )
 
         # For backward compatibility (these are used in various parts of the code)
@@ -320,6 +320,24 @@ class ScheduleSpider(scrapy.Spider):
                 dates_to_scrape.append(target_date)
 
         return dates_to_scrape
+
+    def get_direct_date_url(self, date_obj):
+        """
+        Construct a direct URL for accessing schedule data for a specific date.
+
+        Args:
+            date_obj (datetime): Date to get URL for
+
+        Returns:
+            str: URL for direct date access
+        """
+        date_str = date_obj.strftime('%m/%d/%Y')
+        query_params = {
+            'facility_id': self.facility_id,
+            'date': date_str
+        }
+        url = f"{self.print_url}?{urllib.parse.urlencode(query_params)}"
+        return url
 
     def start_requests(self):
         """Use direct date access method to get schedule data for either a single date or a date range"""
