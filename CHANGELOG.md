@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.3] - 2025-03-21
+### Fixed
+- Added missing `get_direct_date_url` method to `ScheduleSpider` class that was causing scraper failures
+- Fixed `DataPathManager` initialization to properly use custom HTML prefix instead of using fixed paths
+- Improved path handling for file storage in both local and S3 environments
+
 ## [2.13.2] - 2025-03-20
 ### Fixed
 - Increased S3 file creation timeout from 120 to 300 seconds to address Lambda timeout issues in v2 architecture
