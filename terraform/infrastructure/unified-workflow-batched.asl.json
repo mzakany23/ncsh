@@ -10,10 +10,10 @@
         "Payload": {
           "start_date.$": "$.start_date",
           "end_date.$": "$.end_date",
-          "force_scrape.$": "States.JsonMerge(States.StringToJson('false'), States.JsonToString($.force_scrape))",
-          "architecture_version.$": "States.JsonMerge(States.StringToJson('v1'), States.JsonToString($.architecture_version))",
-          "batch_size.$": "States.JsonMerge(States.StringToJson('3'), States.JsonToString($.batch_size))",
-          "bucket_name.$": "States.JsonMerge(States.StringToJson('ncsh-app-data'), States.JsonToString($.bucket_name))"
+          "force_scrape.$": "$.force_scrape",
+          "architecture_version.$": "$.architecture_version",
+          "batch_size.$": "$.batch_size",
+          "bucket_name.$": "$.bucket_name"
         }
       },
       "ResultPath": "$.validated_input",

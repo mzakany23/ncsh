@@ -10,10 +10,11 @@ This document tracks tasks that need to be completed after the successful migrat
 
 ## Infrastructure Fixes
 
-- [ ] Fix the `ValidateInput` state in the Step Function state machine to handle default values properly
-  - Current issue: The `States.JsonMerge` function fails when trying to merge default values
-  - Possible solution: Use a simpler approach for default value handling without `JsonMerge`
-  - Temporary workaround: Use the local test script (`test_local_workflow.py`) which works correctly
+- [x] Fix the `ValidateInput` state in the Step Function state machine to handle default values properly
+  - ~~Current issue: The `States.JsonMerge` function fails when trying to merge default values~~
+  - ~~Possible solution: Use a simpler approach for default value handling without `JsonMerge`~~
+  - ~~Temporary workaround: Use the local test script (`test_local_workflow.py`) which works correctly~~
+  - Fixed in v2.14.1: Removed the problematic `States.JsonMerge` calls and simplified the input parameter handling
 
 ## Workflow Migration Timeline
 
