@@ -34,12 +34,10 @@ def lambda_handler(event, context):
                     "start_date": "2024-01-01",  # For date_range mode
                     "end_date": "2024-01-31",    # For date_range mode
                     "bucket_name": "ncsh-app-data", # Optional: S3 bucket name
-                    "storage_type": "s3",        # Optional: Storage type (s3 or file)
                     "html_prefix": "data/html",  # Optional: HTML prefix in S3
                     "json_prefix": "data/json",  # Optional: JSON prefix in S3
                     "lookup_file": "data/lookup.json", # Optional: Lookup file path
-                    "region": "us-east-2",        # Optional: AWS region
-                    "max_wait": 300              # Optional: Maximum wait time in seconds
+                    "region": "us-east-2"        # Optional: AWS region
                 }
             }
         context (LambdaContext): Lambda context
@@ -58,7 +56,7 @@ def lambda_handler(event, context):
         # Extract parameters with defaults
         parameters = event.get('parameters', {})
 
-        # Common configuration parameters
+        # IMPORTANT: In Lambda, always force S3 storage, never use file storage
         storage_type = 's3'  # Always use S3 in Lambda
         bucket_name = parameters.get('bucket_name', 'ncsh-app-data')
         html_prefix = parameters.get('html_prefix', 'data/html')
@@ -81,11 +79,12 @@ def lambda_handler(event, context):
 
         # Create common parameters dictionary
         common_params = {
-            'storage_type': storage_type,
+            'storage_type': storage_type,  # Always S3 in Lambda
             'bucket_name': bucket_name,
             'html_prefix': html_prefix,
             'json_prefix': json_prefix,
             'lookup_file': lookup_file,
+            'lookup_type': 's3',  # Always use S3 for lookup in Lambda
             'region': region,
             'force_scrape': force_scrape,
             'architecture_version': architecture_version,

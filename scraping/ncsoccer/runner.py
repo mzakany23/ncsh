@@ -160,9 +160,12 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
     try:
         # Detect Lambda environment - if we're in Lambda, ensure we use S3
         in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
-        if in_lambda and storage_type == 'file':
-            logger.warning("Running in Lambda environment - forcing S3 storage type")
-            storage_type = 's3'
+        if in_lambda:
+            if storage_type != 's3' or lookup_type != 's3':
+                logger.warning("Running in Lambda environment - forcing S3 storage and lookup types")
+                storage_type = 's3'
+                lookup_type = 's3'
+
             # Get bucket name from environment if not provided and we're in Lambda
             if not bucket_name:
                 bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
@@ -345,9 +348,12 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
 
     # Detect Lambda environment - if we're in Lambda, ensure we use S3
     in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
-    if in_lambda and storage_type == 'file':
-        logger.warning("Running in Lambda environment - forcing S3 storage type")
-        storage_type = 's3'
+    if in_lambda:
+        if storage_type != 's3' or lookup_type != 's3':
+            logger.warning("Running in Lambda environment - forcing S3 storage and lookup types")
+            storage_type = 's3'
+            lookup_type = 's3'
+
         # Get bucket name from environment if not provided and we're in Lambda
         if not bucket_name:
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
@@ -655,9 +661,12 @@ def run_date_range(start_date, end_date, storage_type='s3', bucket_name=None,
     """
     # Detect Lambda environment - if we're in Lambda, ensure we use S3
     in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
-    if in_lambda and storage_type == 'file':
-        logger.warning("Running in Lambda environment - forcing S3 storage type")
-        storage_type = 's3'
+    if in_lambda:
+        if storage_type != 's3' or lookup_type != 's3':
+            logger.warning("Running in Lambda environment - forcing S3 storage and lookup types")
+            storage_type = 's3'
+            lookup_type = 's3'
+
         # Get bucket name from environment if not provided and we're in Lambda
         if not bucket_name:
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')

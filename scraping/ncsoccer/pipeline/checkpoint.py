@@ -27,6 +27,15 @@ class UnifiedCheckpoint:
         """
         self.checkpoint_file = checkpoint_file
         self.storage = storage_interface
+
+        # Detect Lambda environment
+        self.in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+        if self.in_lambda and self.storage is None:
+            logger.warning(
+                "UnifiedCheckpoint initialized without storage interface in Lambda environment. "
+                "Checkpoint data won't persist between invocations. "
+                "Please provide an S3Storage interface.")
+
         self._data = self._load_checkpoint()
 
     def _load_checkpoint(self) -> Dict[str, Any]:
