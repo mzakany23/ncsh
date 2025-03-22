@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.2] - 2025-03-25
+### Fixed
+- Fixed the runner.py file to use the correct ScheduleSpider class instead of non-existent NCSoccerSpider
+- Updated imports to include the proper class: `from ncsoccer.spiders.schedule_spider import ScheduleSpider`
+- Ensured proper spider class references throughout the runner.py file
+
 ## [2.14.1] - 2025-03-25
 ### Fixed
 - Fixed Step Function input validation to handle default values properly
