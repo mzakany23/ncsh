@@ -140,6 +140,38 @@ class ScheduleSpider(scrapy.Spider):
         # Architecture version
         self.architecture_version = architecture_version
 
+        # Detect Lambda environment - if we're in Lambda, adjust paths
+        self.in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+        if self.in_lambda:
+            self.logger.info("Running in Lambda environment - adjusting paths")
+            # Ensure S3 storage for Lambda
+            if storage_type != 's3':
+                self.logger.warning("Forcing S3 storage for Lambda environment")
+                storage_type = 's3'
+
+            # Get bucket name from environment if not provided
+            if not bucket_name:
+                bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
+            # For v2 architecture, we should always use S3 in Lambda
+            if architecture_version == 'v2' and lookup_type != 's3':
+                self.logger.warning("Forcing S3 lookup for v2 architecture in Lambda")
+                lookup_type = 's3'
+
+            # Adjust file paths for /tmp if needed, but only if not using v2
+            if architecture_version != 'v2':
+                if html_prefix.startswith('data/'):
+                    html_prefix = f"/tmp/{html_prefix}"
+                    self.logger.info(f"Adjusted html_prefix for Lambda: {html_prefix}")
+
+                if json_prefix.startswith('data/'):
+                    json_prefix = f"/tmp/{json_prefix}"
+                    self.logger.info(f"Adjusted json_prefix for Lambda: {json_prefix}")
+
+                if lookup_file.startswith('data/'):
+                    lookup_file = f"/tmp/{lookup_file}"
+                    self.logger.info(f"Adjusted lookup_file for Lambda: {lookup_file}")
+
         # Set up path manager for data architecture
         from ncsoccer.pipeline.config import DataPathManager
         self.path_manager = DataPathManager(
@@ -1007,18 +1039,8 @@ def write_record(data, base_output, record_type, year, month, day, storage=None)
     # Setup logging
     logger = logging.getLogger(__name__)
 
-    # Build the directory path with required day-level partitioning
-    directory = os.path.join(base_output, record_type, f"year={year}", f"month={month:02d}", f"day={day:02d}")
-    file_path = os.path.join(directory, "data.jsonl")
-
     # Detect Lambda environment
     in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
-
-    # Prepare content to write
-    if isinstance(data, list):
-        content = "".join(json.dumps(item) + '\n' for item in data)
-    else:
-        content = json.dumps(data) + '\n'
 
     # If we're in a Lambda environment and no storage interface is provided, this is an error
     if in_lambda and storage is None:
@@ -1029,12 +1051,33 @@ def write_record(data, base_output, record_type, year, month, day, storage=None)
         logger.error(error_msg)
         raise RuntimeError(error_msg)
 
+    # Ensure base_output doesn't start with 'data/' in Lambda environments
+    if in_lambda and base_output.startswith('data/'):
+        logger.warning(f"Converting 'data/' prefix to '/tmp/data/' for Lambda compatibility")
+        base_output = f"/tmp/{base_output}"
+
+    # Build the directory path with required day-level partitioning
+    directory = os.path.join(base_output, record_type, f"year={year}", f"month={month:02d}", f"day={day:02d}")
+    file_path = os.path.join(directory, "data.jsonl")
+
+    # Prepare content to write
+    if isinstance(data, list):
+        content = "".join(json.dumps(item) + '\n' for item in data)
+    else:
+        content = json.dumps(data) + '\n'
+
     # If a storage interface is provided, use it
     if storage is not None:
         return storage.write(file_path, content)
     else:
         # Only for non-Lambda environments: use local filesystem
         try:
+            # Double-check we're not in Lambda
+            if in_lambda:
+                error_msg = "Cannot use local filesystem in Lambda environment - this should have been caught earlier"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+
             os.makedirs(directory, exist_ok=True)
             mode = 'a' if os.path.exists(file_path) else 'w'
             with open(file_path, mode, encoding='utf-8') as f:

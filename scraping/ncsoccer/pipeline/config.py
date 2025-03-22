@@ -62,6 +62,17 @@ class DataPathManager:
 
         self.base_prefix = base_prefix
 
+        # Detect Lambda environment to adjust paths if needed
+        self.in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+        self.logger = logging.getLogger(__name__)
+
+        # For v1 architecture in Lambda, we should use /tmp
+        # For v2 architecture, we should always use S3 paths that don't need /tmp
+        if self.in_lambda and self.architecture_version == DataArchitectureVersion.V1:
+            if not self.base_prefix.startswith('/tmp/') and not self.base_prefix.startswith('s3://'):
+                self.logger.warning(f"In Lambda with v1 architecture - adjusting base_prefix to use /tmp")
+                self.base_prefix = f"/tmp/{self.base_prefix}" if self.base_prefix else "/tmp"
+
     def get_html_path(self, date_obj):
         """
         Get the path for storing HTML content.
@@ -73,7 +84,14 @@ class DataPathManager:
             Path string
         """
         if self.architecture_version == DataArchitectureVersion.V1:
-            return os.path.join(self.base_prefix, 'data/html', f"{date_obj.strftime('%Y-%m-%d')}.html")
+            # In v1 architecture, if we're in Lambda, paths should already be adjusted
+            path = os.path.join(self.base_prefix, 'data/html', f"{date_obj.strftime('%Y-%m-%d')}.html")
+
+            # Double check we're not going to cause a filesystem error in Lambda
+            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
+                self.logger.warning(f"Fixing HTML path for Lambda compatibility: {path}")
+                path = f"/tmp/{path}"
+            return path
         else:  # V2
             year = date_obj.year
             month = date_obj.month
@@ -98,7 +116,14 @@ class DataPathManager:
             Path string
         """
         if self.architecture_version == DataArchitectureVersion.V1:
-            return os.path.join(self.base_prefix, 'data/json', f"{date_obj.strftime('%Y-%m-%d')}_meta.json")
+            # In v1 architecture, if we're in Lambda, paths should already be adjusted
+            path = os.path.join(self.base_prefix, 'data/json', f"{date_obj.strftime('%Y-%m-%d')}_meta.json")
+
+            # Double check we're not going to cause a filesystem error in Lambda
+            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
+                self.logger.warning(f"Fixing JSON meta path for Lambda compatibility: {path}")
+                path = f"/tmp/{path}"
+            return path
         else:  # V2
             year = date_obj.year
             month = date_obj.month
@@ -126,7 +151,13 @@ class DataPathManager:
             year = date_obj.year
             month = date_obj.month
             day = date_obj.day
-            return os.path.join(self.base_prefix, 'data/games', f"year={year}", f"month={month:02d}", f"day={day:02d}", "data.jsonl")
+            path = os.path.join(self.base_prefix, 'data/games', f"year={year}", f"month={month:02d}", f"day={day:02d}", "data.jsonl")
+
+            # Double check we're not going to cause a filesystem error in Lambda
+            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
+                self.logger.warning(f"Fixing games path for Lambda compatibility: {path}")
+                path = f"/tmp/{path}"
+            return path
         else:  # V2
             year = date_obj.year
             month = date_obj.month
@@ -176,25 +207,34 @@ class DataPathManager:
             Path string
         """
         if self.architecture_version == DataArchitectureVersion.V1:
-            return os.path.join(self.base_prefix, 'data/checkpoints/html_processing.json')
+            path = os.path.join(self.base_prefix, 'data/checkpoints/html_processing.json')
+
+            # Double check we're not going to cause a filesystem error in Lambda
+            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
+                self.logger.warning(f"Fixing checkpoint path for Lambda compatibility: {path}")
+                path = f"/tmp/{path}"
+            return path
         else:  # V2
-            return os.path.join(self.base_prefix, 'v2/control/checkpoints.json')
+            return os.path.join(self.base_prefix, 'v2/checkpoints/scraping_checkpoint.json')
 
     def get_parquet_path(self, version=None):
         """
-        Get the path for parquet dataset.
+        Get the path for the final Parquet dataset.
 
         Args:
-            version: Optional version identifier
+            version: Optional version string for versioned datasets
 
         Returns:
             Path string
         """
         if self.architecture_version == DataArchitectureVersion.V1:
-            if version:
-                return os.path.join(self.base_prefix, 'data/parquet', f"ncsoccer_games_{version}.parquet")
-            else:
-                return os.path.join(self.base_prefix, 'data/parquet', "ncsoccer_games_latest.parquet")
+            path = os.path.join(self.base_prefix, 'data/parquet', f"ncsoccer_games_{version}.parquet" if version else "ncsoccer_games_latest.parquet")
+
+            # Double check we're not going to cause a filesystem error in Lambda
+            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
+                self.logger.warning(f"Fixing parquet path for Lambda compatibility: {path}")
+                path = f"/tmp/{path}"
+            return path
         else:  # V2
             if version:
                 return os.path.join(self.base_prefix, 'v2/analytical/parquet', f"ncsoccer_games_{version}.parquet")
