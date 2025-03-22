@@ -296,7 +296,7 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
                                lookup_file, storage_type, bucket_name, region)
 
         if checkpoint and SpiderTracker.success:
-            checkpoint.mark_date_scraped(date_str, SpiderTracker.games_count)
+            checkpoint.update_scraping(date_str, success=True, games_count=SpiderTracker.games_count)
             logger.info(f"Marked {date_str} as scraped in checkpoint file")
 
         # Verify files were created
