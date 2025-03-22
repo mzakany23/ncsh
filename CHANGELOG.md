@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.4] - 2025-03-22
+### Fixed
+- Resolved "Read-only file system" errors in Lambda function by ensuring all file operations use the /tmp directory
+- Updated FileStorage class to automatically detect Lambda environments and redirect file operations to /tmp
+- Modified checkpoint system to properly handle Lambda environments
+- Ensured all Lambda operations default to S3 storage to prevent filesystem issues
+
 ## [2.13.3] - 2025-03-21
 ### Fixed
 - Added missing `get_direct_date_url` method to `ScheduleSpider` class that was causing scraper failures

@@ -34,28 +34,61 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_lookup_data(lookup_file='data/lookup.json'):
-    """Load the lookup data from JSON file.
+def load_lookup_data(lookup_file='data/lookup.json', storage_type='file', bucket_name=None, region='us-east-2'):
+    """Load the lookup data from JSON file or S3.
 
     Args:
         lookup_file (str): Path to the lookup JSON file.
+        storage_type (str): 'file' or 's3'
+        bucket_name (str): S3 bucket name if storage_type is 's3'
+        region (str): AWS region for S3
 
     Returns:
         dict: Dictionary containing scraped dates data.
     """
-    if not os.path.exists(lookup_file):
-        os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
-        with open(lookup_file, 'w') as f:
-            json.dump({'scraped_dates': {}}, f)
-        return {}
+    # Detect Lambda environment - if we're in Lambda, ensure we use S3
+    in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+    if in_lambda and storage_type == 'file':
+        logger.warning("Running in Lambda environment - forcing S3 storage type")
+        storage_type = 's3'
+        # Get bucket name from environment if not provided and we're in Lambda
+        if not bucket_name:
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
 
-    try:
-        with open(lookup_file, 'r') as f:
-            data = json.load(f)
+    if storage_type == 's3':
+        # Import here to avoid circular imports
+        from ncsoccer.pipeline.config import get_storage_interface
+        # Get S3 storage interface
+        storage = get_storage_interface('s3', bucket_name, region)
+        try:
+            # Check if lookup file exists in S3
+            if not storage.exists(lookup_file):
+                # Create initial data
+                initial_data = {'scraped_dates': {}}
+                storage.write(lookup_file, json.dumps(initial_data))
+                return {}
+
+            # Read lookup data from S3
+            data = json.loads(storage.read(lookup_file))
             return data.get('scraped_dates', {})
-    except Exception as e:
-        logger.error(f"Error loading lookup file: {e}")
-        return {}
+        except Exception as e:
+            logger.error(f"Error loading lookup file from S3: {e}")
+            return {}
+    else:
+        # Local file system
+        try:
+            if not os.path.exists(lookup_file):
+                os.makedirs(os.path.dirname(lookup_file), exist_ok=True)
+                with open(lookup_file, 'w') as f:
+                    json.dump({'scraped_dates': {}}, f)
+                return {}
+
+            with open(lookup_file, 'r') as f:
+                data = json.load(f)
+                return data.get('scraped_dates', {})
+        except Exception as e:
+            logger.error(f"Error loading lookup file from local filesystem: {e}")
+            return {}
 
 
 def is_date_scraped(date_str, lookup_data):
@@ -71,11 +104,37 @@ def is_date_scraped(date_str, lookup_data):
     return date_str in lookup_data and lookup_data[date_str]['success']
 
 
+def wait_for_file(storage, path, max_wait):
+    """Wait for a file to be created in storage.
+
+    Args:
+        storage: Storage interface instance
+        path (str): Path to file
+        max_wait (int): Maximum seconds to wait
+
+    Returns:
+        bool: True if file exists, False otherwise
+    """
+    logger.info(f"Waiting for file to be created: {path}")
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait:
+        if storage.exists(path):
+            logger.info(f"File exists: {path}")
+            return True
+
+        # Wait a bit before checking again
+        time.sleep(5)
+
+    logger.error(f"Timed out waiting for file: {path}")
+    return False
+
+
 def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=None,
-                html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
-                lookup_type='file', region='us-east-2', table_name=None, force_scrape=False,
-                use_test_data=False, architecture_version='v1', max_wait=300):
-    """Run the scraper for a specific day
+               html_prefix='data/html', json_prefix='data/json', lookup_type='file', lookup_file='data/lookup.json',
+               table_name=None, region='us-east-2', force_scrape=False, skip_wait=False, use_test_data=False,
+               architecture_version='v1', max_wait=300):
+    """Run the ncsoccer scraper
 
     Args:
         year (int): Year to scrape
@@ -85,11 +144,12 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
         bucket_name (str): S3 bucket name if using S3 storage
         html_prefix (str): Prefix for HTML files
         json_prefix (str): Prefix for JSON files
-        lookup_file (str): Path to lookup file
         lookup_type (str): Type of lookup ('file' only supported)
-        region (str): AWS region
+        lookup_file (str): Path to lookup file
         table_name (str): DynamoDB table name (deprecated)
+        region (str): AWS region
         force_scrape (bool): Whether to force scrape even if date exists
+        skip_wait (bool): Whether to skip waiting for file creation
         use_test_data (bool): Whether to use test data paths
         architecture_version (str): Data architecture version ('v1' or 'v2')
         max_wait (int): Maximum seconds to wait for file creation
@@ -98,22 +158,155 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
         bool: Success status
     """
     try:
+        # Detect Lambda environment - if we're in Lambda, ensure we use S3
+        in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+        if in_lambda and storage_type == 'file':
+            logger.warning("Running in Lambda environment - forcing S3 storage type")
+            storage_type = 's3'
+            # Get bucket name from environment if not provided and we're in Lambda
+            if not bucket_name:
+                bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
         # Get current date for defaults
         now = datetime.now()
         year = year or now.year
         month = month or now.month
         day = day or now.day
 
-        logger.info(f"Starting run_scraper with params: year={year}, month={month}, day={day}, "
-                   f"storage_type={storage_type}, bucket_name={bucket_name}, html_prefix={html_prefix}, "
-                   f"json_prefix={json_prefix}, lookup_type={lookup_type}, force_scrape={force_scrape}, "
-                   f"architecture_version={architecture_version}, max_wait={max_wait}")
+        date_str = f"{year}-{month:02d}-{day:02d}"
+        logger.info(f"Running scraper for {date_str}")
 
-        # Just call run_month with a single day
-        return run_month(year, month, storage_type, bucket_name, html_prefix, json_prefix,
-                        lookup_file, lookup_type, region, target_days=[day], table_name=table_name,
-                        force_scrape=force_scrape, use_test_data=use_test_data,
-                        architecture_version=architecture_version, max_wait=max_wait)
+        # Check if date has already been scraped
+        if not force_scrape and lookup_type == 'file':
+            lookup_data = load_lookup_data(lookup_file, storage_type, bucket_name, region)
+            if is_date_scraped(date_str, lookup_data):
+                logger.info(f"Already scraped {date_str}, skipping")
+                return True
+
+        # If using v2 architecture, initialize the checkpoint interface
+        checkpoint = None
+        if architecture_version == 'v2':
+            # Import here to avoid circular imports
+            from ncsoccer.pipeline.config import DataPathManager, get_storage_interface
+            from ncsoccer.pipeline.checkpoint import get_checkpoint_manager
+
+            # Create path manager for checkpoint path
+            path_manager = DataPathManager(
+                architecture_version=architecture_version,
+                base_prefix='test_data' if use_test_data else ''
+            )
+
+            # Create storage interface
+            storage = get_storage_interface(storage_type, bucket_name, region=region)
+
+            # Create checkpoint manager
+            checkpoint_path = path_manager.get_checkpoint_path()
+            checkpoint = get_checkpoint_manager(checkpoint_path, storage_interface=storage)
+            logger.info(f"Checkpoint manager initialized for {checkpoint_path}")
+
+            # Check if date is already scraped
+            if not force_scrape and checkpoint.is_date_scraped(date_str):
+                logger.info(f"Date {date_str} already scraped according to checkpoint")
+                return True
+
+        # Configure Scrapy spider settings
+        settings = get_project_settings()
+        settings.set('LOG_LEVEL', 'INFO')
+
+        # Skip storing callbacks if using architecture v2
+        if architecture_version != 'v2':
+            settings.set('ITEM_PIPELINES', {
+                'ncsoccer.pipeline.storage.StoragePipeline': 300,
+            })
+
+        settings.set('STORAGE_TYPE', storage_type)
+        settings.set('S3_BUCKET', bucket_name)
+        settings.set('HTML_PREFIX', html_prefix)
+        settings.set('JSON_PREFIX', json_prefix)
+        settings.set('AWS_REGION', region)
+        settings.set('ARCHITECTURE_VERSION', architecture_version)
+        settings.set('USE_TEST_DATA', use_test_data)
+        settings.set('DOWNLOAD_TIMEOUT', 20)  # 20 seconds to download
+        settings.set('DOWNLOAD_DELAY', 1)     # 1 second between requests
+        settings.set('RANDOMIZE_DOWNLOAD_DELAY', True)
+        settings.set('USER_AGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36')
+
+        # Create crawler process
+        process = CrawlerProcess(settings)
+
+        # Use a class variable to track whether spider finished
+        class SpiderTracker:
+            finished = False
+            games_count = 0
+            success = False
+
+        # Create the spider
+        spider = NCSoccerSpider(
+            date_str=date_str,
+            date_dict={'year': year, 'month': month, 'day': day},
+            verbose=True
+        )
+
+        # Define callbacks for spider signals
+        def spider_closed(spider, reason):
+            logger.info(f"Spider closed: {reason}")
+            SpiderTracker.finished = True
+            if reason == 'finished':
+                SpiderTracker.success = True
+
+        def item_scraped(item, response, spider):
+            SpiderTracker.games_count += 1
+            logger.info(f"Scraped item {SpiderTracker.games_count}: {item.get('home_team')} vs {item.get('away_team')}")
+
+        # Configure crawler with callbacks
+        crawler = process.create_crawler(NCSoccerSpider)
+        crawler.signals.connect(spider_closed, signal=signals.spider_closed)
+        crawler.signals.connect(item_scraped, signal=signals.item_scraped)
+
+        # Start the crawler
+        process.crawl(crawler, date_str=date_str, date_dict={'year': year, 'month': month, 'day': day}, verbose=True)
+        process.start()  # This will block until crawling is finished
+
+        # Wait for the spider to finish
+        if not SpiderTracker.finished:
+            logger.warning("Spider did not report as finished")
+
+        # Update lookup data
+        if lookup_type == 'file' and SpiderTracker.success:
+            lookup_data = load_lookup_data(lookup_file, storage_type, bucket_name, region)
+            update_lookup_data(lookup_data, date_str, SpiderTracker.success, SpiderTracker.games_count,
+                               lookup_file, storage_type, bucket_name, region)
+
+        if checkpoint and SpiderTracker.success:
+            checkpoint.mark_date_scraped(date_str, SpiderTracker.games_count)
+            logger.info(f"Marked {date_str} as scraped in checkpoint file")
+
+        # Verify files were created
+        if not skip_wait and storage_type == 's3':
+            logger.info(f"Verifying files were created in S3: {date_str}")
+
+            # Import here to avoid circular imports
+            from ncsoccer.pipeline.config import get_storage_interface
+            storage = get_storage_interface('s3', bucket_name, region)
+
+            # Define file paths to verify
+            html_path = f"{html_prefix}/{date_str}.html"
+            json_path = f"{json_prefix}/{date_str}.json"
+
+            # Wait for files to appear in S3
+            html_exists = wait_for_file(storage, html_path, max_wait)
+            json_exists = wait_for_file(storage, json_path, max_wait)
+
+            if html_exists and json_exists:
+                logger.info(f"All files verified for {date_str}")
+                return True
+            else:
+                logger.error(f"Not all files were created: HTML:{html_exists} JSON:{json_exists}")
+                return False
+
+        # If no verification needed, return spider success status
+        return SpiderTracker.success
+
     except Exception as e:
         logger.error(f"Error in run_scraper: {str(e)}", exc_info=True)
         raise RuntimeError(f"Error in run_scraper: {str(e)}")
@@ -150,6 +343,15 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
     retry_count = 0
     last_error = None
 
+    # Detect Lambda environment - if we're in Lambda, ensure we use S3
+    in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+    if in_lambda and storage_type == 'file':
+        logger.warning("Running in Lambda environment - forcing S3 storage type")
+        storage_type = 's3'
+        # Get bucket name from environment if not provided and we're in Lambda
+        if not bucket_name:
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
     # Validate architecture_version
     if architecture_version not in ('v1', 'v2'):
         logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
@@ -178,10 +380,10 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         errors = []
 
         try:
-            # Load lookup data
+            # Load lookup data using our updated function
             lookup_data = {}
             if not force_scrape and lookup_type == 'file':
-                lookup_data = load_lookup_data(lookup_file)
+                lookup_data = load_lookup_data(lookup_file, storage_type, bucket_name, region)
 
             # Filter target days if we should skip existing
             if not force_scrape and lookup_data:
@@ -238,81 +440,86 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
 
                     target_days = filtered_days
 
-            # Configure logging for scrapy
-            configure_logging()
+            # Define success callback to track which dates were successful
+            successful_dates = {}
 
-            # Configure scrapy settings
+            def track_date_success(date_str, success=True, games_count=0):
+                """Callback to track successful dates"""
+                successful_dates[date_str] = {
+                    'success': success,
+                    'games_count': games_count
+                }
+
+            # Configure Scrapy spider settings
             settings = get_project_settings()
-            settings.update({
-                'LOG_LEVEL': 'INFO',
-                'COOKIES_DEBUG': True,
-                'DOWNLOAD_DELAY': 1,
-                'CONCURRENT_REQUESTS': 1,
-                'TELNETCONSOLE_ENABLED': False,  # Disable telnet console for Lambda
-                'RETRY_ENABLED': True,
-                'RETRY_TIMES': 3,  # Number of times to retry failed requests
-                'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429],  # HTTP codes to retry on
-                'SPIDER_MODULES': ['ncsoccer.spiders'],  # Explicitly set spider modules
-                'NEWSPIDER_MODULE': 'ncsoccer.spiders',  # Set new spider module
-                'BOT_NAME': 'ncsoccer'  # Set bot name
-            })
-            logger.info(f"Using Scrapy settings: {settings.copy_to_dict()}")
+            settings.set('LOG_LEVEL', 'INFO')
 
-            try:
-                process = CrawlerProcess(settings)
-                logger.info("Created CrawlerProcess successfully")
-            except Exception as e:
-                logger.error(f"Failed to create CrawlerProcess: {str(e)}", exc_info=True)
-                raise
+            # Skip storing callbacks if using architecture v2
+            if architecture_version != 'v2':
+                settings.set('ITEM_PIPELINES', {
+                    'ncsoccer.pipeline.storage.StoragePipeline': 300,
+                })
 
-            # Create a deferred to track spider completion
-            from twisted.internet import defer
-            deferreds = []
+            settings.set('DOWNLOAD_TIMEOUT', 60)
+            settings.set('COOKIES_ENABLED', False)
+            settings.set('RETRY_TIMES', 3)
 
-            # Schedule a spider for each target day
-            try:
-                for day in target_days:
-                    logger.info(f"Scheduling spider for {year}-{month:02d}-{day:02d}")
+            # Create storage settings
+            storage_settings = {
+                'STORAGE_TYPE': storage_type,
+                'BUCKET_NAME': bucket_name,
+                'HTML_PREFIX': html_prefix,
+                'JSON_PREFIX': json_prefix,
+                'REGION_NAME': region,
+            }
 
-                    # Create spider for the day, using date_str to uniquely identify spiders
-                    date_str = f"{year}-{month:02d}-{day:02d}"
+            # Apply storage settings
+            for key, value in storage_settings.items():
+                settings.set(key, value)
 
-                    # Configure spider
-                    spider = process.create_crawler('schedule')
-                    d = process.crawl(
-                        spider,
-                        mode='day',
-                        year=year,
-                        month=month,
-                        day=day,
-                        storage_type=storage_type,
-                        bucket_name=bucket_name,
-                        html_prefix=html_prefix,
-                        json_prefix=json_prefix,
-                        lookup_file=lookup_file,
-                        lookup_type=lookup_type,
-                        region=region,
-                        table_name=table_name,
-                        force_scrape=force_scrape,
-                        use_test_data=use_test_data,
-                        architecture_version=architecture_version
-                    )
-                    deferreds.append(d)
-                    logger.info(f"Spider scheduled for {date_str}")
+            # Create CrawlerProcess
+            process = CrawlerProcess(settings)
 
-                logger.info(f"Scheduled {len(deferreds)} spiders")
+            # Create spider for each target day
+            for day in target_days:
+                date_obj = datetime(year, month, day)
+                date_str = date_obj.strftime("%Y-%m-%d")
 
-                # Start the crawl process
-                logger.info("Starting crawler process")
+                logger.info(f"Configuring spider for {date_str}")
+
+                # Create crawler
+                spider = process.create_crawler('schedule')
+
+                # Configure spider
+                spider_args = {
+                    'year': year,
+                    'month': month,
+                    'day': day,
+                    'storage_type': storage_type,
+                    'bucket_name': bucket_name,
+                    'html_prefix': html_prefix,
+                    'json_prefix': json_prefix,
+                    'architecture_version': architecture_version,
+                    'use_test_data': use_test_data
+                }
+
+                # Crawl with spider
                 try:
-                    process.start()
-                    logger.info("Process completed")
+                    process.crawl(spider, **spider_args)
+                    logger.info(f"Scheduled spider for {date_str}")
                 except Exception as e:
-                    logger.error(f"Error in process.start(): {str(e)}", exc_info=True)
+                    logger.error(f"Error scheduling spider for {date_str}: {str(e)}")
                     success = False
-                    errors.append(str(e))
+                    errors.append(f"Error scheduling {date_str}: {str(e)}")
+
+            # Start the crawling process
+            try:
+                logger.info(f"Starting crawler process for {len(target_days)} days")
+                process.start(stop_after_crawl=True)
+                logger.info("Crawler process completed")
+
             except Exception as e:
-                logger.error(f"Error scheduling spiders: {str(e)}", exc_info=True)
+                logger.error(f"Error in crawler process: {str(e)}", exc_info=True)
                 success = False
                 errors.append(str(e))
 
@@ -357,37 +564,59 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
                 storage = get_storage_interface(storage_type, bucket_name, region)
                 logger.info(f"Using storage interface: {storage.__class__.__name__}")
 
-                # Verify files using the storage interface with timeout
+                # Track if all files exist for this day
+                all_files_exist = True
+                files_verified = 0
+
+                # Wait for files to be created (up to max_wait seconds)
                 for file_path in expected_files:
-                    logger.info(f"Checking for file: {file_path}")
-                    check_start_time = time.time()
-                    check_count = 0
-                    while True:
-                        elapsed = time.time() - start_time
-                        check_count += 1
+                    wait_start = time.time()
+                    file_exists = False
 
-                        if elapsed > max_wait:
-                            logger.error(f"TIMEOUT: Waited {elapsed:.2f}s for file {file_path} (max_wait={max_wait}s)")
-                            logger.error(f"Made {check_count} checks over {time.time() - check_start_time:.2f}s")
-                            raise TimeoutError(f"Timeout waiting for file {file_path}")
-
-                        exists = storage.exists(file_path)
-                        logger.info(f"Check #{check_count}: File {file_path} exists? {exists} (elapsed: {elapsed:.2f}s)")
-
-                        if exists:
-                            logger.info(f"Found file: {file_path} after {elapsed:.2f}s and {check_count} checks")
+                    while not file_exists and (time.time() - wait_start) < max_wait:
+                        if storage.exists(file_path):
+                            file_exists = True
+                            files_verified += 1
+                            logger.info(f"Verified file exists: {file_path}")
                             break
+                        else:
+                            logger.info(f"Waiting for file to be created: {file_path}")
+                            time.sleep(5)
 
-                        # If we're more than halfway through the timeout, log more details
-                        if elapsed > (max_wait / 2) and check_count % 2 == 0:
-                            logger.warning(f"File still not found after {elapsed:.2f}s: {file_path}")
+                    if not file_exists:
+                        logger.error(f"File not created after {max_wait} seconds: {file_path}")
+                        all_files_exist = False
 
-                        time.sleep(5)  # Wait 5 seconds before checking again
+                # Update lookup data for this day
+                if all_files_exist:
+                    logger.info(f"All files verified for {date_str}. Updating lookup data.")
+                    # Get the games count from the meta file
+                    games_count = 0
+                    try:
+                        meta_path = path_manager.get_json_meta_path(date_obj)
+                        meta_content = storage.read(meta_path)
+                        meta_data = json.loads(meta_content)
+                        games_count = meta_data.get('games_count', 0)
+                    except Exception as e:
+                        logger.error(f"Error reading games count for {date_str}: {e}")
 
-                logger.info(f"Successfully verified files for {date_str}")
+                    # Update lookup data using our new function
+                    lookup_data = update_lookup_data(
+                        lookup_data, date_str, success=True, games_count=games_count,
+                        lookup_file=lookup_file, storage_type=storage_type,
+                        bucket_name=bucket_name, region=region
+                    )
+                else:
+                    logger.error(f"Not all files were created for {date_str}")
+                    success = False
+                    errors.append(f"Missing files for {date_str}")
 
-            # If we get here, everything worked
-            return True
+            if success:
+                logger.info(f"Successfully scraped {len(target_days)} days")
+                return True
+
+            retry_count += 1
+            last_error = errors
 
         except Exception as e:
             logger.error(f"Error in run_month (attempt {retry_count + 1}): {str(e)}", exc_info=True)
@@ -400,31 +629,140 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
     raise RuntimeError(f"Failed to run month after {max_retries} attempts. Last error: {last_error}")
 
 
-def run_date_range(start_date, end_date, lookup_file='data/lookup.json',
-                  skip_existing=True):
+def run_date_range(start_date, end_date, storage_type='s3', bucket_name=None,
+                  html_prefix='data/html', json_prefix='data/json', lookup_file='data/lookup.json',
+                  lookup_type='file', region='us-east-2', force_scrape=False, use_test_data=False,
+                  architecture_version='v1', max_wait=300):
     """Run scraper for a range of dates.
 
     Args:
         start_date (datetime): Start date to scrape from.
         end_date (datetime): End date to scrape to.
-        lookup_file (str): Path to the lookup JSON file.
-        skip_existing (bool): Whether to skip already scraped dates.
+        storage_type (str): Storage type ('file' or 's3')
+        bucket_name (str): S3 bucket name if using S3 storage
+        html_prefix (str): Prefix for HTML files
+        json_prefix (str): Prefix for JSON files
+        lookup_file (str): Path to lookup file
+        lookup_type (str): Type of lookup ('file' only supported)
+        region (str): AWS region
+        force_scrape (bool): Whether to force scrape even if date exists
+        use_test_data (bool): Whether to use test data paths
+        architecture_version (str): Data architecture version ('v1' or 'v2')
+        max_wait (int): Maximum seconds to wait for file creation
 
     Returns:
         bool: True if all dates were scraped successfully, False otherwise.
     """
+    # Detect Lambda environment - if we're in Lambda, ensure we use S3
+    in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+    if in_lambda and storage_type == 'file':
+        logger.warning("Running in Lambda environment - forcing S3 storage type")
+        storage_type = 's3'
+        # Get bucket name from environment if not provided and we're in Lambda
+        if not bucket_name:
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
     current = start_date
     failed_dates = []
 
+    logger.info(f"Starting date range scrape from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+
     while current <= end_date:
-        if not run_scraper(current.year, current.month, current.day):
-            failed_dates.append(current.strftime('%Y-%m-%d'))
+        date_str = current.strftime('%Y-%m-%d')
+        logger.info(f"Processing date: {date_str}")
+
+        # Run the scraper for this specific day
+        success = run_scraper(
+            year=current.year,
+            month=current.month,
+            day=current.day,
+            storage_type=storage_type,
+            bucket_name=bucket_name,
+            html_prefix=html_prefix,
+            json_prefix=json_prefix,
+            lookup_file=lookup_file,
+            lookup_type=lookup_type,
+            region=region,
+            force_scrape=force_scrape,
+            use_test_data=use_test_data,
+            architecture_version=architecture_version,
+            max_wait=max_wait
+        )
+
+        if not success:
+            failed_dates.append(date_str)
+            logger.error(f"Failed to scrape date: {date_str}")
+        else:
+            logger.info(f"Successfully scraped date: {date_str}")
+
         current = current + timedelta(days=1)
 
     if failed_dates:
         logger.error(f"Failed to scrape dates: {failed_dates}")
         return False
+
+    logger.info(f"Successfully completed date range scrape from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     return True
+
+
+def update_lookup_data(lookup_data, date_str, success=True, games_count=0, lookup_file='data/lookup.json',
+                   storage_type='file', bucket_name=None, region='us-east-2'):
+    """Update the lookup data with a new date.
+
+    Args:
+        lookup_data (dict): The lookup data dictionary.
+        date_str (str): Date string in YYYY-MM-DD format.
+        success (bool): Whether scraping was successful.
+        games_count (int): Number of games found.
+        lookup_file (str): Path to the lookup JSON file.
+        storage_type (str): 'file' or 's3'
+        bucket_name (str): S3 bucket name if storage_type is 's3'
+        region (str): AWS region for S3
+
+    Returns:
+        dict: Updated lookup data.
+    """
+    # Detect Lambda environment - if we're in Lambda, ensure we use S3
+    in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+    if in_lambda and storage_type == 'file':
+        logger.warning("Running in Lambda environment - forcing S3 storage type")
+        storage_type = 's3'
+        # Get bucket name from environment if not provided and we're in Lambda
+        if not bucket_name:
+            bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
+    # Update the lookup data
+    lookup_data[date_str] = {
+        'success': success,
+        'games_count': games_count,
+        'timestamp': datetime.now().isoformat()
+    }
+
+    try:
+        # Prepare the full data object
+        data = {'scraped_dates': lookup_data}
+
+        if storage_type == 's3':
+            # Import here to avoid circular imports
+            from ncsoccer.pipeline.config import get_storage_interface
+            # Get S3 storage interface
+            storage = get_storage_interface('s3', bucket_name, region)
+            # Write to S3
+            storage.write(lookup_file, json.dumps(data, indent=2))
+            logger.info(f"Updated lookup data in S3: {bucket_name}/{lookup_file}")
+        else:
+            # Local file system - use /tmp in Lambda
+            lambda_tmp_prefix = '/tmp/' if in_lambda else ''
+            local_lookup_file = f"{lambda_tmp_prefix}{lookup_file}"
+
+            os.makedirs(os.path.dirname(local_lookup_file), exist_ok=True)
+            with open(local_lookup_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            logger.info(f"Updated lookup data in local file: {local_lookup_file}")
+    except Exception as e:
+        logger.error(f"Error updating lookup data: {e}")
+
+    return lookup_data
 
 
 if __name__ == '__main__':
@@ -436,13 +774,17 @@ if __name__ == '__main__':
     parser.add_argument('--day', type=int, help='Day to scrape (optional)')
     parser.add_argument('--mode', choices=['day', 'month'], default='day', help='Scraping mode')
     parser.add_argument('--force-scrape', action='store_true', help='Force scrape even if already done')
-    parser.add_argument('--storage-type', choices=['file', 's3'], default='file', help='Storage type')
+    parser.add_argument('--storage-type', choices=['file', 's3'], default='s3', help='Storage type')
     parser.add_argument('--bucket-name', default='ncsh-app-data', help='S3 bucket name')
     parser.add_argument('--html-prefix', default='data/html', help='HTML prefix')
     parser.add_argument('--json-prefix', default='data/json', help='JSON prefix')
     parser.add_argument('--lookup-type', choices=['file', 'dynamodb'], default='file', help='Lookup type')
+    parser.add_argument('--lookup-file', default='data/lookup.json', help='Path to lookup file')
     parser.add_argument('--table-name', default='ncsh-scraped-dates', help='DynamoDB table name')
     parser.add_argument('--architecture-version', default='v1', help='Architecture version')
+    parser.add_argument('--region', default='us-east-2', help='AWS region')
+    parser.add_argument('--max-wait', type=int, default=300, help='Maximum seconds to wait for file creation')
+    parser.add_argument('--use-test-data', action='store_true', help='Use test data paths')
 
     args = parser.parse_args()
 
@@ -453,9 +795,13 @@ if __name__ == '__main__':
         'html_prefix': args.html_prefix,
         'json_prefix': args.json_prefix,
         'lookup_type': args.lookup_type,
+        'lookup_file': args.lookup_file,
+        'region': args.region,
         'table_name': args.table_name,
         'force_scrape': args.force_scrape,
-        'architecture_version': args.architecture_version
+        'architecture_version': args.architecture_version,
+        'max_wait': args.max_wait,
+        'use_test_data': args.use_test_data
     }
 
     if args.mode == 'day' and args.day:
@@ -472,4 +818,6 @@ if __name__ == '__main__':
             **common_params
         )
 
-    print(json.dumps({"result": result}))
+    print(f"Scraper {'succeeded' if result else 'failed'}")
+    import sys
+    sys.exit(0 if result else 1)

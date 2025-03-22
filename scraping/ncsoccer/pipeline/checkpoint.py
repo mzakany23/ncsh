@@ -76,20 +76,27 @@ class UnifiedCheckpoint:
                 return default_data
         else:
             # Local file storage
-            if os.path.exists(self.checkpoint_file):
+            # Detect Lambda environment
+            in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+
+            # When in Lambda, we must prepend /tmp to the path
+            lambda_tmp_prefix = '/tmp/' if in_lambda else ''
+            local_checkpoint_file = f"{lambda_tmp_prefix}{self.checkpoint_file}"
+
+            if os.path.exists(local_checkpoint_file):
                 try:
-                    with open(self.checkpoint_file, 'r') as f:
+                    with open(local_checkpoint_file, 'r') as f:
                         data = json.load(f)
                     return data
                 except Exception as e:
                     logger.error(f"Error loading checkpoint: {e}")
                     return default_data
             else:
-                # Create directory if needed
-                os.makedirs(os.path.dirname(self.checkpoint_file), exist_ok=True)
+                # Create directory if needed, but only if not in Lambda or using /tmp
+                os.makedirs(os.path.dirname(local_checkpoint_file), exist_ok=True)
                 # Create new checkpoint file
                 try:
-                    with open(self.checkpoint_file, 'w') as f:
+                    with open(local_checkpoint_file, 'w') as f:
                         json.dump(default_data, f, indent=2)
                 except Exception as e:
                     logger.error(f"Error creating checkpoint: {e}")
@@ -114,7 +121,14 @@ class UnifiedCheckpoint:
                 )
             else:
                 # Local file storage
-                with open(self.checkpoint_file, 'w') as f:
+                # Detect Lambda environment
+                in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+
+                # When in Lambda, we must prepend /tmp to the path
+                lambda_tmp_prefix = '/tmp/' if in_lambda else ''
+                local_checkpoint_file = f"{lambda_tmp_prefix}{self.checkpoint_file}"
+
+                with open(local_checkpoint_file, 'w') as f:
                     json.dump(self._data, f, indent=2)
                 return True
         except Exception as e:
