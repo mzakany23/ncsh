@@ -8,6 +8,13 @@ This document tracks tasks that need to be completed after the successful migrat
 - [ ] Clean up any IAM roles, policies, and EventBridge rules associated with the old workflow
 - [ ] Update documentation to remove references to the old workflow patterns
 
+## Infrastructure Fixes
+
+- [ ] Fix the `ValidateInput` state in the Step Function state machine to handle default values properly
+  - Current issue: The `States.JsonMerge` function fails when trying to merge default values
+  - Possible solution: Use a simpler approach for default value handling without `JsonMerge`
+  - Temporary workaround: Use the local test script (`test_local_workflow.py`) which works correctly
+
 ## Workflow Migration Timeline
 
 1. **Phase 1: Testing** (Current)
