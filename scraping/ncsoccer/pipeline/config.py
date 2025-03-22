@@ -217,20 +217,52 @@ class StorageInterface:
         raise NotImplementedError
 
 class FileStorage(StorageInterface):
+    def __init__(self):
+        """Initialize the FileStorage interface"""
+        # Detect Lambda environment
+        self.in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+        self.tmp_prefix = '/tmp/' if self.in_lambda else ''
+        self.logger = logging.getLogger(__name__)
+
+        if self.in_lambda:
+            self.logger.warning(
+                "USING FILESYSTEM STORAGE IN LAMBDA IS STRONGLY DISCOURAGED. "
+                "Lambda has limited /tmp space and files don't persist between invocations. "
+                "Please use S3Storage instead.")
+
     def exists(self, path: str) -> bool:
-        return os.path.exists(path)
+        # Warn about Lambda usage
+        if self.in_lambda:
+            self.logger.warning(f"FileStorage.exists called in Lambda environment. Use S3Storage instead: {path}")
+
+        # Use /tmp prefix in Lambda
+        local_path = f"{self.tmp_prefix}{path}"
+        return os.path.exists(local_path)
 
     def write(self, path: str, content: str) -> bool:
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
+            # Warn about Lambda usage
+            if self.in_lambda:
+                self.logger.warning(f"FileStorage.write called in Lambda environment. Use S3Storage instead: {path}")
+
+            # Use /tmp prefix in Lambda
+            local_path = f"{self.tmp_prefix}{path}"
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            with open(local_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             return True
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"FileStorage: Error writing to {path}: {str(e)}")
             return False
 
     def read(self, path: str) -> str:
-        with open(path, 'r', encoding='utf-8') as f:
+        # Warn about Lambda usage
+        if self.in_lambda:
+            self.logger.warning(f"FileStorage.read called in Lambda environment. Use S3Storage instead: {path}")
+
+        # Use /tmp prefix in Lambda
+        local_path = f"{self.tmp_prefix}{path}"
+        with open(local_path, 'r', encoding='utf-8') as f:
             return f.read()
 
 class S3Storage(StorageInterface):
@@ -289,9 +321,17 @@ def get_storage_interface(storage_type: str | StorageType, bucket_name: str = No
     Returns:
         StorageInterface: The configured storage interface
     """
+    logger = logging.getLogger(__name__)
+    in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
+
     # Convert string to StorageType if needed
     if isinstance(storage_type, str):
         storage_type = StorageType(storage_type.lower())
+
+    # If in Lambda environment, enforce S3 storage
+    if in_lambda and storage_type == StorageType.FILE:
+        logger.warning("Attempting to use file storage in Lambda environment - forcing S3 storage instead")
+        storage_type = StorageType.S3
 
     if storage_type == StorageType.FILE:
         return FileStorage()
