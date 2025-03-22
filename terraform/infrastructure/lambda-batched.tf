@@ -3,30 +3,29 @@
 # Defines new Lambda functions for the unified date range workflow
 ###############################################################
 
-# ECR Repository for utility Lambda functions
-resource "aws_ecr_repository" "ncsoccer_utils" {
-  name                 = "ncsoccer-utils"
-  image_tag_mutability = "MUTABLE"
+###############################################################
+# ECR Repository for Utility Functions
+###############################################################
 
-  image_scanning_configuration {
-    scan_on_push = true
-  }
+# Using data source for existing ECR repository
+data "aws_ecr_repository" "ncsoccer_utils" {
+  name = "ncsoccer-utils"
 }
 
 # ECR Lifecycle Policy
 resource "aws_ecr_lifecycle_policy" "ncsoccer_utils" {
-  repository = aws_ecr_repository.ncsoccer_utils.name
+  repository = data.aws_ecr_repository.ncsoccer_utils.name
 
   policy = jsonencode({
     rules = [
       {
-        rulePriority = 1
-        description  = "Keep last 5 images"
+        rulePriority = 1,
+        description  = "Keep last 5 images",
         selection = {
-          tagStatus     = "any"
-          countType     = "imageCountMoreThan"
-          countNumber   = 5
-        }
+          tagStatus   = "any",
+          countType   = "imageCountMoreThan",
+          countNumber = 5
+        },
         action = {
           type = "expire"
         }
@@ -35,19 +34,19 @@ resource "aws_ecr_lifecycle_policy" "ncsoccer_utils" {
   })
 }
 
-# ECR Repository Policy for Lambda Access
+# ECR Repository Policy
 resource "aws_ecr_repository_policy" "ncsoccer_utils_policy" {
-  repository = aws_ecr_repository.ncsoccer_utils.name
+  repository = data.aws_ecr_repository.ncsoccer_utils.name
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
-        Sid    = "AllowLambdaServiceAccess"
-        Effect = "Allow"
+        Sid       = "AllowLambdaServiceAccess",
+        Effect    = "Allow",
         Principal = {
           Service = "lambda.amazonaws.com"
-        }
+        },
         Action = [
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
@@ -58,16 +57,19 @@ resource "aws_ecr_repository_policy" "ncsoccer_utils_policy" {
   })
 }
 
+###############################################################
 # IAM Role for Utility Lambda Functions
+###############################################################
+
 resource "aws_iam_role" "lambda_utils_role" {
   name = "ncsoccer_lambda_utils_role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
         Principal = {
           Service = "lambda.amazonaws.com"
         }
@@ -76,75 +78,57 @@ resource "aws_iam_role" "lambda_utils_role" {
   })
 }
 
-# IAM Policy for Utility Lambda Functions
 resource "aws_iam_role_policy" "lambda_utils_policy" {
   name = "ncsoccer_lambda_utils_policy"
   role = aws_iam_role.lambda_utils_role.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
-        ]
+        ],
         Resource = "arn:aws:logs:*:*:*"
       },
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
-          "s3:PutObject",
           "s3:GetObject",
-          "s3:ListBucket",
-          "s3:GetObjectVersion"
-        ]
+          "s3:PutObject",
+          "s3:ListBucket"
+        ],
         Resource = [
-          aws_s3_bucket.app_data.arn,
-          "${aws_s3_bucket.app_data.arn}/*"
+          "arn:aws:s3:::ncsh-app-data",
+          "arn:aws:s3:::ncsh-app-data/*"
         ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:BatchCheckLayerAvailability"
-        ]
-        Resource = [aws_ecr_repository.ncsoccer_utils.arn]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken"
-        ]
-        Resource = ["*"]
       }
     ]
   })
 }
 
+###############################################################
+# Lambda Functions for Unified Workflow with Batching
+###############################################################
+
 # Input Validator Lambda
 resource "aws_lambda_function" "ncsoccer_input_validator" {
   function_name = "ncsoccer_input_validator"
   role          = aws_iam_role.lambda_utils_role.arn
+  package_type  = "Image"
   timeout       = 10
   memory_size   = 128
 
-  package_type = "Image"
-  image_uri    = "${aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
+  # This will be updated by the CI/CD pipeline
+  image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
 
   environment {
     variables = {
-      DATA_BUCKET = aws_s3_bucket.app_data.id
+      DATA_BUCKET = "ncsh-app-data"
     }
-  }
-
-  # Ignore image_uri changes since they are managed by CI/CD
-  lifecycle {
-    ignore_changes = [image_uri]
   }
 }
 
@@ -152,21 +136,17 @@ resource "aws_lambda_function" "ncsoccer_input_validator" {
 resource "aws_lambda_function" "ncsoccer_batch_planner" {
   function_name = "ncsoccer_batch_planner"
   role          = aws_iam_role.lambda_utils_role.arn
+  package_type  = "Image"
   timeout       = 10
   memory_size   = 128
 
-  package_type = "Image"
-  image_uri    = "${aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
+  # This will be updated by the CI/CD pipeline
+  image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
 
   environment {
     variables = {
-      DATA_BUCKET = aws_s3_bucket.app_data.id
+      DATA_BUCKET = "ncsh-app-data"
     }
-  }
-
-  # Ignore image_uri changes since they are managed by CI/CD
-  lifecycle {
-    ignore_changes = [image_uri]
   }
 }
 
@@ -174,27 +154,23 @@ resource "aws_lambda_function" "ncsoccer_batch_planner" {
 resource "aws_lambda_function" "ncsoccer_batch_verifier" {
   function_name = "ncsoccer_batch_verifier"
   role          = aws_iam_role.lambda_utils_role.arn
+  package_type  = "Image"
   timeout       = 10
   memory_size   = 128
 
-  package_type = "Image"
-  image_uri    = "${aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
+  # This will be updated by the CI/CD pipeline
+  image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
 
   environment {
     variables = {
-      DATA_BUCKET = aws_s3_bucket.app_data.id
+      DATA_BUCKET = "ncsh-app-data"
     }
-  }
-
-  # Ignore image_uri changes since they are managed by CI/CD
-  lifecycle {
-    ignore_changes = [image_uri]
   }
 }
 
-# CloudWatch Log Groups for Lambda functions
+# CloudWatch Log Groups
 resource "aws_cloudwatch_log_group" "ncsoccer_input_validator_logs" {
-  name              = "/aws/lambda/ncsoccer_input_validator"
+  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_input_validator.function_name}"
   retention_in_days = 30
 
   tags = {
@@ -204,7 +180,7 @@ resource "aws_cloudwatch_log_group" "ncsoccer_input_validator_logs" {
 }
 
 resource "aws_cloudwatch_log_group" "ncsoccer_batch_planner_logs" {
-  name              = "/aws/lambda/ncsoccer_batch_planner"
+  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_batch_planner.function_name}"
   retention_in_days = 30
 
   tags = {
@@ -214,7 +190,7 @@ resource "aws_cloudwatch_log_group" "ncsoccer_batch_planner_logs" {
 }
 
 resource "aws_cloudwatch_log_group" "ncsoccer_batch_verifier_logs" {
-  name              = "/aws/lambda/ncsoccer_batch_verifier"
+  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_batch_verifier.function_name}"
   retention_in_days = 30
 
   tags = {
