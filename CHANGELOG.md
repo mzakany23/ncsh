@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.1] - 2025-03-25
+### Fixed
+- Fixed Step Function input validation to handle default values properly
+- Removed problematic `States.JsonMerge` calls that were causing input validation failures
+- Simplified input parameter handling to rely on Lambda's default value capability
+- Enabled support for both single-day and date-range operations using the batched workflow
+
 ## [2.14.0] - 2025-03-24
 ### Added
 - Implemented unified date range workflow with batching to prevent Lambda timeouts

@@ -138,7 +138,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_daily_unified_batched" {
   description = "Trigger NC Soccer unified batched workflow for current day at 04:00 UTC"
 
   schedule_expression = "cron(0 4 * * ? *)"
-  state               = "DISABLED" # Initially disabled until fully tested
+  state               = "ENABLED" # Enable daily workflow
 
   tags = {
     Environment = var.environment
@@ -152,7 +152,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_monthly_unified_batched" {
   description = "Trigger NC Soccer unified batched workflow for entire month on the 1st day at 05:00 UTC"
 
   schedule_expression = "cron(0 5 1 * ? *)"
-  state               = "DISABLED" # Initially disabled until fully tested
+  state               = "ENABLED" # Enable monthly workflow
 
   tags = {
     Environment = var.environment
