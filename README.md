@@ -15,6 +15,9 @@ A data pipeline for collecting and processing soccer game data.
 │   ├── lambda_function.py
 │   ├── requirements.txt
 │   └── Dockerfile
+├── utils/             # Utility Lambda functions
+│   ├── src/           # Source code for utility functions
+│   └── Dockerfile     # Docker build for utility functions
 ├── terraform/         # Infrastructure as code
 │   └── infrastructure/
 ├── scripts/          # Utility scripts
@@ -44,7 +47,30 @@ terraform apply
 
 ### Scraping Data
 
-To scrape a month of data:
+#### Using the Unified Workflow with Batching
+
+The unified workflow allows scraping data for a single day, a date range, or an entire month, with batching for improved reliability:
+
+```bash
+# Trigger the unified workflow for a single date
+python scripts/trigger_batched_workflow.py --date 2024-03-01
+
+# Trigger for a date range with custom batch size
+python scripts/trigger_batched_workflow.py --date-range 2024-03-01 2024-03-31 --batch-size 5
+
+# Trigger for an entire month
+python scripts/trigger_batched_workflow.py --month 2024 3
+
+# Force re-scraping of data
+python scripts/trigger_batched_workflow.py --date 2024-03-01 --force-scrape
+
+# Use a specific AWS profile
+python scripts/trigger_batched_workflow.py --date 2024-03-01 --profile your-profile-name
+```
+
+#### Legacy Scraping (previous version)
+
+To scrape a month of data using the legacy workflow:
 ```bash
 make scrape-month YEAR=2024 MONTH=3
 ```

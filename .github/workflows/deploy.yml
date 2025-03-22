@@ -10,6 +10,7 @@ env:
   AWS_REGION: us-east-2
   SCRAPER_REPOSITORY: ncsoccer-scraper
   PROCESSING_REPOSITORY: ncsoccer-processing
+  UTILS_REPOSITORY: ncsoccer-utils
   ENVIRONMENT: dev
 
 jobs:
@@ -87,6 +88,58 @@ jobs:
         aws lambda update-function-code \
           --function-name ncsoccer_scraper \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.SCRAPER_REPOSITORY }}:${{ github.sha }}
+
+  build-utils:
+    needs: [validate-changes]
+    if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Build image for utils Lambda functions
+        docker buildx build --platform=linux/amd64 -t $ECR_REGISTRY/${{ env.UTILS_REPOSITORY }}:$IMAGE_TAG -f utils/Dockerfile utils/ --load
+        docker tag $ECR_REGISTRY/${{ env.UTILS_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.UTILS_REPOSITORY }}:latest
+        docker push $ECR_REGISTRY/${{ env.UTILS_REPOSITORY }}:$IMAGE_TAG
+        docker push $ECR_REGISTRY/${{ env.UTILS_REPOSITORY }}:latest
+
+        # Print image details to verify architecture in logs
+        docker inspect $ECR_REGISTRY/${{ env.UTILS_REPOSITORY }}:$IMAGE_TAG | grep -A 3 Architecture
+
+    - name: Update Lambda Functions
+      run: |
+        # Update all utility Lambda functions
+        aws lambda update-function-code \
+          --function-name ncsoccer_input_validator \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
+
+        aws lambda update-function-code \
+          --function-name ncsoccer_batch_planner \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
+
+        aws lambda update-function-code \
+          --function-name ncsoccer_batch_verifier \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
 
   build-processing:
     needs: [validate-changes]

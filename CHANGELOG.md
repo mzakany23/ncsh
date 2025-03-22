@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2025-03-24
+### Added
+- Implemented unified date range workflow with batching to prevent Lambda timeouts
+- Created new utility Lambda functions for input validation, batch planning, and result verification
+- Added `utils` module with specialized Lambda functions for workflow management
+- Developed a unified trigger script (`trigger_batched_workflow.py`) for easy workflow invocation
+- Added comprehensive documentation for the new workflow in `docs/unified_workflow.md`
+
+### Changed
+- Restructured Step Function to use a Map state for parallel batch processing
+- Enhanced error handling with batch-level retries and comprehensive error reporting
+- Updated deployment workflow to build and deploy utility Lambda functions
+- Simplified client interface with a single unified date range approach instead of separate modes
+
+### Fixed
+- Resolved Lambda timeout issues for monthly operations by implementing batching
+- Improved reliability of multi-day scraping through parallel batch processing
+- Enhanced error handling to prevent complete workflow failure when individual dates fail
+
 ## [2.13.5] - 2025-03-23
 ### Changed
 - Enhanced Lambda function to strictly enforce S3 storage by removing any file system operations

@@ -1,11 +1,12 @@
 import os
 import sys
 import json
+import time
 import logging
 import calendar
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
-from ncsoccer.runner import run_scraper, run_month, run_date_range
+from ncsoccer.runner import run_scraper, run_date_range
 from ncsoccer.pipeline.config import DataArchitectureVersion
 
 logger = logging.getLogger()
@@ -19,36 +20,233 @@ logging.getLogger("boto3").setLevel(logging.WARNING)
 
 def lambda_handler(event, context):
     """
-    AWS Lambda handler function
+    AWS Lambda handler function for date range scraping
 
     Args:
         event (dict): Lambda event with scraping configuration:
             {
+                # Legacy format (deprecated but supported for backward compatibility)
                 "mode": "day|month|date_range",
                 "parameters": {
                     "year": "2024",
                     "month": "01",
                     "day": "01",
                     "force_scrape": true,
-                    "architecture_version": "v1", # Optional: "v1" or "v2"
+                    "architecture_version": "v1",
                     "start_date": "2024-01-01",  # For date_range mode
                     "end_date": "2024-01-31",    # For date_range mode
-                    "bucket_name": "ncsh-app-data", # Optional: S3 bucket name
-                    "html_prefix": "data/html",  # Optional: HTML prefix in S3
-                    "json_prefix": "data/json",  # Optional: JSON prefix in S3
-                    "lookup_file": "data/lookup.json", # Optional: Lookup file path
-                    "region": "us-east-2"        # Optional: AWS region
+                    ...
                 }
+
+                # OR
+
+                # Unified format (recommended)
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-31",
+                "force_scrape": true,
+                "architecture_version": "v1",
+                "bucket_name": "ncsh-app-data"
             }
         context (LambdaContext): Lambda context
 
     Returns:
-        dict: Result of the Lambda execution
+        dict: Result of the scraping operation
     """
-
     try:
         logger.info(f"Received event: {json.dumps(event)}")
 
+        # Detect if the event is using the new unified format or legacy format
+        if "start_date" in event and "end_date" in event:
+            # Unified format
+            return handle_unified_format(event, context)
+        elif "mode" in event:
+            # Legacy format with mode
+            logger.warning("Using legacy format with 'mode' parameter. Consider migrating to the unified format.")
+            return handle_legacy_format(event, context)
+        else:
+            error_msg = "Invalid event format. Must include either 'mode' parameter (legacy) or 'start_date'/'end_date' parameters (unified)."
+            logger.error(error_msg)
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'success': False,
+                    'error': error_msg
+                })
+            }
+
+    except Exception as e:
+        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'success': False,
+                'error': str(e)
+            })
+        }
+
+def handle_unified_format(event, context):
+    """
+    Handle the unified format event with start_date and end_date
+
+    Args:
+        event (dict): Lambda event in unified format
+        context (LambdaContext): Lambda context
+
+    Returns:
+        dict: Result of the scraping operation
+    """
+    try:
+        # Get start and end dates
+        start_date_str = event.get('start_date')
+        end_date_str = event.get('end_date')
+
+        if not start_date_str or not end_date_str:
+            error_msg = "Missing required parameters: start_date and end_date"
+            logger.error(error_msg)
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'success': False,
+                    'error': error_msg
+                })
+            }
+
+        # Parse dates
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError as e:
+            error_msg = f"Invalid date format: {str(e)}. Use YYYY-MM-DD format."
+            logger.error(error_msg)
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'success': False,
+                    'error': error_msg
+                })
+            }
+
+        # Extract parameters
+        force_scrape = event.get('force_scrape', False)
+        architecture_version = event.get('architecture_version', 'v1')
+        bucket_name = event.get('bucket_name', 'ncsh-app-data')
+        html_prefix = event.get('html_prefix', 'data/html')
+        json_prefix = event.get('json_prefix', 'data/json')
+        lookup_file = event.get('lookup_file', 'data/lookup.json')
+        region = event.get('region', 'us-east-2')
+        max_wait = int(event.get('max_wait', 300))
+
+        # Always use S3 in Lambda
+        storage_type = 's3'
+
+        # Common parameters
+        common_params = {
+            'storage_type': storage_type,
+            'bucket_name': bucket_name,
+            'html_prefix': html_prefix,
+            'json_prefix': json_prefix,
+            'lookup_file': lookup_file,
+            'lookup_type': 's3',
+            'region': region,
+            'force_scrape': force_scrape,
+            'architecture_version': architecture_version,
+            'max_wait': max_wait
+        }
+
+        # Validate architecture version
+        try:
+            arch_version = DataArchitectureVersion(architecture_version.lower())
+            logger.info(f"Architecture version validated: {arch_version.value}")
+        except ValueError:
+            logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
+            architecture_version = 'v1'
+            common_params['architecture_version'] = 'v1'
+
+        # Record start time for timeout tracking
+        start_time = time.time()
+        max_runtime = 240  # 240 seconds = 4 minutes (leaving buffer for 5 min Lambda)
+
+        # Process each date in the range
+        current = start_date
+        success_count = 0
+        failed_dates = []
+
+        while current <= end_date:
+            # Check if we're approaching the timeout
+            elapsed = time.time() - start_time
+            if elapsed > max_runtime:
+                logger.warning(f"Approaching Lambda timeout after {elapsed:.1f}s. Processed {success_count} dates so far.")
+                break
+
+            date_str = current.strftime('%Y-%m-%d')
+            logger.info(f"Processing date: {date_str}")
+
+            # Run the scraper for this day
+            success = run_scraper(
+                year=current.year,
+                month=current.month,
+                day=current.day,
+                **common_params
+            )
+
+            if success:
+                success_count += 1
+                logger.info(f"Successfully scraped date: {date_str}")
+            else:
+                failed_dates.append(date_str)
+                logger.error(f"Failed to scrape date: {date_str}")
+
+            current = current + timedelta(days=1)
+
+        # Prepare result
+        total_dates = (end_date - start_date).days + 1
+        processed_dates = success_count + len(failed_dates)
+        all_processed = processed_dates == total_dates
+        all_succeeded = success_count == total_dates
+
+        result = {
+            'success': all_succeeded,
+            'all_processed': all_processed,
+            'total_dates': total_dates,
+            'dates_processed': processed_dates,
+            'success_count': success_count,
+            'failed_dates': failed_dates,
+            'start_date': start_date_str,
+            'end_date': end_date_str,
+            'storage_type': storage_type,
+            'bucket_name': bucket_name,
+            'architecture_version': architecture_version
+        }
+
+        logger.info(f"Scraping complete: {success_count}/{total_dates} dates succeeded")
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+
+    except Exception as e:
+        logger.error(f"Error in handle_unified_format: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'success': False,
+                'error': str(e)
+            })
+        }
+
+def handle_legacy_format(event, context):
+    """
+    Handle the legacy format event with mode parameter
+
+    Args:
+        event (dict): Lambda event in legacy format
+        context (LambdaContext): Lambda context
+
+    Returns:
+        dict: Result of the scraping operation
+    """
+    try:
         # Extract mode
         mode = event.get('mode', 'day')
         logger.info(f"Operating in mode: {mode}")
@@ -131,32 +329,35 @@ def lambda_handler(event, context):
             }
 
         elif mode == 'month':
-            # Month mode - scrape a whole month
+            # Month mode - For month mode, translate to date range mode for unified approach
             year = int(parameters.get('year', now.year))
             month = int(parameters.get('month', now.month))
 
-            logger.info(f"Running in month mode for {year}-{month:02d}")
+            logger.info(f"Translating month mode to date range for {year}-{month:02d}")
 
-            result = run_month(
-                year=year,
-                month=month,
-                **common_params
-            )
+            # Calculate start and end dates for the month
+            start_date = date(year, month, 1)
+            last_day = calendar.monthrange(year, month)[1]
+            end_date = date(year, month, last_day)
 
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'success': result,
-                    'year': year,
-                    'month': month,
-                    'storage_type': storage_type,
-                    'bucket_name': bucket_name,
-                    'architecture_version': architecture_version
-                })
+            # Convert to unified format and process
+            unified_event = {
+                'start_date': start_date.strftime('%Y-%m-%d'),
+                'end_date': end_date.strftime('%Y-%m-%d'),
+                'force_scrape': force_scrape,
+                'architecture_version': architecture_version,
+                'bucket_name': bucket_name,
+                'html_prefix': html_prefix,
+                'json_prefix': json_prefix,
+                'lookup_file': lookup_file,
+                'region': region,
+                'max_wait': max_wait
             }
 
+            return handle_unified_format(unified_event, context)
+
         elif mode == 'date_range':
-            # Date range mode - scrape a range of dates
+            # Date range mode - translate to unified format
             start_date_str = parameters.get('start_date')
             end_date_str = parameters.get('end_date')
 
@@ -168,38 +369,23 @@ def lambda_handler(event, context):
                     })
                 }
 
-            logger.info(f"Running in date_range mode from {start_date_str} to {end_date_str}")
+            logger.info(f"Translating date_range mode to unified format from {start_date_str} to {end_date_str}")
 
-            # Parse dates
-            try:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            except ValueError as e:
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps({
-                        'error': f'Invalid date format: {str(e)}. Use YYYY-MM-DD'
-                    })
-                }
-
-            # Use the updated run_date_range function
-            result = run_date_range(
-                start_date=start_date,
-                end_date=end_date,
-                **common_params
-            )
-
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'success': result,
-                    'start_date': start_date_str,
-                    'end_date': end_date_str,
-                    'storage_type': storage_type,
-                    'bucket_name': bucket_name,
-                    'architecture_version': architecture_version
-                })
+            # Convert to unified format and process
+            unified_event = {
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'force_scrape': force_scrape,
+                'architecture_version': architecture_version,
+                'bucket_name': bucket_name,
+                'html_prefix': html_prefix,
+                'json_prefix': json_prefix,
+                'lookup_file': lookup_file,
+                'region': region,
+                'max_wait': max_wait
             }
+
+            return handle_unified_format(unified_event, context)
 
         else:
             # Invalid mode
@@ -211,7 +397,7 @@ def lambda_handler(event, context):
             }
 
     except Exception as e:
-        logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
+        logger.error(f"Error in handle_legacy_format: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
             'body': json.dumps({
@@ -220,22 +406,12 @@ def lambda_handler(event, context):
         }
 
 if __name__ == "__main__":
-    # For local testing
+    # For local testing - using the unified format
     result = lambda_handler({
-        'mode': 'day',
-        'parameters': {
-            'year': 2023,
-            'month': 2,
-            'day': 1,
-            'force_scrape': True,
-            'architecture_version': 'v2',
-            'bucket_name': 'ncsh-app-data',
-            'storage_type': 's3',
-            'html_prefix': 'data/html',
-            'json_prefix': 'data/json',
-            'lookup_file': 'data/lookup.json',
-            'region': 'us-east-2',
-            'max_wait': 300
-        }
+        'start_date': '2025-02-01',
+        'end_date': '2025-02-03',
+        'force_scrape': True,
+        'architecture_version': 'v1',
+        'bucket_name': 'ncsh-app-data'
     }, None)
     print(json.dumps(result, indent=2))
