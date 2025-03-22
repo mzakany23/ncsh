@@ -1002,11 +1002,17 @@ def write_record(data, base_output, record_type, year, month, day, storage=None)
         day: Day for partitioning (required)
         storage: Optional storage interface (e.g. for S3)
     """
-    import os, json
+    import os, json, logging
+
+    # Setup logging
+    logger = logging.getLogger(__name__)
 
     # Build the directory path with required day-level partitioning
     directory = os.path.join(base_output, record_type, f"year={year}", f"month={month:02d}", f"day={day:02d}")
     file_path = os.path.join(directory, "data.jsonl")
+
+    # Detect Lambda environment
+    in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
 
     # Prepare content to write
     if isinstance(data, list):
@@ -1014,11 +1020,26 @@ def write_record(data, base_output, record_type, year, month, day, storage=None)
     else:
         content = json.dumps(data) + '\n'
 
-    # If a storage interface is provided, use it (e.g., for s3)
+    # If we're in a Lambda environment and no storage interface is provided, this is an error
+    if in_lambda and storage is None:
+        error_msg = (
+            "CRITICAL: Attempting to use local filesystem in Lambda environment without a storage interface. "
+            "In Lambda, all file operations should use S3. Please provide a storage interface."
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # If a storage interface is provided, use it
     if storage is not None:
         return storage.write(file_path, content)
     else:
-        os.makedirs(directory, exist_ok=True)
-        mode = 'a' if os.path.exists(file_path) else 'w'
-        with open(file_path, mode, encoding='utf-8') as f:
-            f.write(content)
+        # Only for non-Lambda environments: use local filesystem
+        try:
+            os.makedirs(directory, exist_ok=True)
+            mode = 'a' if os.path.exists(file_path) else 'w'
+            with open(file_path, mode, encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except Exception as e:
+            logger.error(f"Error writing to local file {file_path}: {str(e)}")
+            return False

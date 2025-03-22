@@ -25,12 +25,7 @@
       "Choices": [
         {
           "Variable": "$.validated_input.Payload.statusCode",
-          "NumericEquals": 400,
-          "Next": "HandleInputError"
-        },
-        {
-          "Variable": "$.validated_input.Payload.statusCode",
-          "NumericEquals": 500,
+          "IsPresent": true,
           "Next": "HandleInputError"
         }
       ],
@@ -63,6 +58,13 @@
       "ItemsPath": "$.batches.Payload.batches",
       "MaxConcurrency": 5,
       "ResultPath": "$.batch_results",
+      "Parameters": {
+        "start_date.$": "$$.Map.Item.Value.start_date",
+        "end_date.$": "$$.Map.Item.Value.end_date",
+        "force_scrape.$": "$.validated_input.Payload.force_scrape",
+        "architecture_version.$": "$.validated_input.Payload.architecture_version",
+        "bucket_name.$": "$.validated_input.Payload.bucket_name"
+      },
       "Iterator": {
         "StartAt": "ProcessBatch",
         "States": {
@@ -74,9 +76,9 @@
               "Payload": {
                 "start_date.$": "$.start_date",
                 "end_date.$": "$.end_date",
-                "force_scrape.$": "$$.Execution.Input.validated_input.Payload.force_scrape",
-                "architecture_version.$": "$$.Execution.Input.validated_input.Payload.architecture_version",
-                "bucket_name.$": "$$.Execution.Input.validated_input.Payload.bucket_name"
+                "force_scrape.$": "$.force_scrape",
+                "architecture_version.$": "$.architecture_version",
+                "bucket_name.$": "$.bucket_name"
               }
             },
             "Retry": [

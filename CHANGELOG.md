@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.4] - 2025-03-25
+### Fixed
+- Fixed the `write_record` function in `schedule_spider.py` to properly handle Lambda's filesystem restrictions
+- Enforced S3 storage for all Lambda file operations, now will raise an explicit error if attempting to use local filesystem
+- Removed reliance on `/tmp` directory in Lambda - using S3 storage exclusively as intended in the v2 architecture
+- This fix resolves remaining "Read-only file system: data" errors by preventing any local filesystem writes in Lambda
+
 ## [2.14.3] - 2025-03-25
 ### Fixed
 - Resolved "Read-only file system: 'data'" error in Lambda function by ensuring all path prefixes use /tmp in Lambda environment
