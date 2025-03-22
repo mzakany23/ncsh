@@ -24,6 +24,8 @@ _reactor_started = False
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 from scrapy.utils.log import configure_logging
+from scrapy import signals
+from ncsoccer.spiders.schedule_spider import ScheduleSpider
 
 # Configure root logger
 logging.basicConfig(
@@ -244,7 +246,7 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             success = False
 
         # Create the spider
-        spider = NCSoccerSpider(
+        spider = ScheduleSpider(
             date_str=date_str,
             date_dict={'year': year, 'month': month, 'day': day},
             verbose=True
@@ -262,7 +264,7 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             logger.info(f"Scraped item {SpiderTracker.games_count}: {item.get('home_team')} vs {item.get('away_team')}")
 
         # Configure crawler with callbacks
-        crawler = process.create_crawler(NCSoccerSpider)
+        crawler = process.create_crawler(ScheduleSpider)
         crawler.signals.connect(spider_closed, signal=signals.spider_closed)
         crawler.signals.connect(item_scraped, signal=signals.item_scraped)
 
