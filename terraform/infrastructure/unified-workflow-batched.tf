@@ -19,6 +19,11 @@ resource "aws_sfn_state_machine" "ncsoccer_unified_workflow_batched" {
     enabled = true
   }
 
+  depends_on = [
+    aws_iam_role_policy_attachment.step_function_batched_lambda_policy_attachment,
+    aws_cloudwatch_log_group.step_function_batched_logs
+  ]
+
   tags = {
     Name        = "NCSoccerUnifiedWorkflowBatched"
     Environment = var.environment
@@ -94,6 +99,14 @@ resource "aws_iam_policy" "step_function_batched_lambda_policy" {
           "logs:DescribeLogGroups"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "${aws_cloudwatch_log_group.step_function_batched_logs.arn}:*"
       },
       {
         Effect = "Allow"
