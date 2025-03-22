@@ -12,17 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `utils` module with specialized Lambda functions for workflow management
 - Developed a unified trigger script (`trigger_batched_workflow.py`) for easy workflow invocation
 - Added comprehensive documentation for the new workflow in `docs/unified_workflow.md`
+- Created post-migration task list in `docs/post_migration_tasks.md` to track cleanup activities
 
 ### Changed
 - Restructured Step Function to use a Map state for parallel batch processing
 - Enhanced error handling with batch-level retries and comprehensive error reporting
 - Updated deployment workflow to build and deploy utility Lambda functions
 - Simplified client interface with a single unified date range approach instead of separate modes
+- Deployed new workflow alongside existing workflow to enable gradual migration
 
 ### Fixed
 - Resolved Lambda timeout issues for monthly operations by implementing batching
 - Improved reliability of multi-day scraping through parallel batch processing
 - Enhanced error handling to prevent complete workflow failure when individual dates fail
+
+### Notes
+- The original workflow (`ncsoccer-unified-workflow`) will be maintained temporarily during the migration period and removed after the new batched workflow is proven stable in production
 
 ## [2.13.5] - 2025-03-23
 ### Changed
