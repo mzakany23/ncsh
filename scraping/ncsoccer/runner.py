@@ -172,6 +172,19 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             if not bucket_name:
                 bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
 
+            # Ensure directories start with /tmp in Lambda to avoid read-only filesystem errors
+            if not html_prefix.startswith('/tmp/') and not html_prefix.startswith('s3://'):
+                html_prefix = f'/tmp/{html_prefix}'
+                logger.info(f"Adjusted html_prefix for Lambda: {html_prefix}")
+
+            if not json_prefix.startswith('/tmp/') and not json_prefix.startswith('s3://'):
+                json_prefix = f'/tmp/{json_prefix}'
+                logger.info(f"Adjusted json_prefix for Lambda: {json_prefix}")
+
+            if not lookup_file.startswith('/tmp/') and not lookup_file.startswith('s3://'):
+                lookup_file = f'/tmp/{lookup_file}'
+                logger.info(f"Adjusted lookup_file for Lambda: {lookup_file}")
+
         # Get current date for defaults
         now = datetime.now()
         year = year or now.year
@@ -359,6 +372,19 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
         # Get bucket name from environment if not provided and we're in Lambda
         if not bucket_name:
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
+        # Ensure directories start with /tmp in Lambda to avoid read-only filesystem errors
+        if not html_prefix.startswith('/tmp/') and not html_prefix.startswith('s3://'):
+            html_prefix = f'/tmp/{html_prefix}'
+            logger.info(f"Adjusted html_prefix for Lambda: {html_prefix}")
+
+        if not json_prefix.startswith('/tmp/') and not json_prefix.startswith('s3://'):
+            json_prefix = f'/tmp/{json_prefix}'
+            logger.info(f"Adjusted json_prefix for Lambda: {json_prefix}")
+
+        if not lookup_file.startswith('/tmp/') and not lookup_file.startswith('s3://'):
+            lookup_file = f'/tmp/{lookup_file}'
+            logger.info(f"Adjusted lookup_file for Lambda: {lookup_file}")
 
     # Validate architecture_version
     if architecture_version not in ('v1', 'v2'):
@@ -672,6 +698,19 @@ def run_date_range(start_date, end_date, storage_type='s3', bucket_name=None,
         # Get bucket name from environment if not provided and we're in Lambda
         if not bucket_name:
             bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
+
+        # Ensure directories start with /tmp in Lambda to avoid read-only filesystem errors
+        if not html_prefix.startswith('/tmp/') and not html_prefix.startswith('s3://'):
+            html_prefix = f'/tmp/{html_prefix}'
+            logger.info(f"Adjusted html_prefix for Lambda: {html_prefix}")
+
+        if not json_prefix.startswith('/tmp/') and not json_prefix.startswith('s3://'):
+            json_prefix = f'/tmp/{json_prefix}'
+            logger.info(f"Adjusted json_prefix for Lambda: {json_prefix}")
+
+        if not lookup_file.startswith('/tmp/') and not lookup_file.startswith('s3://'):
+            lookup_file = f'/tmp/{lookup_file}'
+            logger.info(f"Adjusted lookup_file for Lambda: {lookup_file}")
 
     current = start_date
     failed_dates = []
