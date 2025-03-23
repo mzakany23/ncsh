@@ -1,3 +1,9 @@
+## [3.0.7] - 2025-03-23
+### Fixed
+- Modified processing Lambda to store detailed results in S3 instead of returning them directly
+- Fixed Step Functions payload size limit error when processing large date ranges
+- Added S3 reference in processing results for accessing detailed information
+
 ## [3.0.6] - 2025-03-23
 ### Fixed
 - Made architecture version handling more robust to prevent errors with different version formats

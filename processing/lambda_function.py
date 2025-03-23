@@ -793,12 +793,38 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
 
         # Convert all files to Parquet
         result = convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix)
+        
+        # Store detailed results in S3 to avoid Step Functions payload size limitation
+        s3_client = boto3.client('s3')
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d-%H-%M-%S')
+        result_key = f"{dst_prefix}/processing_results/{timestamp}_processing_results.json"
+        
+        # Create detailed results with full file list
+        detailed_results = {
+            "status": "SUCCESS",
+            "message": f"Successfully processed all {len(files)} files",
+            "timestamp": timestamp,
+            "filesProcessed": len(files),
+            "newRowsProcessed": result.get("new_rows_processed", 0),
+            "processedFiles": files  # This is the large data that's causing the payload size issue
+        }
+        
+        # Store detailed results in S3
+        logger.info(f"Storing detailed processing results in S3: {dst_bucket}/{result_key}")
+        s3_client.put_object(
+            Bucket=dst_bucket,
+            Key=result_key,
+            Body=json.dumps(detailed_results),
+            ContentType='application/json'
+        )
 
+        # Return minimal response with reference to S3
         return {
             "status": "SUCCESS",
             "message": f"Successfully processed all {len(files)} files",
             "filesProcessed": len(files),
-            "newRowsProcessed": result.get("new_rows_processed", 0)
+            "newRowsProcessed": result.get("new_rows_processed", 0),
+            "resultsLocation": f"s3://{dst_bucket}/{result_key}"
         }
 
     except Exception as e:
