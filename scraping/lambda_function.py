@@ -6,14 +6,12 @@ import logging
 import calendar
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
-from ncsoccer.runner import run_scraper, run_date_range
+from ncsoccer.scraper import SimpleScraper, scrape_single_date, scrape_date_range
 from ncsoccer.pipeline.config import DataArchitectureVersion
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 # Suppress DEBUG messages from third-party libraries
-logging.getLogger("twisted").setLevel(logging.WARNING)
-logging.getLogger("scrapy").setLevel(logging.WARNING)
 logging.getLogger("botocore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("boto3").setLevel(logging.WARNING)
@@ -134,27 +132,12 @@ def handle_unified_format(event, context):
         json_prefix = event.get('json_prefix', 'data/json')
         lookup_file = event.get('lookup_file', 'data/lookup.json')
         region = event.get('region', 'us-east-2')
-
-        # Explicitly set a short max_wait to avoid hanging
-        max_wait = 5  # 5 seconds max wait time
+        timeout = event.get('timeout', 10)  # 10 seconds default timeout
+        max_retries = event.get('max_retries', 3)
+        max_workers = event.get('max_workers', 2)  # Limit concurrency in Lambda
 
         # Always use S3 in Lambda
         storage_type = 's3'
-
-        # Common parameters
-        common_params = {
-            'storage_type': storage_type,
-            'bucket_name': bucket_name,
-            'html_prefix': html_prefix,
-            'json_prefix': json_prefix,
-            'lookup_file': lookup_file,
-            'lookup_type': 's3',
-            'region': region,
-            'force_scrape': force_scrape,
-            'architecture_version': architecture_version,
-            'max_wait': max_wait,
-            'skip_wait': True  # Skip waiting for files to be created
-        }
 
         # Validate architecture version
         try:
@@ -163,55 +146,48 @@ def handle_unified_format(event, context):
         except ValueError:
             logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
             architecture_version = 'v1'
-            common_params['architecture_version'] = 'v1'
 
         # Record start time for timeout tracking
         start_time = time.time()
         max_runtime = 25  # 25 seconds = strict 30 second timeout - 5 second buffer
 
-        # Process each date in the range
-        current = start_date
-        success_count = 0
-        failed_dates = []
+        # Create scraper for date range
+        scraper = SimpleScraper(
+            mode='range',
+            start_year=start_date.year,
+            start_month=start_date.month,
+            start_day=start_date.day,
+            end_year=end_date.year,
+            end_month=end_date.month,
+            end_day=end_date.day,
+            storage_type=storage_type,
+            bucket_name=bucket_name,
+            html_prefix=html_prefix,
+            json_prefix=json_prefix,
+            lookup_file=lookup_file,
+            lookup_type='s3',
+            region=region,
+            force_scrape=force_scrape,
+            architecture_version=architecture_version,
+            max_workers=max_workers,
+            timeout=timeout,
+            max_retries=max_retries
+        )
 
-        while current <= end_date:
-            # Check if we're approaching the timeout
-            elapsed = time.time() - start_time
-            if elapsed > max_runtime:
-                logger.warning(f"Approaching Lambda timeout after {elapsed:.1f}s. Processed {success_count} dates so far.")
-                break
+        # Process date range
+        results = scraper.scrape_date_range(start_date, end_date)
 
-            date_str = current.strftime('%Y-%m-%d')
-            logger.info(f"Processing date: {date_str}")
-
-            # Run the scraper for this day
-            success = run_scraper(
-                year=current.year,
-                month=current.month,
-                day=current.day,
-                **common_params
-            )
-
-            if success:
-                success_count += 1
-                logger.info(f"Successfully scraped date: {date_str}")
-            else:
-                failed_dates.append(date_str)
-                logger.error(f"Failed to scrape date: {date_str}")
-
-            current = current + timedelta(days=1)
-
-        # Prepare result
+        # Calculate statistics
         total_dates = (end_date - start_date).days + 1
-        processed_dates = success_count + len(failed_dates)
-        all_processed = processed_dates == total_dates
+        success_count = sum(1 for success in results.values() if success)
+        failed_dates = [date for date, success in results.items() if not success]
         all_succeeded = success_count == total_dates
 
         result = {
             'success': all_succeeded,
-            'all_processed': all_processed,
+            'all_processed': len(results) == total_dates,
             'total_dates': total_dates,
-            'dates_processed': processed_dates,
+            'dates_processed': len(results),
             'success_count': success_count,
             'failed_dates': failed_dates,
             'start_date': start_date_str,
@@ -219,7 +195,8 @@ def handle_unified_format(event, context):
             'storage_type': storage_type,
             'bucket_name': bucket_name,
             'architecture_version': architecture_version,
-            'execution_time_seconds': time.time() - start_time
+            'execution_time_seconds': time.time() - start_time,
+            'games_scraped': scraper.games_scraped
         }
 
         logger.info(f"Scraping complete: {success_count}/{total_dates} dates succeeded in {time.time() - start_time:.2f} seconds")
@@ -251,171 +228,226 @@ def handle_legacy_format(event, context):
         dict: Result of the scraping operation
     """
     try:
-        # Extract mode
+        # Extract mode and parameters
         mode = event.get('mode', 'day')
-        logger.info(f"Operating in mode: {mode}")
-
-        # Extract parameters with defaults
         parameters = event.get('parameters', {})
 
-        # IMPORTANT: In Lambda, always force S3 storage, never use file storage
-        storage_type = 's3'  # Always use S3 in Lambda
+        # Get common parameters with defaults
+        force_scrape = parameters.get('force_scrape', False)
+        architecture_version = parameters.get('architecture_version', 'v1')
         bucket_name = parameters.get('bucket_name', 'ncsh-app-data')
         html_prefix = parameters.get('html_prefix', 'data/html')
         json_prefix = parameters.get('json_prefix', 'data/json')
         lookup_file = parameters.get('lookup_file', 'data/lookup.json')
         region = parameters.get('region', 'us-east-2')
-        force_scrape = parameters.get('force_scrape', False)
+        timeout = parameters.get('timeout', 10)
+        max_retries = parameters.get('max_retries', 3)
+        max_workers = parameters.get('max_workers', 2)
 
-        # Extract architecture version (defaults to v1 for backward compatibility)
-        architecture_version = parameters.get('architecture_version', 'v1')
-        logger.info(f"Using data architecture version: {architecture_version}")
+        # Always use S3 in Lambda
+        storage_type = 's3'
 
-        # Extract max_wait parameter if provided, otherwise use default value of 300 seconds
-        max_wait = int(parameters.get('max_wait', 300))
-        logger.info(f"Using max_wait value: {max_wait} seconds")
-
-        # Log storage configuration
-        logger.info(f"Storage configuration: type={storage_type}, bucket={bucket_name}, region={region}")
-        logger.info(f"Path configuration: html={html_prefix}, json={json_prefix}, lookup={lookup_file}")
-
-        # Create common parameters dictionary
+        # Common parameters for all modes
         common_params = {
-            'storage_type': storage_type,  # Always S3 in Lambda
+            'storage_type': storage_type,
             'bucket_name': bucket_name,
             'html_prefix': html_prefix,
             'json_prefix': json_prefix,
             'lookup_file': lookup_file,
-            'lookup_type': 's3',  # Always use S3 for lookup in Lambda
+            'lookup_type': 's3',
             'region': region,
             'force_scrape': force_scrape,
             'architecture_version': architecture_version,
-            'max_wait': max_wait
+            'timeout': timeout,
+            'max_retries': max_retries,
+            'max_workers': max_workers
         }
 
-        # Validate architecture version
-        try:
-            arch_version = DataArchitectureVersion(architecture_version.lower())
-            logger.info(f"Architecture version validated: {arch_version.value}")
-        except ValueError:
-            logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
-            architecture_version = 'v1'
-            common_params['architecture_version'] = 'v1'
+        start_time = time.time()
+        result = {}
 
-        # Get current date for defaults
-        now = datetime.now()
-
-        # Handle different modes
         if mode == 'day':
-            # Day mode - scrape a single day
-            year = int(parameters.get('year', now.year))
-            month = int(parameters.get('month', now.month))
-            day = int(parameters.get('day', now.day))
+            # Single day mode
+            year = int(parameters.get('year', datetime.now().year))
+            month = int(parameters.get('month', datetime.now().month))
+            day = int(parameters.get('day', datetime.now().day))
 
-            logger.info(f"Running in day mode for {year}-{month:02d}-{day:02d}")
-
-            result = run_scraper(
+            # Create scraper for single day
+            scraper = SimpleScraper(
+                mode='day',
                 year=year,
                 month=month,
                 day=day,
                 **common_params
             )
 
-            return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'success': result,
-                    'date': f"{year}-{month:02d}-{day:02d}",
-                    'storage_type': storage_type,
-                    'bucket_name': bucket_name,
-                    'architecture_version': architecture_version
-                })
+            # Run scraper
+            success = scraper.run()
+
+            result = {
+                'success': success,
+                'mode': 'day',
+                'year': year,
+                'month': month,
+                'day': day,
+                'games_scraped': scraper.games_scraped,
+                'execution_time_seconds': time.time() - start_time
             }
 
         elif mode == 'month':
-            # Month mode - For month mode, translate to date range mode for unified approach
-            year = int(parameters.get('year', now.year))
-            month = int(parameters.get('month', now.month))
+            # Month mode
+            year = int(parameters.get('year', datetime.now().year))
+            month = int(parameters.get('month', datetime.now().month))
 
-            logger.info(f"Translating month mode to date range for {year}-{month:02d}")
+            # Determine first and last day of month
+            first_day = 1
+            if month == 12:
+                last_day = 31
+            else:
+                last_day = (datetime(year, month + 1, 1) - timedelta(days=1)).day
 
-            # Calculate start and end dates for the month
-            start_date = date(year, month, 1)
-            last_day = calendar.monthrange(year, month)[1]
-            end_date = date(year, month, last_day)
+            # Create date objects
+            start_date = datetime(year, month, first_day).date()
+            end_date = datetime(year, month, last_day).date()
 
-            # Convert to unified format and process
-            unified_event = {
-                'start_date': start_date.strftime('%Y-%m-%d'),
-                'end_date': end_date.strftime('%Y-%m-%d'),
-                'force_scrape': force_scrape,
-                'architecture_version': architecture_version,
-                'bucket_name': bucket_name,
-                'html_prefix': html_prefix,
-                'json_prefix': json_prefix,
-                'lookup_file': lookup_file,
-                'region': region,
-                'max_wait': max_wait
+            # Create scraper for date range
+            scraper = SimpleScraper(
+                mode='range',
+                start_year=year,
+                start_month=month,
+                start_day=first_day,
+                end_year=year,
+                end_month=month,
+                end_day=last_day,
+                **common_params
+            )
+
+            # Run scraper
+            results = scraper.scrape_date_range(start_date, end_date)
+
+            # Calculate statistics
+            total_dates = last_day
+            success_count = sum(1 for success in results.values() if success)
+            failed_dates = [date for date, success in results.items() if not success]
+            all_succeeded = success_count == total_dates
+
+            result = {
+                'success': all_succeeded,
+                'mode': 'month',
+                'year': year,
+                'month': month,
+                'total_dates': total_dates,
+                'success_count': success_count,
+                'failed_dates': failed_dates,
+                'games_scraped': scraper.games_scraped,
+                'execution_time_seconds': time.time() - start_time
             }
 
-            return handle_unified_format(unified_event, context)
-
         elif mode == 'date_range':
-            # Date range mode - translate to unified format
+            # Date range mode
             start_date_str = parameters.get('start_date')
             end_date_str = parameters.get('end_date')
 
             if not start_date_str or not end_date_str:
+                error_msg = "Missing required parameters: start_date and end_date"
+                logger.error(error_msg)
                 return {
                     'statusCode': 400,
                     'body': json.dumps({
-                        'error': 'start_date and end_date are required for date_range mode'
+                        'success': False,
+                        'error': error_msg
                     })
                 }
 
-            logger.info(f"Translating date_range mode to unified format from {start_date_str} to {end_date_str}")
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError as e:
+                error_msg = f"Invalid date format: {str(e)}. Use YYYY-MM-DD format."
+                logger.error(error_msg)
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({
+                        'success': False,
+                        'error': error_msg
+                    })
+                }
 
-            # Convert to unified format and process
-            unified_event = {
+            # Create scraper for date range
+            scraper = SimpleScraper(
+                mode='range',
+                start_year=start_date.year,
+                start_month=start_date.month,
+                start_day=start_date.day,
+                end_year=end_date.year,
+                end_month=end_date.month,
+                end_day=end_date.day,
+                **common_params
+            )
+
+            # Run scraper
+            results = scraper.scrape_date_range(start_date, end_date)
+
+            # Calculate statistics
+            total_dates = (end_date - start_date).days + 1
+            success_count = sum(1 for success in results.values() if success)
+            failed_dates = [date for date, success in results.items() if not success]
+            all_succeeded = success_count == total_dates
+
+            result = {
+                'success': all_succeeded,
+                'mode': 'date_range',
                 'start_date': start_date_str,
                 'end_date': end_date_str,
-                'force_scrape': force_scrape,
-                'architecture_version': architecture_version,
-                'bucket_name': bucket_name,
-                'html_prefix': html_prefix,
-                'json_prefix': json_prefix,
-                'lookup_file': lookup_file,
-                'region': region,
-                'max_wait': max_wait
+                'total_dates': total_dates,
+                'success_count': success_count,
+                'failed_dates': failed_dates,
+                'games_scraped': scraper.games_scraped,
+                'execution_time_seconds': time.time() - start_time
             }
 
-            return handle_unified_format(unified_event, context)
-
         else:
-            # Invalid mode
+            error_msg = f"Invalid mode: {mode}. Must be one of: day, month, date_range"
+            logger.error(error_msg)
             return {
                 'statusCode': 400,
                 'body': json.dumps({
-                    'error': f'Invalid mode: {mode}. Use day, month, or date_range'
+                    'success': False,
+                    'error': error_msg
                 })
             }
+
+        # Add common fields to result
+        result.update({
+            'storage_type': storage_type,
+            'bucket_name': bucket_name,
+            'architecture_version': architecture_version
+        })
+
+        logger.info(f"Scraping complete in {time.time() - start_time:.2f} seconds")
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
 
     except Exception as e:
         logger.error(f"Error in handle_legacy_format: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
             'body': json.dumps({
+                'success': False,
                 'error': str(e)
             })
         }
 
 if __name__ == "__main__":
-    # For local testing - using the unified format
-    result = lambda_handler({
-        'start_date': '2025-02-01',
-        'end_date': '2025-02-03',
-        'force_scrape': True,
-        'architecture_version': 'v1',
-        'bucket_name': 'ncsh-app-data'
-    }, None)
-    print(json.dumps(result, indent=2))
+    # For local testing
+    test_event = {
+        "start_date": "2025-03-01",
+        "end_date": "2025-03-05",
+        "force_scrape": True,
+        "architecture_version": "v2",
+        "bucket_name": "ncsh-app-data"
+    }
+    print(json.dumps(lambda_handler(test_event, None), indent=2))

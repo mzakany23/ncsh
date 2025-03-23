@@ -21,7 +21,7 @@ except (ImportError, Exception) as e:
 # Global flag to track if reactor has been started
 _reactor_started = False
 
-from scrapy.crawler import CrawlerProcess
+from scrapy.crawler import CrawlerProcess, CrawlerRunner
 from scrapy.utils.project import get_project_settings
 from scrapy.utils.log import configure_logging
 from scrapy import signals
@@ -159,6 +159,8 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
     Returns:
         bool: Success status
     """
+    global _reactor_started
+
     try:
         # Detect Lambda environment - if we're in Lambda, ensure we use S3
         in_lambda = 'AWS_LAMBDA_FUNCTION_NAME' in os.environ
@@ -167,6 +169,10 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
                 logger.warning("Running in Lambda environment - forcing S3 storage and lookup types")
                 storage_type = 's3'
                 lookup_type = 's3'
+
+            # When in Lambda, always use CrawlerRunner to avoid ReactorNotRestartable issues
+            _reactor_started = True
+            logger.info("Running in Lambda - forcing reactor_started to True to use CrawlerRunner")
 
             # Get bucket name from environment if not provided and we're in Lambda
             if not bucket_name:
@@ -249,21 +255,11 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
         settings.set('RANDOMIZE_DOWNLOAD_DELAY', True)
         settings.set('USER_AGENT', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36')
 
-        # Create crawler process
-        process = CrawlerProcess(settings)
-
         # Use a class variable to track whether spider finished
         class SpiderTracker:
             finished = False
             games_count = 0
             success = False
-
-        # Create the spider
-        spider = ScheduleSpider(
-            date_str=date_str,
-            date_dict={'year': year, 'month': month, 'day': day},
-            verbose=True
-        )
 
         # Define callbacks for spider signals
         def spider_closed(spider, reason):
@@ -276,14 +272,79 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             SpiderTracker.games_count += 1
             logger.info(f"Scraped item {SpiderTracker.games_count}: {item.get('home_team')} vs {item.get('away_team')}")
 
-        # Configure crawler with callbacks
-        crawler = process.create_crawler(ScheduleSpider)
-        crawler.signals.connect(spider_closed, signal=signals.spider_closed)
-        crawler.signals.connect(item_scraped, signal=signals.item_scraped)
+        # Use CrawlerRunner if the reactor is already started (handles ReactorNotRestartable error)
+        if _reactor_started:
+            # Use CrawlerRunner which doesn't call reactor.run()
+            logger.info("Using CrawlerRunner (reactor already started)")
+            runner = CrawlerRunner(settings)
 
-        # Start the crawler
-        process.crawl(crawler, date_str=date_str, date_dict={'year': year, 'month': month, 'day': day}, verbose=True)
-        process.start()  # This will block until crawling is finished
+            # Create the spider
+            spider = ScheduleSpider(
+                date_str=date_str,
+                date_dict={'year': year, 'month': month, 'day': day},
+                verbose=True
+            )
+
+            # Configure crawler with callbacks
+            crawler = runner.create_crawler(ScheduleSpider)
+            crawler.signals.connect(spider_closed, signal=signals.spider_closed)
+            crawler.signals.connect(item_scraped, signal=signals.item_scraped)
+
+            # Start the crawler
+            deferred = runner.crawl(crawler, date_str=date_str, date_dict={'year': year, 'month': month, 'day': day}, verbose=True)
+
+            # Add a callback to handle completion
+            def on_complete(result):
+                logger.info(f"Crawling completed with result: {result}")
+                SpiderTracker.finished = True
+
+            def on_error(failure):
+                logger.error(f"Crawling failed: {failure}")
+                SpiderTracker.finished = True
+                return failure
+
+            # Set up callbacks
+            deferred.addCallback(on_complete)
+            deferred.addErrback(on_error)
+
+            # Wait for completion (without blocking the reactor)
+            start_time = time.time()
+            max_wait_time = 30  # Timeout after 30 seconds
+
+            # Poll until finished or timeout
+            while not SpiderTracker.finished and (time.time() - start_time < max_wait_time):
+                time.sleep(0.5)
+
+            if not SpiderTracker.finished:
+                logger.warning(f"Spider did not finish after {max_wait_time} seconds")
+                return False
+        else:
+            # Use CrawlerProcess which calls reactor.run()
+            logger.info("Using CrawlerProcess (reactor not started)")
+            process = CrawlerProcess(settings)
+
+            # Create the spider
+            spider = ScheduleSpider(
+                date_str=date_str,
+                date_dict={'year': year, 'month': month, 'day': day},
+                verbose=True
+            )
+
+            # Configure crawler with callbacks
+            crawler = process.create_crawler(ScheduleSpider)
+            crawler.signals.connect(spider_closed, signal=signals.spider_closed)
+            crawler.signals.connect(item_scraped, signal=signals.item_scraped)
+
+            # Start the crawler
+            process.crawl(crawler, date_str=date_str, date_dict={'year': year, 'month': month, 'day': day}, verbose=True)
+
+            # Process.start() will block until crawling is finished
+            try:
+                process.start()
+                _reactor_started = True
+            except Exception as e:
+                logger.error(f"Error starting process: {e}")
+                return False
 
         # Wait for the spider to finish
         if not SpiderTracker.finished:
@@ -371,6 +432,11 @@ def run_month(year=None, month=None, storage_type='s3', bucket_name=None,
             logger.warning("Running in Lambda environment - forcing S3 storage and lookup types")
             storage_type = 's3'
             lookup_type = 's3'
+
+        # When in Lambda, always use CrawlerRunner to avoid ReactorNotRestartable issues
+        global _reactor_started
+        _reactor_started = True
+        logger.info("Running in Lambda - forcing reactor_started to True to use CrawlerRunner")
 
         # Get bucket name from environment if not provided and we're in Lambda
         if not bucket_name:
@@ -697,6 +763,11 @@ def run_date_range(start_date, end_date, storage_type='s3', bucket_name=None,
             logger.warning("Running in Lambda environment - forcing S3 storage and lookup types")
             storage_type = 's3'
             lookup_type = 's3'
+
+        # When in Lambda, always use CrawlerRunner to avoid ReactorNotRestartable issues
+        global _reactor_started
+        _reactor_started = True
+        logger.info("Running in Lambda - forcing reactor_started to True to use CrawlerRunner")
 
         # Get bucket name from environment if not provided and we're in Lambda
         if not bucket_name:
