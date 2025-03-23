@@ -135,9 +135,7 @@
         "Payload": {
           "operation": "process_all",
           "src_bucket.$": "$.validated_input.Payload.bucket_name",
-          "src_prefix": "data/json/",
           "dst_bucket.$": "$.validated_input.Payload.bucket_name",
-          "dst_prefix": "data/parquet/",
           "date_range": {
             "start_date.$": "$.validated_input.Payload.start_date",
             "end_date.$": "$.validated_input.Payload.end_date"
@@ -159,7 +157,7 @@
           "Next": "HandleProcessingFailure"
         }
       ],
-      "ResultPath": "$.processing_result",
+      "ResultPath": "$.processing",
       "Next": "WorkflowSuccess"
     },
 
