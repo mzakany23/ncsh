@@ -67,10 +67,17 @@ class DataPathManager:
 
         # For v1 architecture in Lambda, we should use /tmp
         # For v2 architecture, we should always use S3 paths that don't need /tmp
-        if self.in_lambda and self.architecture_version == DataArchitectureVersion.V2:
-            if not self.base_prefix.startswith('/tmp/') and not self.base_prefix.startswith('s3://'):
-                self.logger.warning(f"In Lambda with v2 architecture - adjusting base_prefix to use /tmp")
-                self.base_prefix = f"/tmp/{self.base_prefix}" if self.base_prefix else "/tmp"
+        if self.in_lambda:
+            if self.architecture_version == DataArchitectureVersion.V1:
+                # Only adjust paths for v1 architecture
+                if not self.base_prefix.startswith('/tmp/') and not self.base_prefix.startswith('s3://'):
+                    self.logger.warning(f"In Lambda with v1 architecture - adjusting base_prefix to use /tmp")
+                    self.base_prefix = f"/tmp/{self.base_prefix}" if self.base_prefix else "/tmp"
+            elif self.architecture_version == DataArchitectureVersion.V2:
+                # For v2, ensure we're NOT using /tmp - data should go directly to S3
+                if self.base_prefix and self.base_prefix.startswith('/tmp/'):
+                    self.logger.warning(f"In Lambda with v2 architecture - removing /tmp prefix to ensure S3 storage")
+                    self.base_prefix = self.base_prefix.replace('/tmp/', '')
 
     def get_html_path(self, date_obj):
         """

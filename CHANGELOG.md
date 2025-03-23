@@ -1,3 +1,9 @@
+## [3.0.5] - 2025-03-23
+### Fixed
+- Fixed critical issue where v2 architecture in Lambda was incorrectly saving data to /tmp/v2 instead of S3
+- Modified DataPathManager to ensure v2 architecture never uses /tmp paths in Lambda environment
+- Ensured proper S3 storage for all scraped data in v2 architecture
+
 ## [3.0.4] - 2025-03-23
 ### Fixed
 - Fixed issue with January dates not being scraped due to website URL format changes
