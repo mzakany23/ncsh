@@ -144,7 +144,7 @@ class UnifiedCheckpoint:
             logger.error(f"Error saving checkpoint: {e}")
             return False
 
-    def update_scraping(self, date_str: str, success: bool = True, games_count: int = 0) -> bool:
+    def update_scraping(self, date_str: str, success: bool = True, games_count: int = 0, force: bool = False) -> bool:
         """
         Update scraping status for a specific date.
 
@@ -152,6 +152,7 @@ class UnifiedCheckpoint:
             date_str: Date string in format YYYY-MM-DD
             success: Whether scraping was successful
             games_count: Number of games scraped
+            force: Force update even if date already exists
 
         Returns:
             Boolean indicating success
@@ -166,6 +167,12 @@ class UnifiedCheckpoint:
             # Update timestamp
             self._data['scraping']['last_updated'] = datetime.now().isoformat()
 
+            # Check if date already exists and we're not forcing
+            if not force and date_str in self._data['scraping']['completed_dates']:
+                existing = self._data['scraping']['completed_dates'][date_str]
+                logger.info(f"Date {date_str} already exists in checkpoint with status {existing.get('status')} and games_count {existing.get('games_count')}. Not updating.")
+                return True
+
             # Update date status
             self._data['scraping']['completed_dates'][date_str] = {
                 'status': 'success' if success else 'failed',
@@ -173,9 +180,18 @@ class UnifiedCheckpoint:
                 'timestamp': datetime.now().isoformat()
             }
 
-            return self._save_checkpoint()
+            # Save the checkpoint
+            save_result = self._save_checkpoint()
+            if save_result:
+                logger.info(f"Successfully updated checkpoint for {date_str} with status {'success' if success else 'failed'} and games_count {games_count}")
+            else:
+                logger.error(f"Failed to save checkpoint after updating {date_str}")
+
+            return save_result
         except Exception as e:
             logger.error(f"Error updating scraping status: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def update_processing(self, date_str: str, success: bool = True) -> bool:
@@ -342,6 +358,43 @@ class UnifiedCheckpoint:
                 'status': 'error',
                 'error': str(e)
             }
+
+    def get_checkpoint_data(self) -> Dict[str, Any]:
+        """
+        Get the current checkpoint data structure.
+
+        Returns:
+            Dictionary containing the checkpoint data, including a cleaned list of completed_dates
+        """
+        try:
+            # Create a simplified version for easier access to the completed dates
+            result = {
+                'version': self._data.get('version', 'unknown'),
+                'last_updated': self._data.get('last_updated', 'unknown')
+            }
+
+            # Extract completed_dates from scraping
+            if 'scraping' in self._data and 'completed_dates' in self._data['scraping']:
+                # Convert the completed_dates dict to a simple list of successful dates
+                completed_dates = []
+                for date_str, entry in self._data['scraping']['completed_dates'].items():
+                    if entry.get('status') == 'success':
+                        completed_dates.append(date_str)
+
+                # Sort dates
+                completed_dates.sort()
+                result['completed_dates'] = completed_dates
+                result['total_dates_scraped'] = len(completed_dates)
+            else:
+                result['completed_dates'] = []
+                result['total_dates_scraped'] = 0
+
+            return result
+        except Exception as e:
+            logger.error(f"Error getting checkpoint data: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e), 'completed_dates': []}
 
 def get_checkpoint_manager(checkpoint_file: str, storage_interface=None) -> UnifiedCheckpoint:
     """
