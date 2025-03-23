@@ -134,7 +134,9 @@ def handle_unified_format(event, context):
         json_prefix = event.get('json_prefix', 'data/json')
         lookup_file = event.get('lookup_file', 'data/lookup.json')
         region = event.get('region', 'us-east-2')
-        max_wait = int(event.get('max_wait', 300))
+
+        # Explicitly set a short max_wait to avoid hanging
+        max_wait = 5  # 5 seconds max wait time
 
         # Always use S3 in Lambda
         storage_type = 's3'
@@ -150,7 +152,8 @@ def handle_unified_format(event, context):
             'region': region,
             'force_scrape': force_scrape,
             'architecture_version': architecture_version,
-            'max_wait': max_wait
+            'max_wait': max_wait,
+            'skip_wait': True  # Skip waiting for files to be created
         }
 
         # Validate architecture version
@@ -164,7 +167,7 @@ def handle_unified_format(event, context):
 
         # Record start time for timeout tracking
         start_time = time.time()
-        max_runtime = 240  # 240 seconds = 4 minutes (leaving buffer for 5 min Lambda)
+        max_runtime = 25  # 25 seconds = strict 30 second timeout - 5 second buffer
 
         # Process each date in the range
         current = start_date
@@ -215,10 +218,11 @@ def handle_unified_format(event, context):
             'end_date': end_date_str,
             'storage_type': storage_type,
             'bucket_name': bucket_name,
-            'architecture_version': architecture_version
+            'architecture_version': architecture_version,
+            'execution_time_seconds': time.time() - start_time
         }
 
-        logger.info(f"Scraping complete: {success_count}/{total_dates} dates succeeded")
+        logger.info(f"Scraping complete: {success_count}/{total_dates} dates succeeded in {time.time() - start_time:.2f} seconds")
 
         return {
             'statusCode': 200,

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.5] - 2025-03-26
+### Improved
+- Optimized Lambda execution time by reducing max_runtime from 240 to 25 seconds
+- Added skip_wait parameter to run_scraper function to bypass file verification when not needed
+- Set max_wait to 5 seconds to avoid long hanging periods
+- Improved logging to include execution time in final output
+- These optimizations ensure the Lambda function completes within the 30-second Step Function timeout threshold
+
 ## [2.14.4] - 2025-03-25
 ### Fixed
 - Fixed the `write_record` function in `schedule_spider.py` to properly handle Lambda's filesystem restrictions
