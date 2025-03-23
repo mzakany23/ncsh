@@ -62,6 +62,8 @@ def main():
                       help='AWS region (default: us-east-2)')
     parser.add_argument('--bucket', default='ncsh-app-data',
                       help='S3 bucket name (default: ncsh-app-data)')
+    parser.add_argument('--architecture-version', default='v2',
+                      help='Architecture version (default: v2)')
 
     args = parser.parse_args()
 
@@ -98,7 +100,8 @@ def main():
         "end_date": end_date,
         "force_scrape": args.force_scrape,
         "batch_size": args.batch_size,
-        "bucket_name": args.bucket
+        "bucket_name": args.bucket,
+        "architecture_version": args.architecture_version
     }
 
     logger.info(f"Input data: {json.dumps(input_data, indent=2)}")
