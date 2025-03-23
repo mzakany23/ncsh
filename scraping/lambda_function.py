@@ -126,11 +126,11 @@ def handle_unified_format(event, context):
 
         # Extract parameters
         force_scrape = event.get('force_scrape', False)
-        architecture_version = event.get('architecture_version', 'v1')
+        architecture_version = "v2"  # Only support v2 architecture now
         bucket_name = event.get('bucket_name', 'ncsh-app-data')
-        html_prefix = event.get('html_prefix', 'data/html')
-        json_prefix = event.get('json_prefix', 'data/json')
-        lookup_file = event.get('lookup_file', 'data/lookup.json')
+        html_prefix = event.get('html_prefix', 'v2/raw/html')  # Updated default for v2
+        json_prefix = event.get('json_prefix', 'v2/processed/json')  # Updated default for v2
+        lookup_file = event.get('lookup_file', 'v2/metadata/lookup.json')  # Updated default for v2
         region = event.get('region', 'us-east-2')
         timeout = event.get('timeout', 10)  # 10 seconds default timeout
         max_retries = event.get('max_retries', 3)
@@ -139,13 +139,9 @@ def handle_unified_format(event, context):
         # Always use S3 in Lambda
         storage_type = 's3'
 
-        # Validate architecture version
-        try:
-            arch_version = DataArchitectureVersion(architecture_version.lower())
-            logger.info(f"Architecture version validated: {arch_version.value}")
-        except ValueError:
-            logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
-            architecture_version = 'v1'
+        # Architecture version is always v2
+        arch_version = DataArchitectureVersion("v2")
+        logger.info(f"Using architecture version: {arch_version.value}")
 
         # Record start time for timeout tracking
         start_time = time.time()
@@ -234,11 +230,11 @@ def handle_legacy_format(event, context):
 
         # Get common parameters with defaults
         force_scrape = parameters.get('force_scrape', False)
-        architecture_version = parameters.get('architecture_version', 'v1')
+        architecture_version = "v2"  # Only v2 is supported now
         bucket_name = parameters.get('bucket_name', 'ncsh-app-data')
-        html_prefix = parameters.get('html_prefix', 'data/html')
-        json_prefix = parameters.get('json_prefix', 'data/json')
-        lookup_file = parameters.get('lookup_file', 'data/lookup.json')
+        html_prefix = parameters.get('html_prefix', 'v2/raw/html')
+        json_prefix = parameters.get('json_prefix', 'v2/processed/json')
+        lookup_file = parameters.get('lookup_file', 'v2/metadata/lookup.json')
         region = parameters.get('region', 'us-east-2')
         timeout = parameters.get('timeout', 10)
         max_retries = parameters.get('max_retries', 3)

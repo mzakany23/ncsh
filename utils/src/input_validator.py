@@ -50,14 +50,9 @@ def handler(event, context):
 
         # Optional parameters with defaults
         force_scrape = event.get('force_scrape', False)
-        architecture_version = event.get('architecture_version', 'v1')
+        architecture_version = "v2"  # Only v2 is supported now
         batch_size = int(event.get('batch_size', 3))
         bucket_name = event.get('bucket_name', 'ncsh-app-data')
-
-        # Validate architecture_version
-        if architecture_version not in ['v1', 'v2']:
-            logger.warning(f"Invalid architecture_version: {architecture_version}. Using v1 as default.")
-            architecture_version = 'v1'
 
         # Validate batch_size (between 1 and 10)
         if batch_size < 1 or batch_size > 10:

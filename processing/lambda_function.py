@@ -822,8 +822,8 @@ def lambda_handler(event, context):
         if version:
             logger.info(f"Using provided version identifier: {version}")
 
-        # Get architecture version - default to v2 now
-        architecture_version = event.get('architecture_version', 'v2')
+        # Get architecture version - we only support v2 now
+        architecture_version = "v2"
         logger.info(f"Using architecture version: {architecture_version}")
 
         # Get environment variables with defaults
@@ -834,11 +834,6 @@ def lambda_handler(event, context):
         src_prefix = event.get('src_prefix', 'v2/processed/json/')
         dst_prefix = event.get('dst_prefix', 'v2/processed/parquet/')
         logger.info(f"Using directory structure: src={src_prefix}, dst={dst_prefix}")
-
-        # For backward compatibility
-        if architecture_version == 'v1':
-            logger.warning("v1 architecture is deprecated, please update to use v2")
-            # Still use v2 paths but log a warning
 
         if operation == "list_files":
             # List JSON files, optionally filtering for only recent ones

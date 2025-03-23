@@ -60,8 +60,6 @@ def main():
     parser.add_argument('--profile', help='AWS profile to use')
     parser.add_argument('--region', default='us-east-2',
                       help='AWS region (default: us-east-2)')
-    parser.add_argument('--architecture', choices=['v1', 'v2'], default='v2',
-                      help='Data architecture version to use (default: v2)')
     parser.add_argument('--bucket', default='ncsh-app-data',
                       help='S3 bucket name (default: ncsh-app-data)')
 
@@ -99,7 +97,6 @@ def main():
         "start_date": start_date,
         "end_date": end_date,
         "force_scrape": args.force_scrape,
-        "architecture_version": args.architecture,
         "batch_size": args.batch_size,
         "bucket_name": args.bucket
     }

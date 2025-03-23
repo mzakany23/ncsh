@@ -444,6 +444,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced `RETRY_TIMES` from 5 to 2 to prevent overly long-running crawls when failures occur
 - These changes improve Lambda performance while maintaining reliability
 
+## v3.0.0 (2025-03-24)
+
+### Changed
+- **Breaking Change**: Completely removed all v1 architecture support
+- Removed migration script and all v1-related code paths
+- Simplified codebase to only use v2 architecture
+- Updated all scripts to remove v1 options and references
+- Updated documentation to focus only on v2 architecture
+
 ## v2.2.0 (2025-03-23)
 
 ### Added

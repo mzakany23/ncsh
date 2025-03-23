@@ -18,8 +18,7 @@ class StorageType(Enum):
     # Add other storage types here (e.g., DATABASE = "database")
 
 class DataArchitectureVersion(Enum):
-    V1 = "v1"  # Legacy architecture
-    V2 = "v2"  # New partitioned architecture
+    V2 = "v2"  # Partitioned architecture
 
 @dataclass
 class ScraperConfig:
@@ -28,7 +27,7 @@ class ScraperConfig:
     storage_type: StorageType = StorageType.S3
     skip_existing: bool = True
     bucket_name: str = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
-    architecture_version: DataArchitectureVersion = DataArchitectureVersion.V1
+    architecture_version: DataArchitectureVersion = DataArchitectureVersion.V2
 
     @property
     def end_date(self) -> datetime:
@@ -48,7 +47,7 @@ class DataPathManager:
     This handles the transition from the legacy architecture to the new partitioned structure.
     """
 
-    def __init__(self, architecture_version=DataArchitectureVersion.V1, base_prefix=""):
+    def __init__(self, architecture_version=DataArchitectureVersion.V2, base_prefix=""):
         """
         Initialize the path manager.
 
@@ -68,178 +67,123 @@ class DataPathManager:
 
         # For v1 architecture in Lambda, we should use /tmp
         # For v2 architecture, we should always use S3 paths that don't need /tmp
-        if self.in_lambda and self.architecture_version == DataArchitectureVersion.V1:
+        if self.in_lambda and self.architecture_version == DataArchitectureVersion.V2:
             if not self.base_prefix.startswith('/tmp/') and not self.base_prefix.startswith('s3://'):
-                self.logger.warning(f"In Lambda with v1 architecture - adjusting base_prefix to use /tmp")
+                self.logger.warning(f"In Lambda with v2 architecture - adjusting base_prefix to use /tmp")
                 self.base_prefix = f"/tmp/{self.base_prefix}" if self.base_prefix else "/tmp"
 
     def get_html_path(self, date_obj):
         """
-        Get the path for storing HTML content.
+        Get the path to the HTML file for a given date.
 
         Args:
-            date_obj: datetime object for the date
+            date_obj: A datetime object representing the date
 
         Returns:
             Path string
         """
-        if self.architecture_version == DataArchitectureVersion.V1:
-            # In v1 architecture, if we're in Lambda, paths should already be adjusted
-            path = os.path.join(self.base_prefix, 'data/html', f"{date_obj.strftime('%Y-%m-%d')}.html")
-
-            # Double check we're not going to cause a filesystem error in Lambda
-            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
-                self.logger.warning(f"Fixing HTML path for Lambda compatibility: {path}")
-                path = f"/tmp/{path}"
-            return path
-        else:  # V2
-            year = date_obj.year
-            month = date_obj.month
-            day = date_obj.day
-            return os.path.join(
-                self.base_prefix,
-                'v2/raw/html',
-                f"year={year}",
-                f"month={month:02d}",
-                f"day={day:02d}",
-                f"{date_obj.strftime('%Y-%m-%d')}.html"
-            )
+        # Only v2 architecture is supported now
+        year = date_obj.year
+        month = date_obj.month
+        day = date_obj.day
+        path = os.path.join(
+            self.base_prefix,
+            'v2/raw/html',
+            f"year={year}",
+            f"month={month:02d}",
+            f"day={day:02d}",
+            f"{date_obj.strftime('%Y-%m-%d')}.html"
+        )
+        return path
 
     def get_json_meta_path(self, date_obj):
         """
-        Get the path for storing JSON metadata.
+        Get the path to the JSON metadata file for a given date.
 
         Args:
-            date_obj: datetime object for the date
+            date_obj: A datetime object representing the date
 
         Returns:
             Path string
         """
-        if self.architecture_version == DataArchitectureVersion.V1:
-            # In v1 architecture, if we're in Lambda, paths should already be adjusted
-            path = os.path.join(self.base_prefix, 'data/json', f"{date_obj.strftime('%Y-%m-%d')}_meta.json")
-
-            # Double check we're not going to cause a filesystem error in Lambda
-            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
-                self.logger.warning(f"Fixing JSON meta path for Lambda compatibility: {path}")
-                path = f"/tmp/{path}"
-            return path
-        else:  # V2
-            year = date_obj.year
-            month = date_obj.month
-            day = date_obj.day
-            return os.path.join(
-                self.base_prefix,
-                'v2/processed/json',
-                f"year={year}",
-                f"month={month:02d}",
-                f"day={day:02d}",
-                f"{date_obj.strftime('%Y-%m-%d')}_meta.json"
-            )
+        # Only v2 architecture is supported now
+        year = date_obj.year
+        month = date_obj.month
+        day = date_obj.day
+        path = os.path.join(
+            self.base_prefix,
+            'v2/processed/json',
+            f"year={year}",
+            f"month={month:02d}",
+            f"day={day:02d}",
+            f"{date_obj.strftime('%Y-%m-%d')}_meta.json"
+        )
+        return path
 
     def get_games_path(self, date_obj):
         """
-        Get the path for storing game data.
+        Get the path to the games JSON file for a given date.
 
         Args:
-            date_obj: datetime object for the date
+            date_obj: A datetime object representing the date
 
         Returns:
             Path string
         """
-        if self.architecture_version == DataArchitectureVersion.V1:
-            year = date_obj.year
-            month = date_obj.month
-            day = date_obj.day
-            path = os.path.join(self.base_prefix, 'data/games', f"year={year}", f"month={month:02d}", f"day={day:02d}", "data.jsonl")
-
-            # Double check we're not going to cause a filesystem error in Lambda
-            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
-                self.logger.warning(f"Fixing games path for Lambda compatibility: {path}")
-                path = f"/tmp/{path}"
-            return path
-        else:  # V2
-            year = date_obj.year
-            month = date_obj.month
-            day = date_obj.day
-            return os.path.join(
-                self.base_prefix,
-                'v2/processed/json',
-                f"year={year}",
-                f"month={month:02d}",
-                f"day={day:02d}",
-                "games.jsonl"
-            )
+        # Only v2 architecture is supported now
+        year = date_obj.year
+        month = date_obj.month
+        day = date_obj.day
+        path = os.path.join(
+            self.base_prefix,
+            'v2/processed/json',
+            f"year={year}",
+            f"month={month:02d}",
+            f"day={day:02d}",
+            f"{date_obj.strftime('%Y-%m-%d')}_games.jsonl"
+        )
+        return path
 
     def get_metadata_path(self, date_obj):
         """
-        Get the path for storing additional metadata.
+        Get the path to the JSON metadata file for a given date.
+        This is an alias for get_json_meta_path for backward compatibility.
 
         Args:
-            date_obj: datetime object for the date
+            date_obj: A datetime object representing the date
 
         Returns:
             Path string
         """
-        if self.architecture_version == DataArchitectureVersion.V1:
-            year = date_obj.year
-            month = date_obj.month
-            day = date_obj.day
-            return os.path.join(self.base_prefix, 'data/metadata', f"year={year}", f"month={month:02d}", f"day={day:02d}", "data.jsonl")
-        else:  # V2
-            year = date_obj.year
-            month = date_obj.month
-            day = date_obj.day
-            return os.path.join(
-                self.base_prefix,
-                'v2/processed/json',
-                f"year={year}",
-                f"month={month:02d}",
-                f"day={day:02d}",
-                "metadata.jsonl"
-            )
+        return self.get_json_meta_path(date_obj)
 
     def get_checkpoint_path(self):
         """
-        Get the path for the checkpoint file.
+        Get the path to the checkpoint file.
 
         Returns:
             Path string
         """
-        if self.architecture_version == DataArchitectureVersion.V1:
-            path = os.path.join(self.base_prefix, 'data/checkpoints/html_processing.json')
-
-            # Double check we're not going to cause a filesystem error in Lambda
-            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
-                self.logger.warning(f"Fixing checkpoint path for Lambda compatibility: {path}")
-                path = f"/tmp/{path}"
-            return path
-        else:  # V2
-            return os.path.join(self.base_prefix, 'v2/checkpoints/scraping_checkpoint.json')
+        # Only v2 architecture is supported now
+        path = os.path.join(self.base_prefix, 'v2/metadata/checkpoints/html_processing.json')
+        return path
 
     def get_parquet_path(self, version=None):
         """
-        Get the path for the final Parquet dataset.
+        Get the path to the Parquet file.
 
         Args:
-            version: Optional version string for versioned datasets
+            version: Optional version string for the Parquet file
 
         Returns:
             Path string
         """
-        if self.architecture_version == DataArchitectureVersion.V1:
-            path = os.path.join(self.base_prefix, 'data/parquet', f"ncsoccer_games_{version}.parquet" if version else "ncsoccer_games_latest.parquet")
-
-            # Double check we're not going to cause a filesystem error in Lambda
-            if self.in_lambda and 'data/' in path and not path.startswith('/tmp/'):
-                self.logger.warning(f"Fixing parquet path for Lambda compatibility: {path}")
-                path = f"/tmp/{path}"
-            return path
-        else:  # V2
-            if version:
-                return os.path.join(self.base_prefix, 'v2/analytical/parquet', f"ncsoccer_games_{version}.parquet")
-            else:
-                return os.path.join(self.base_prefix, 'v2/analytical/parquet', "ncsoccer_games_latest.parquet")
+        # Only v2 architecture is supported now
+        if version:
+            path = os.path.join(self.base_prefix, 'v2/processed/parquet', version, "data.parquet")
+        else:
+            path = os.path.join(self.base_prefix, 'v2/processed/parquet', "data.parquet")
+        return path
 
 class StorageInterface:
     """Abstract base class for storage implementations"""
@@ -397,7 +341,7 @@ def create_scraper_config(
     skip_existing: bool = True,
     storage_type: str = "s3",
     bucket_name: str = None,
-    architecture_version: str = "v1"
+    architecture_version: str = "v2"
 ) -> ScraperConfig:
     """Create a scraper configuration from command line arguments"""
     mode = ScrapeMode(mode.lower())
