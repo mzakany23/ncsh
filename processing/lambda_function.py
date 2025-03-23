@@ -349,7 +349,8 @@ def convert_to_parquet(src_bucket, files, dst_bucket, dst_prefix, version: Optio
 
 def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[str]:
     """
-    List JSON files in the specified S3 bucket and prefix
+    List JSON files in the specified S3 bucket and prefix,
+    excluding metadata files
 
     If only_recent is True, only returns files modified since the last processing run
     """
@@ -378,6 +379,11 @@ def list_json_files(bucket: str, prefix: str, only_recent: bool = True) -> List[
                         naive_last_processed = last_processed.replace(tzinfo=None) if last_processed.tzinfo else last_processed
                         if naive_last_modified <= naive_last_processed:
                             continue
+
+                    # Filter out meta.json files
+                    if key.endswith('meta.json'):
+                        logger.info(f"Skipping metadata file: {key}")
+                        continue
 
                     if key.endswith('.json') or key.endswith('.jsonl'):
                         files.append(key)

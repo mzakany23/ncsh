@@ -1,3 +1,10 @@
+## [2.15.9] - 2025-04-05
+### Fixed
+- Enhanced JSON file filtering in processing Lambda to exclude meta.json files
+- Fixed "If using all scalar values, you must pass an index" error when processing v2 architecture files
+- Improved logging to show when metadata files are being skipped
+- Ensures proper Parquet file generation by focusing only on valid tabular game data
+
 ## [2.15.8] - 2025-04-04
 ### Fixed
 - Updated Step Function definition to correctly handle v2 architecture paths
