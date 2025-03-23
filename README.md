@@ -7,7 +7,7 @@ A data pipeline for collecting and processing soccer game data.
 ```
 /
 ├── scraping/           # Soccer schedule scraping module
-│   ├── ncsoccer/      # Scrapy spider and core scraping logic
+│   ├── ncsoccer/      # Web scraping logic using requests and BeautifulSoup
 │   ├── tests/         # Tests for scraping module
 │   ├── requirements.txt
 │   └── setup.py
@@ -47,6 +47,8 @@ terraform apply
 
 ### Scraping Data
 
+The project uses requests and BeautifulSoup for web scraping. The scraping functionality is implemented in the `SimpleScraper` class that provides a clean interface for collecting soccer game data.
+
 #### Using the Unified Workflow with Batching
 
 The unified workflow allows scraping data for a single day, a date range, or an entire month, with batching for improved reliability:
@@ -68,13 +70,6 @@ python scripts/trigger_batched_workflow.py --date 2024-03-01 --force-scrape
 python scripts/trigger_batched_workflow.py --date 2024-03-01 --profile your-profile-name
 ```
 
-#### Legacy Scraping (previous version)
-
-To scrape a month of data using the legacy workflow:
-```bash
-make scrape-month YEAR=2024 MONTH=3
-```
-
 ### Processing Data
 
 To trigger data processing:
@@ -84,16 +79,14 @@ make process-data
 
 ### Backfill Historical Data
 
-The project includes a backfill mechanism to scrape and process historical data. The backfill step function is configurable to scrape data for specific date ranges.
+The project includes a backfill mechanism to scrape and process historical data efficiently:
 
-Deploying the backfill infrastructure:
 ```bash
-make deploy-backfill
-```
-
-Running a backfill job:
-```bash
+# Run a backfill job via AWS Step Function
 make run-backfill
+
+# Run a backfill job locally with specific date range
+make run-local-backfill start_year=2007 start_month=1 end_year=2023 end_month=12
 ```
 
 Monitoring backfill jobs:
@@ -103,28 +96,8 @@ make check-backfill
 
 # Monitor backfill execution in real-time
 make monitor-backfill
-
-# Analyze a specific execution (replace with actual ARN)
-make analyze-execution execution=arn:aws:states:us-east-2:552336166511:execution:ncsoccer-backfill:backfill-smoke-test-1234567890
 ```
 
-The backfill process uses an optimized approach:
-
-1. A specialized backfill spider maintains a browser session while navigating through months:
-   - Starts at the most recent month
-   - Scrapes all days in that month
-   - Navigates backward one month (one click)
-   - Repeats until reaching the oldest target month
-
-2. Key advantages of this approach:
-   - Minimizes navigational overhead (constant number of clicks per month)
-   - Uses checkpointing to resume from interruptions
-   - Processes months sequentially for efficiency
-   - Reuses the browser session to maintain state
-
-3. The backfill can be run:
-   - Locally: `make run-local-backfill start_year=2007 start_month=1 end_year=2023 end_month=12`
-   - Via AWS Step Function: `make run-backfill`
 ## Project Notes
 
 ### Requirements Management

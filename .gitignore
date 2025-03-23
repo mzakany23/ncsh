@@ -37,7 +37,6 @@ venv.bak/
 *.swo
 
 # Project specific
-.scrapy/
 /data/
 !data/html/
 !data/html/2024-03-01.html

@@ -8,6 +8,10 @@ set -e
 TAG=${1:-latest}
 REPO_NAME="ncsoccer-scraper"
 
+# Get the project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 # Check architecture
 ARCH=$(uname -m)
 echo "Building on architecture: $ARCH"
@@ -17,13 +21,13 @@ if [[ "$ARCH" == "arm64" ]]; then
   # First clear any cached images that might have the wrong architecture
   echo "Cleaning up any previous images..."
   docker rmi $REPO_NAME:$TAG 2>/dev/null || true
-  
+
   # Build with explicit platform flag for AMD64 (x86_64)
   echo "Building Docker image for x86_64 architecture..."
-  cd scraping && docker build --platform=linux/amd64 -t $REPO_NAME:$TAG -f Dockerfile .
+  cd "$PROJECT_ROOT/scraping" && docker build --platform=linux/amd64 -t $REPO_NAME:$TAG -f Dockerfile .
 else
   echo "Building Docker image on x86_64 architecture..."
-  cd scraping && docker build -t $REPO_NAME:$TAG -f Dockerfile .
+  cd "$PROJECT_ROOT/scraping" && docker build -t $REPO_NAME:$TAG -f Dockerfile .
 fi
 
 # Show the image details to verify architecture

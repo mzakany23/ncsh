@@ -1,8 +1,52 @@
 import os
 import pytest
-from scrapy.http import HtmlResponse, Request
+from bs4 import BeautifulSoup
 
 """Unit tests for HTML parsing functionality"""
+
+class MockResponse:
+    """Simple mock response for testing with BeautifulSoup"""
+    def __init__(self, url, html, meta=None):
+        self.url = url
+        self.html = html
+        self.soup = BeautifulSoup(html, 'html.parser')
+        self.meta = meta or {}
+
+    def css(self, selector):
+        """Mimics the CSS selector functionality using BeautifulSoup"""
+        if selector == 'table#ctl00_c_Schedule1_GridView1':
+            return MockTable(self.soup.select('table#ctl00_c_Schedule1_GridView1'))
+        elif selector == 'title::text':
+            title = self.soup.select_one('title')
+            return MockText(title.text if title else '')
+        elif selector == 'body::text':
+            body = self.soup.select_one('body')
+            return MockText(body.text if body else '')
+        elif selector == 'table':
+            return self.soup.select('table')
+        return []
+
+class MockTable:
+    def __init__(self, elements):
+        self.elements = elements
+
+    def css(self, selector):
+        if selector == 'tr':
+            rows = []
+            for el in self.elements:
+                rows.extend(el.select('tr'))
+            return rows[1:] if rows else []  # Skip header by returning from index 1
+        return []
+
+class MockText:
+    def __init__(self, text):
+        self.text = text
+
+    def get(self, default=''):
+        return self.text if self.text else default
+
+    def extract(self):
+        return [self.text] if self.text else []
 
 @pytest.fixture
 def sample_html():
@@ -15,21 +59,18 @@ def sample_html():
 def mock_response(sample_html):
     """Create a mock response with our sample HTML"""
     url = 'https://nc-soccer-hudson.ezleagues.ezfacility.com/schedule.aspx'
-    request = Request(url=url)
-    response = HtmlResponse(
+    response = MockResponse(
         url=url,
-        body=sample_html.encode('utf-8'),
-        encoding='utf-8',
-        request=request
+        html=sample_html,
+        meta={'date': '2024-03-01'}
     )
-    response.meta['date'] = '2024-03-01'
     return response
 
 def test_extract_complete_game_scores(mock_response):
     """Test extraction of scores from a completed game"""
     # Find completed games
     schedule_table = mock_response.css('table#ctl00_c_Schedule1_GridView1')
-    rows = schedule_table.css('tr')[1:]  # Skip header
+    rows = schedule_table.css('tr')  # Skip header
 
     # Looking for "Complete" text in any cell
     complete_games = []
@@ -86,7 +127,7 @@ def test_extract_game_status(mock_response):
     """Test extraction of game status from the schedule table"""
     # Find the schedule table
     schedule_table = mock_response.css('table#ctl00_c_Schedule1_GridView1')
-    rows = schedule_table.css('tr')[1:]  # Skip header
+    rows = schedule_table.css('tr')  # Skip header
 
     # Check for any Complete text in the table
     complete_found = False
@@ -106,7 +147,7 @@ def test_extract_game_status(mock_response):
 def test_extract_team_names(mock_response):
     """Test extraction of team names"""
     schedule_table = mock_response.css('table#ctl00_c_Schedule1_GridView1')
-    rows = schedule_table.css('tr')[1:]  # Skip header
+    rows = schedule_table.css('tr')  # Skip header
 
     # Find cells with team data
     team_cells = []

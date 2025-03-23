@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simple scraper for NC Soccer schedule data using requests and BeautifulSoup."""
+"""Simple soccer schedule scraper using requests and BeautifulSoup."""
 
 import os
 import json
