@@ -1,3 +1,10 @@
+## [2.15.8] - 2025-04-04
+### Fixed
+- Updated Step Function definition to correctly handle v2 architecture paths
+- Removed hardcoded path prefixes to allow Lambda to determine the correct paths based on architecture_version
+- Improved Step Function compatibility with v2 directory structure
+- Ensured proper Parquet file generation in v2 architecture mode
+
 ## [2.15.7] - 2025-04-03
 ### Added
 - Added v2 architecture path support for Parquet files in processing Lambda
