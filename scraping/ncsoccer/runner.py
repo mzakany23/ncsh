@@ -321,6 +321,9 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             else:
                 logger.error(f"Not all files were created: HTML:{html_exists} JSON:{json_exists}")
                 return False
+        elif skip_wait:
+            logger.info(f"Skipping file verification for {date_str} (skip_wait=True)")
+            return True
 
         # If no verification needed, return spider success status
         return SpiderTracker.success
