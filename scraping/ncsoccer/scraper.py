@@ -671,10 +671,9 @@ class SimpleScraper:
 
                 # If end_day is None, use the last day of the month
                 if self.end_day is None:
-                    if self.end_month == 12:
-                        last_day = 31
-                    else:
-                        last_day = (datetime(self.end_year, self.end_month + 1, 1) - timedelta(days=1)).day
+                    # Use calendar module to get the last day of the month correctly
+                    import calendar
+                    _, last_day = calendar.monthrange(self.end_year, self.end_month)
                     end_date = datetime(self.end_year, self.end_month, last_day)
                 else:
                     end_date = datetime(self.end_year, self.end_month, self.end_day)

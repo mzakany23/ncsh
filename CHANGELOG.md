@@ -1,3 +1,9 @@
+## [3.0.3] - 2025-03-23
+### Fixed
+- Fixed bug in SimpleScraper's run method that prevented January dates from being scraped when using date ranges
+- Updated month-end date calculation to use calendar.monthrange instead of the previous approach that failed for January
+- Ensured trigger_batched_workflow.py script correctly processes all months including January
+
 ## [3.0.2] - 2025-04-23
 ### Added
 - Added smoke test with improved EDA tools for S3 v2 key architecture
