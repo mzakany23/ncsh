@@ -1,3 +1,9 @@
+## [3.0.2] - 2025-04-23
+### Added
+- Added smoke test with improved EDA tools for S3 v2 key architecture
+- Enhanced batch workflow triggering script to include architecture_version parameter
+- Improved exploratory data analysis capabilities for processing results
+
 ## [3.0.1] - 2025-04-07
 ### Fixed
 - Removed remaining v1 data paths from S3 storage
