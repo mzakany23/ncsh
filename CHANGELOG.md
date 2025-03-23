@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.0] - 2025-03-29
+### Changed
+- Replaced Scrapy framework with simpler requests + BeautifulSoup implementation
+- Created new `SimpleScraper` class with identical functionality but simpler codebase
+- Eliminated all reactor-related issues that were causing Lambda function failures
+- Reduced dependency footprint for faster Lambda cold starts
+- Updated `lambda_function.py` to use the new scraper implementation
+- Added proper parallel scraping using ThreadPoolExecutor for improved performance
+- Added type hints and enhanced error handling throughout the codebase
+
+## [2.14.7] - 2025-03-28
+### Fixed
+- Fixed `ReactorNotRestartable` error in Lambda functions when using Scrapy with batch processing
+- Modified runner.py to force using CrawlerRunner instead of CrawlerProcess in Lambda environments
+- Enhanced detection of Lambda environments across all runner functions (run_scraper, run_month, run_date_range)
+- Added global reactor state tracking to prevent reactor restart issues across invocations
+
 ## [2.14.6] - 2025-03-27
 ### Fixed
 - Identified and fixed root cause of Lambda timeouts by removing unnecessary S3 file verification waiting
@@ -30,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.14.3] - 2025-03-25
 ### Fixed
-- Resolved "Read-only file system: 'data'" error in Lambda function by ensuring all path prefixes use /tmp in Lambda environment
+- Resolved "Read-only file system" errors in Lambda function by ensuring all path prefixes use /tmp in Lambda environment
 - Added explicit path adjustments in run_scraper, run_month, and run_date_range functions to handle Lambda's filesystem restrictions
 - Improved logging to show path adjustments made for Lambda environment
 
