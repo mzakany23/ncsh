@@ -35,7 +35,41 @@ class MockTable:
             rows = []
             for el in self.elements:
                 rows.extend(el.select('tr'))
-            return rows[1:] if rows else []  # Skip header by returning from index 1
+            return [MockRow(row) for row in rows[1:]] if rows else []  # Skip header by returning from index 1
+        return []
+
+class MockRow:
+    def __init__(self, element):
+        self.element = element
+
+    def css(self, selector):
+        if selector == 'td':
+            cells = self.element.select('td')
+            return [MockCell(cell) for cell in cells]
+        elif '::text' in selector:
+            # Handle text extraction for links
+            if selector == 'a::text':
+                links = self.element.select('a')
+                return MockText(' '.join(link.text for link in links))
+        return []
+
+class MockCell:
+    def __init__(self, element):
+        self.element = element
+
+    def css(self, selector):
+        if selector == 'a::text':
+            links = self.element.select('a')
+            if links:
+                return MockText(links[0].text)
+            return MockText('')
+        elif selector == '::text':
+            return MockText(self.element.text)
+        elif selector == 'span::text':
+            spans = self.element.select('span')
+            if spans:
+                return MockText(spans[0].text)
+            return MockText('')
         return []
 
 class MockText:
@@ -47,6 +81,9 @@ class MockText:
 
     def extract(self):
         return [self.text] if self.text else []
+
+    def __str__(self):
+        return self.text
 
 @pytest.fixture
 def sample_html():

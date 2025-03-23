@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Any, Union
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+import traceback
 
 # Import from pipeline modules
 from ncsoccer.pipeline.config import (
@@ -268,9 +269,17 @@ class SimpleScraper:
         Returns:
             URL for the print.aspx page with appropriate query parameters
         """
+        # Format date for display in title (e.g., "Sunday, March 23, 2025")
+        formatted_date = date_obj.strftime('%A, %B %d, %Y')
+
         params = {
+            'type': 'schedule',
+            'title': f'Games on {formatted_date}',
+            'team_id': '0',
+            'league_id': '0',
             'facility_id': FACILITY_ID,
-            'date': date_obj.strftime('%m/%d/%Y')
+            'day': date_obj.strftime('%m/%d/%Y'),
+            'framed': '1'
         }
         return f"{PRINT_URL}?{urllib.parse.urlencode(params)}"
 
@@ -341,54 +350,134 @@ class SimpleScraper:
         games = []
         date_str = date_obj.strftime('%Y-%m-%d')
 
-        # Find the schedule table
-        schedule_table = soup.find('table', class_='table-striped')
+        # Find the schedule table - try different possible IDs based on the page format
+        schedule_table = soup.find('table', id='ctl00_c_Schedule1_GridView1')
+        if not schedule_table:
+            schedule_table = soup.find('table', id='ctl04_GridView1')
+
+        if not schedule_table:
+            # Try the old format as fallback with class
+            schedule_table = soup.find('table', class_='table-striped')
+
+        if not schedule_table:
+            # Try any table with the class containing "ezl-base-table"
+            schedule_table = soup.find('table', class_=lambda c: c and 'ezl-base-table' in c)
+
         if not schedule_table:
             logger.warning(f"No schedule table found for {date_str}")
             return games
 
-        # Extract game rows
-        rows = schedule_table.find_all('tr')
-        current_league = None
+        # Extract game rows - skip first row (header)
+        rows = schedule_table.find_all('tr')[1:] if schedule_table.find_all('tr') else []
 
         for row in rows:
-            # Check if this is a league header row
-            league_header = row.find('th', colspan=True)
-            if league_header:
-                current_league = league_header.text.strip()
-                continue
-
-            # Skip rows without enough cells (likely headers)
+            # Skip rows without enough cells
             cells = row.find_all('td')
-            if len(cells) < 5:
+            if len(cells) < 5:  # Need at least 5 cells for minimum data
                 continue
 
-            # Extract game data
             try:
-                game_time = cells[0].text.strip()
-                home_team = cells[1].text.strip()
-                away_team = cells[2].text.strip()
-                field = cells[3].text.strip()
+                # First detect the table structure by examining header or data-th attributes
+                table_format = "unknown"
+
+                # Check for data-th attributes which indicate the modern format
+                if 'data-th' in str(cells[0]):
+                    # Modern format with data-th attributes
+                    table_format = "modern"
+
+                    # Extract based on data-th values
+                    league_name = ""
+                    home_team = ""
+                    away_team = ""
+                    status = ""
+                    venue = ""
+                    officials = ""
+                    score = ""
+
+                    for cell in cells:
+                        data_th = cell.get('data-th', '').strip().lower()
+                        cell_text = cell.get_text(strip=True)
+
+                        if data_th == 'league':
+                            league_name = cell_text
+                        elif data_th == 'home':
+                            home_team = cell_text
+                        elif data_th == 'away':
+                            away_team = cell_text
+                        elif data_th == 'time/status':
+                            status = cell_text
+                        elif data_th == 'venue':
+                            venue = cell_text
+                        elif data_th == 'officials':
+                            officials = cell_text
+                        elif data_th == '':  # Check for score in versus column
+                            if ' - ' in cell_text and cell_text.replace(' - ', '').strip().isdigit():
+                                score = cell_text
+
+                else:
+                    # Legacy format - determine by column count and content
+                    table_format = "legacy"
+
+                    # The layout appears to be different, with "Sat-Feb 15" often in the "home_team" position
+                    # and scores in the format "3 - 2" often in the "away_team" position
+
+                    league_name = cells[0].get_text(strip=True) if len(cells) > 0 else ""
+
+                    # In the legacy format, the next cell often contains the team or game info
+                    game_info = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+
+                    # Check for date format (e.g., "Sat-Feb 15") which indicates this is the column layout
+                    date_indicator = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+                    if date_indicator and "Sat-" in date_indicator or "Sun-" in date_indicator:
+                        home_team = game_info  # Team name is in the previous cell
+
+                        # Score or versus indicator is usually in the next cell
+                        score_or_vs = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+                        if " - " in score_or_vs and any(c.isdigit() for c in score_or_vs):
+                            score = score_or_vs
+                            away_team = ""  # We don't have a clear away team in this format
+                        else:
+                            score = ""
+                            away_team = score_or_vs
+
+                        # Status or field is in the next cell
+                        status = cells[4].get_text(strip=True) if len(cells) > 4 else ""
+
+                        # Venue or field is usually after status
+                        venue = cells[5].get_text(strip=True) if len(cells) > 5 else ""
+
+                        # Officials might be in the last column
+                        officials = cells[6].get_text(strip=True) if len(cells) > 6 else ""
+                    else:
+                        # Different column layout where team names are in separate columns
+                        home_team = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+                        away_team = cells[2].get_text(strip=True) if len(cells) > 2 else ""
+                        status = cells[3].get_text(strip=True) if len(cells) > 3 else ""
+                        venue = cells[4].get_text(strip=True) if len(cells) > 4 else ""
+                        officials = cells[5].get_text(strip=True) if len(cells) > 5 else ""
+                        score = ""
 
                 # Create game item
                 game = {
-                    'league_name': current_league,
+                    'league_name': league_name,
                     'game_date': date_str,
-                    'game_time': game_time,
+                    'game_time': status,  # Using status as game_time
                     'home_team': home_team,
                     'away_team': away_team,
-                    'field': field,
-                    'facility_id': FACILITY_ID
+                    'score': score,
+                    'field': venue,
+                    'game_type': "",  # We don't have consistent game type data
+                    'officials': officials,
+                    'facility_id': FACILITY_ID,
+                    '_table_format': table_format  # Store the detected format for debugging
                 }
-
-                # Extract additional data if available
-                # Some tables may have league IDs or other metadata
 
                 games.append(game)
                 self.games_scraped += 1
 
             except Exception as e:
                 logger.error(f"Error parsing game row: {e}")
+                logger.error(f"Row content: {row}")
 
         logger.info(f"Extracted {len(games)} games for {date_str}")
         return games
@@ -441,15 +530,27 @@ class SimpleScraper:
         try:
             if self.checkpoint:
                 # Use checkpoint manager for v2 architecture
+                # Always mark as completed if we successfully processed the page, even if 0 games
                 self.checkpoint.update_scraping(date_str, success=success, games_count=games_count)
-                logger.info(f"Updated checkpoint for {date_str}")
+                # Verify the checkpoint was updated
+                checkpoint_data = self.checkpoint.get_checkpoint_data()
+                if date_str not in checkpoint_data.get('completed_dates', []):
+                    logger.warning(f"Checkpoint for {date_str} was not properly updated. Attempting again.")
+                    # Try one more time
+                    self.checkpoint.update_scraping(date_str, success=success, games_count=games_count, force=True)
+                    checkpoint_data = self.checkpoint.get_checkpoint_data()
+                    if date_str not in checkpoint_data.get('completed_dates', []):
+                        logger.error(f"Failed to update checkpoint for {date_str} after retry.")
+                        return False
+                logger.info(f"Updated checkpoint for {date_str} with games_count={games_count}")
             else:
                 # Use lookup for v1 architecture
                 self.lookup.update_date(date_str, success=success, games_count=games_count)
-                logger.info(f"Updated lookup for {date_str}")
+                logger.info(f"Updated lookup for {date_str} with games_count={games_count}")
             return True
         except Exception as e:
             logger.error(f"Error updating checkpoint: {e}")
+            traceback.print_exc()
             return False
 
     def scrape_date(self, date_obj: datetime) -> bool:

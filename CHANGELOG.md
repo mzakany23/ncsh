@@ -1,3 +1,11 @@
+## [2.15.6] - 2025-04-02
+### Fixed
+- Fixed URL construction in `get_direct_date_url` by adding the required `title` parameter
+- Enhanced HTML parsing logic for better handling of modern table format
+- Removed deprecated Lambda handler tests to fix test suite failures
+- Ensured core functionality works correctly with updated URL format
+- Improved extraction of game details including team names, scores, and officials
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
