@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.4] - 2025-03-31
+### Fixed
+- Added support for S3 lookup type in pipeline/lookup.py that was missing after Scrapy removal
+- Created S3Lookup class to properly handle lookup data stored in S3 buckets
+- Fixed Lambda batch processing that was failing with "Unsupported lookup type: s3" error
+
 ## [2.15.3] - 2025-03-31
 ### Changed
 - Completed removal of all Scrapy remnants from the codebase
