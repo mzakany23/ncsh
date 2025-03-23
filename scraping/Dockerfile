@@ -12,6 +12,9 @@ COPY requirements.txt ${LAMBDA_TASK_ROOT}
 # Install Python dependencies
 RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
+# Explicitly install BeautifulSoup4 to ensure bs4 module is available
+RUN pip install beautifulsoup4==4.13.3
+
 # Copy package files and setup
 COPY . ${LAMBDA_TASK_ROOT}
 
