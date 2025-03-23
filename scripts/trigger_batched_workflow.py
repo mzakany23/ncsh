@@ -63,7 +63,7 @@ def main():
     parser.add_argument('--bucket', default='ncsh-app-data',
                       help='S3 bucket name (default: ncsh-app-data)')
     parser.add_argument('--architecture-version', default='v2',
-                      help='Architecture version (default: v2)')
+                      help='Architecture version to use (default: v2)')
 
     args = parser.parse_args()
 
