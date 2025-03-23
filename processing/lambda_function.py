@@ -19,30 +19,72 @@ def validate_and_transform_data(raw_data: List[Dict[Any, Any]]) -> List[Dict[str
 
     for record in raw_data:
         try:
-            # Handle case where games might be a list
-            games = record.get('games', [])
-            if not isinstance(games, list):
-                games = [games]
+            # Check if we have the alternative format (with league_name, game_date, etc.)
+            if 'league_name' in record and 'game_date' in record:
+                try:
+                    # Parse the score field if it exists (format like "7 - 2")
+                    home_score = None
+                    away_score = None
+                    if 'score' in record and record['score'] and ' - ' in record['score']:
+                        try:
+                            score_parts = record['score'].split(' - ')
+                            if len(score_parts) == 2:
+                                home_score = int(score_parts[0].strip())
+                                away_score = int(score_parts[1].strip())
+                        except (ValueError, IndexError):
+                            logger.warning(f"Could not parse score: {record.get('score')}")
 
-            # Process each game in the record
-            for game in games:
-                if game is not None:
-                    try:
-                        # Create GameData instance with strict validation
-                        game_data = GameData(
-                            date=record['date'],
-                            games=Game(**game),
-                            url=record.get('url'),
-                            type=record.get('type'),
-                            status=record.get('status'),
-                            headers=record.get('headers'),
-                            timestamp=record.get('timestamp', datetime.now(timezone.utc))
-                        )
-                        # Convert to flat dictionary structure
-                        validated_data.append(game_data.to_dict())
-                    except Exception as e:
-                        logger.warning(f"Invalid game data: {str(e)}")
-                        continue
+                    # Create Game object with field mapping
+                    game = Game(
+                        home_team=record.get('home_team', ''),
+                        away_team=record.get('away_team', ''),
+                        home_score=home_score,
+                        away_score=away_score,
+                        league=record.get('league_name', ''),
+                        time=record.get('game_time')
+                    )
+
+                    # Create GameData instance
+                    game_data = GameData(
+                        date=record['game_date'],
+                        games=game,
+                        url=record.get('url'),
+                        type=record.get('game_type'),
+                        status=record.get('status'),
+                        headers=record.get('headers'),
+                        timestamp=record.get('timestamp', datetime.now(timezone.utc))
+                    )
+
+                    # Convert to flat dictionary structure
+                    validated_data.append(game_data.to_dict())
+                except Exception as e:
+                    logger.warning(f"Invalid alternative format game data: {str(e)}")
+                    continue
+            else:
+                # Handle case where games might be a list
+                games = record.get('games', [])
+                if not isinstance(games, list):
+                    games = [games]
+
+                # Process each game in the record
+                for game in games:
+                    if game is not None:
+                        try:
+                            # Create GameData instance with strict validation
+                            game_data = GameData(
+                                date=record['date'],
+                                games=Game(**game),
+                                url=record.get('url'),
+                                type=record.get('type'),
+                                status=record.get('status'),
+                                headers=record.get('headers'),
+                                timestamp=record.get('timestamp', datetime.now(timezone.utc))
+                            )
+                            # Convert to flat dictionary structure
+                            validated_data.append(game_data.to_dict())
+                        except Exception as e:
+                            logger.warning(f"Invalid game data: {str(e)}")
+                            continue
 
         except Exception as e:
             logger.warning(f"Invalid record: {str(e)}")
