@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.5] - 2025-04-01
+### Fixed
+- Fixed scraper URL construction to properly handle season parameter
+- Updated HTML parsing logic to handle changes in page structure
+- Improved checkpoint management for more reliable data storage
+- Enhanced S3 path handling for correct data storage locations
+
 ## [2.15.4] - 2025-03-31
 ### Fixed
 - Added support for S3 lookup type in pipeline/lookup.py that was missing after Scrapy removal
