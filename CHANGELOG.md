@@ -1,3 +1,40 @@
+## v3.0.1 (2025-03-24)
+
+### Fixed
+- Removed remaining v1 data paths from S3 storage
+- Improved test compatibility with v2-only architecture
+- Ensured consistent path handling across all components
+- Streamlined deployment process for v2 architecture
+
+## v3.0.0 (2025-03-24)
+
+### Changed
+- **Breaking Change**: Completely removed all v1 architecture support
+- Removed migration script and all v1-related code paths
+- Simplified codebase to only use v2 architecture
+- Updated all scripts to remove v1 options and references
+- Updated documentation to focus only on v2 architecture
+
+## v2.2.0 (2025-03-23)
+
+### Added
+- Fixed Lambda function to handle alternative JSON format in the `games.jsonl` file
+- Support for parsing score strings (e.g., "7 - 2") into separate home and away scores
+- Added migration script to facilitate transition from v1 to v2 architecture if necessary
+
+### Changed
+- Made v2 architecture the default and only supported architecture
+- Updated Lambda processing function to use v2 paths by default
+- Updated trigger scripts to default to v2 architecture
+- Deprecated v1 architecture paths, but maintained backward compatibility
+
+## [3.0.1] - 2025-04-07
+### Fixed
+- Fixed unit tests for compatibility with v2-only architecture
+- Removed any remaining references to v1 architecture in code comments
+- Ensured consistent v2 path structure throughout the codebase
+- Improved compatibility with Step Function workflow after v1 removal
+
 ## [2.16.1] - 2025-04-06
 ### Fixed
 - Enhanced validate_and_transform_data function to handle alternative data formats in games.jsonl
@@ -443,25 +480,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced spider `DOWNLOAD_DELAY` from 2 seconds to 1 second to speed up the scraping process
 - Reduced `RETRY_TIMES` from 5 to 2 to prevent overly long-running crawls when failures occur
 - These changes improve Lambda performance while maintaining reliability
-
-## v3.0.0 (2025-03-24)
-
-### Changed
-- **Breaking Change**: Completely removed all v1 architecture support
-- Removed migration script and all v1-related code paths
-- Simplified codebase to only use v2 architecture
-- Updated all scripts to remove v1 options and references
-- Updated documentation to focus only on v2 architecture
-
-## v2.2.0 (2025-03-23)
-
-### Added
-- Fixed Lambda function to handle alternative JSON format in the `games.jsonl` file
-- Support for parsing score strings (e.g., "7 - 2") into separate home and away scores
-- Added migration script to facilitate transition from v1 to v2 architecture if necessary
-
-### Changed
-- Made v2 architecture the default and only supported architecture
-- Updated Lambda processing function to use v2 paths by default
-- Updated trigger scripts to default to v2 architecture
-- Deprecated v1 architecture paths, but maintained backward compatibility
