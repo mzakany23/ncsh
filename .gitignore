@@ -48,6 +48,7 @@ test_data/
 conversation_history.txt
 *-ui.json
 matches.parquet
+function.zip
 
 # Terraform
 .terraform/
