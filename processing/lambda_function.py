@@ -774,11 +774,24 @@ def lambda_handler(event, context):
         if version:
             logger.info(f"Using provided version identifier: {version}")
 
+        # Get architecture version
+        architecture_version = event.get('architecture_version', 'v1')
+        logger.info(f"Using architecture version: {architecture_version}")
+
         # Get environment variables with defaults
         src_bucket = event.get('src_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
-        src_prefix = event.get('src_prefix', os.environ.get("JSON_PREFIX", "data/json/"))
         dst_bucket = event.get('dst_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
-        dst_prefix = event.get('dst_prefix', os.environ.get("PARQUET_PREFIX", "data/parquet/"))
+
+        # Adjust paths based on architecture version
+        if architecture_version == 'v2':
+            # Use v2 directory structure
+            src_prefix = event.get('src_prefix', 'v2/processed/json/')
+            dst_prefix = event.get('dst_prefix', 'v2/processed/parquet/')
+            logger.info(f"Using v2 directory structure: src={src_prefix}, dst={dst_prefix}")
+        else:
+            # Use v1 directory structure (original defaults)
+            src_prefix = event.get('src_prefix', os.environ.get("JSON_PREFIX", "data/json/"))
+            dst_prefix = event.get('dst_prefix', os.environ.get("PARQUET_PREFIX", "data/parquet/"))
 
         if operation == "list_files":
             # List JSON files, optionally filtering for only recent ones
@@ -791,7 +804,8 @@ def lambda_handler(event, context):
                 "dst_bucket": dst_bucket,
                 "dst_prefix": dst_prefix,
                 "force_full_reprocess": force_full_reprocess,
-                "version": version
+                "version": version,
+                "architecture_version": architecture_version
             }
 
         elif operation == "convert":
@@ -826,6 +840,11 @@ def lambda_handler(event, context):
                 logger.info("Building versioned dataset after processing all files")
                 dataset_result = build_dataset(src_bucket, src_prefix, dst_bucket, dst_prefix, version)
                 result['datasetResult'] = dataset_result
+
+            # Add architecture version to result
+            result['architecture_version'] = architecture_version
+            result['src_prefix'] = src_prefix
+            result['dst_prefix'] = dst_prefix
 
             return result
 
