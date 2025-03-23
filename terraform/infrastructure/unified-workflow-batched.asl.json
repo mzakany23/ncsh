@@ -157,7 +157,7 @@
           "Next": "HandleProcessingFailure"
         }
       ],
-      "ResultPath": "$.processing",
+      "ResultPath": null,
       "Next": "WorkflowSuccess"
     },
 

@@ -1,3 +1,8 @@
+## [3.0.8] - 2025-03-23
+### Fixed
+- Modified Step Functions state machine to discard processing results completely
+- Set ResultPath to null for ProcessFiles task to prevent payload size limit errors
+
 ## [3.0.7] - 2025-03-23
 ### Fixed
 - Modified processing Lambda to store detailed results in S3 instead of returning them directly
