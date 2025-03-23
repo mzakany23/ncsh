@@ -344,3 +344,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed IAM role permissions for Lambda S3 access
 - Updated AWS API endpoint handling
+
+## [2.14.7] - 2025-03-27
+### Improved
+- Reduced spider `DOWNLOAD_DELAY` from 2 seconds to 1 second to speed up the scraping process
+- Reduced `RETRY_TIMES` from 5 to 2 to prevent overly long-running crawls when failures occur
+- These changes improve Lambda performance while maintaining reliability

@@ -47,7 +47,7 @@ class ScheduleSpider(scrapy.Spider):
         'ROBOTSTXT_OBEY': False,
         'COOKIES_ENABLED': True,
         'COOKIES_DEBUG': True,
-        'DOWNLOAD_DELAY': 2,  # Increased to avoid rate limiting
+        'DOWNLOAD_DELAY': 1,  # Reduced from 2 to 1 second to speed up processing
         'CONCURRENT_REQUESTS': 1,
         'DEFAULT_REQUEST_HEADERS': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -64,7 +64,7 @@ class ScheduleSpider(scrapy.Spider):
             'sec-ch-ua-platform': '"macOS"'
         },
         'RETRY_ENABLED': True,
-        'RETRY_TIMES': 5,  # Increased for better reliability
+        'RETRY_TIMES': 2,  # Reduced from 5 to 2 to prevent long-running crawls
         'RETRY_HTTP_CODES': [500, 502, 503, 504, 408, 429, 403]
     }
 
