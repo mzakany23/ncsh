@@ -1,3 +1,10 @@
+## [2.15.7] - 2025-04-03
+### Added
+- Added v2 architecture path support for Parquet files in processing Lambda
+- Improved path handling for both v1 and v2 architecture versions
+- Updated unit tests to verify correct path selection based on architecture version
+- Enhanced error handling in JSON to Parquet conversion
+
 ## [2.15.6] - 2025-04-02
 ### Fixed
 - Fixed URL construction in `get_direct_date_url` by adding the required `title` parameter
