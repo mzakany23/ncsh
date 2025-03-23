@@ -278,7 +278,7 @@ class SimpleScraper:
             'team_id': '0',
             'league_id': '0',
             'facility_id': FACILITY_ID,
-            'day': date_obj.strftime('%m/%d/%Y'),
+            'day': date_obj.strftime('%-m/%-d/%Y'),  # Remove leading zeros
             'framed': '1'
         }
         return f"{PRINT_URL}?{urllib.parse.urlencode(params)}"

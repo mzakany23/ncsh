@@ -1,3 +1,9 @@
+## [3.0.4] - 2025-03-23
+### Fixed
+- Fixed issue with January dates not being scraped due to website URL format changes
+- Updated URL format to use the new domain (nc-soccer-hudson.ezleagues.ezfacility.com)
+- Ensured date format in URL parameters correctly removes leading zeros for proper API compatibility
+
 ## [3.0.3] - 2025-03-23
 ### Fixed
 - Fixed bug in SimpleScraper's run method that prevented January dates from being scraped when using date ranges
