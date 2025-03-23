@@ -2,6 +2,8 @@
 ### Fixed
 - Fixed critical issue where v2 architecture in Lambda was incorrectly saving data to /tmp/v2 instead of S3
 - Modified DataPathManager to ensure v2 architecture never uses /tmp paths in Lambda environment
+- Updated runner.py to respect v2 architecture and not force /tmp paths for v2
+- Fixed lambda_function.py to explicitly remove any /tmp prefixes from paths for v2 architecture
 - Ensured proper S3 storage for all scraped data in v2 architecture
 
 ## [3.0.4] - 2025-03-23

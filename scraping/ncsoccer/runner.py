@@ -153,18 +153,33 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
             if not bucket_name:
                 bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
 
-            # Ensure directories start with /tmp in Lambda to avoid read-only filesystem errors
-            if not html_prefix.startswith('/tmp/') and not html_prefix.startswith('s3://'):
-                html_prefix = f'/tmp/{html_prefix}'
-                logger.info(f"Adjusted html_prefix for Lambda: {html_prefix}")
+            # Handle path adjustments based on architecture version
+            if architecture_version == 'v1':
+                # For v1 architecture, ensure directories start with /tmp in Lambda to avoid read-only filesystem errors
+                if not html_prefix.startswith('/tmp/') and not html_prefix.startswith('s3://'):
+                    html_prefix = f'/tmp/{html_prefix}'
+                    logger.info(f"Adjusted html_prefix for Lambda (v1): {html_prefix}")
 
-            if not json_prefix.startswith('/tmp/') and not json_prefix.startswith('s3://'):
-                json_prefix = f'/tmp/{json_prefix}'
-                logger.info(f"Adjusted json_prefix for Lambda: {json_prefix}")
+                if not json_prefix.startswith('/tmp/') and not json_prefix.startswith('s3://'):
+                    json_prefix = f'/tmp/{json_prefix}'
+                    logger.info(f"Adjusted json_prefix for Lambda (v1): {json_prefix}")
 
-            if not lookup_file.startswith('/tmp/') and not lookup_file.startswith('s3://'):
-                lookup_file = f'/tmp/{lookup_file}'
-                logger.info(f"Adjusted lookup_file for Lambda: {lookup_file}")
+                if not lookup_file.startswith('/tmp/') and not lookup_file.startswith('s3://'):
+                    lookup_file = f'/tmp/{lookup_file}'
+                    logger.info(f"Adjusted lookup_file for Lambda (v1): {lookup_file}")
+            elif architecture_version == 'v2':
+                # For v2 architecture, ensure we're NOT using /tmp paths
+                if html_prefix and html_prefix.startswith('/tmp/'):
+                    html_prefix = html_prefix.replace('/tmp/', '')
+                    logger.info(f"Removed /tmp prefix from html_prefix for v2 architecture: {html_prefix}")
+                
+                if json_prefix and json_prefix.startswith('/tmp/'):
+                    json_prefix = json_prefix.replace('/tmp/', '')
+                    logger.info(f"Removed /tmp prefix from json_prefix for v2 architecture: {json_prefix}")
+                
+                if lookup_file and lookup_file.startswith('/tmp/'):
+                    lookup_file = lookup_file.replace('/tmp/', '')
+                    logger.info(f"Removed /tmp prefix from lookup_file for v2 architecture: {lookup_file}")
 
         # Get current date for defaults
         now = datetime.now()

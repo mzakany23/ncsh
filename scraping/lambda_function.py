@@ -128,9 +128,24 @@ def handle_unified_format(event, context):
         force_scrape = event.get('force_scrape', False)
         architecture_version = "v2"  # Only support v2 architecture now
         bucket_name = event.get('bucket_name', 'ncsh-app-data')
-        html_prefix = event.get('html_prefix', 'v2/raw/html')  # Updated default for v2
-        json_prefix = event.get('json_prefix', 'v2/processed/json')  # Updated default for v2
-        lookup_file = event.get('lookup_file', 'v2/metadata/lookup.json')  # Updated default for v2
+        
+        # CRITICAL: Ensure we're using clean paths without /tmp for v2 architecture
+        # Remove any /tmp prefix if it exists in the provided paths
+        html_prefix = event.get('html_prefix', 'v2/raw/html')
+        if html_prefix.startswith('/tmp/'):
+            html_prefix = html_prefix.replace('/tmp/', '')
+            logger.warning(f"Removed /tmp prefix from html_prefix: {html_prefix}")
+            
+        json_prefix = event.get('json_prefix', 'v2/processed/json')
+        if json_prefix.startswith('/tmp/'):
+            json_prefix = json_prefix.replace('/tmp/', '')
+            logger.warning(f"Removed /tmp prefix from json_prefix: {json_prefix}")
+            
+        lookup_file = event.get('lookup_file', 'v2/metadata/lookup.json')
+        if lookup_file.startswith('/tmp/'):
+            lookup_file = lookup_file.replace('/tmp/', '')
+            logger.warning(f"Removed /tmp prefix from lookup_file: {lookup_file}")
+            
         region = event.get('region', 'us-east-2')
         timeout = event.get('timeout', 10)  # 10 seconds default timeout
         max_retries = event.get('max_retries', 3)
