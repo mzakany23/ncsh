@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.6] - 2025-03-27
+### Fixed
+- Identified and fixed root cause of Lambda timeouts by removing unnecessary S3 file verification waiting
+- Confirmed that the `skip_wait=True` parameter in `run_scraper` function fully bypasses the problematic wait
+- Reduced Lambda function timeout from 600 to 30 seconds to enforce stricter execution time limits
+- Verified timeout fixes with successful smoke tests on a single-day scrape operation
+- Enhanced documentation to explain why S3 file verification is redundant and unnecessary
+
 ## [2.14.5] - 2025-03-26
 ### Improved
 - Optimized Lambda execution time by reducing max_runtime from 240 to 25 seconds
