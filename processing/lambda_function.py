@@ -797,6 +797,9 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
         # Store detailed results in S3 to avoid Step Functions payload size limitation
         s3_client = boto3.client('s3')
         timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d-%H-%M-%S')
+        
+        # Ensure clean path construction without double slashes
+        dst_prefix = dst_prefix.rstrip('/')
         result_key = f"{dst_prefix}/processing_results/{timestamp}_processing_results.json"
         
         # Create detailed results with full file list
@@ -818,12 +821,11 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
             ContentType='application/json'
         )
 
-        # Return minimal response with reference to S3
+        # Return minimal response with reference to S3 - keep it as small as possible
         return {
             "status": "SUCCESS",
-            "message": f"Successfully processed all {len(files)} files",
-            "filesProcessed": len(files),
-            "newRowsProcessed": result.get("new_rows_processed", 0),
+            "message": f"Processed {len(files)} files. Details stored at s3://{dst_bucket}/{result_key}",
+            "filesCount": len(files),
             "resultsLocation": f"s3://{dst_bucket}/{result_key}"
         }
 

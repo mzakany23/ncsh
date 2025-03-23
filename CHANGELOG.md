@@ -3,6 +3,8 @@
 - Modified processing Lambda to store detailed results in S3 instead of returning them directly
 - Fixed Step Functions payload size limit error when processing large date ranges
 - Added S3 reference in processing results for accessing detailed information
+- Fixed path construction issue to prevent double slashes in S3 paths
+- Further reduced Lambda response payload size by removing unnecessary data
 
 ## [3.0.6] - 2025-03-23
 ### Fixed
