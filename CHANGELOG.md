@@ -1,3 +1,10 @@
+## [3.0.6] - 2025-03-23
+### Fixed
+- Made architecture version handling more robust to prevent errors with different version formats
+- Added V1 to DataArchitectureVersion enum for backward compatibility
+- Enhanced path handling in config.py and runner.py to work with both string and enum architecture versions
+- Improved error handling for architecture version parsing
+
 ## [3.0.5] - 2025-03-23
 ### Fixed
 - Fixed critical issue where v2 architecture in Lambda was incorrectly saving data to /tmp/v2 instead of S3

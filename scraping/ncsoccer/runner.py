@@ -154,7 +154,10 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
                 bucket_name = os.environ.get('DATA_BUCKET', 'ncsh-app-data')
 
             # Handle path adjustments based on architecture version
-            if architecture_version == 'v1':
+            # Make this more robust to handle different architecture version formats
+            arch_version_str = architecture_version.lower() if isinstance(architecture_version, str) else getattr(architecture_version, 'value', 'v2').lower()
+            
+            if arch_version_str == 'v1':
                 # For v1 architecture, ensure directories start with /tmp in Lambda to avoid read-only filesystem errors
                 if not html_prefix.startswith('/tmp/') and not html_prefix.startswith('s3://'):
                     html_prefix = f'/tmp/{html_prefix}'
@@ -167,7 +170,7 @@ def run_scraper(year=None, month=None, day=None, storage_type='s3', bucket_name=
                 if not lookup_file.startswith('/tmp/') and not lookup_file.startswith('s3://'):
                     lookup_file = f'/tmp/{lookup_file}'
                     logger.info(f"Adjusted lookup_file for Lambda (v1): {lookup_file}")
-            elif architecture_version == 'v2':
+            elif arch_version_str == 'v2':
                 # For v2 architecture, ensure we're NOT using /tmp paths
                 if html_prefix and html_prefix.startswith('/tmp/'):
                     html_prefix = html_prefix.replace('/tmp/', '')
