@@ -443,3 +443,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced spider `DOWNLOAD_DELAY` from 2 seconds to 1 second to speed up the scraping process
 - Reduced `RETRY_TIMES` from 5 to 2 to prevent overly long-running crawls when failures occur
 - These changes improve Lambda performance while maintaining reliability
+
+## v2.2.0 (2025-03-23)
+
+### Added
+- Fixed Lambda function to handle alternative JSON format in the `games.jsonl` file
+- Support for parsing score strings (e.g., "7 - 2") into separate home and away scores
+- Added migration script to facilitate transition from v1 to v2 architecture if necessary
+
+### Changed
+- Made v2 architecture the default and only supported architecture
+- Updated Lambda processing function to use v2 paths by default
+- Updated trigger scripts to default to v2 architecture
+- Deprecated v1 architecture paths, but maintained backward compatibility

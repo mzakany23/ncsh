@@ -822,24 +822,23 @@ def lambda_handler(event, context):
         if version:
             logger.info(f"Using provided version identifier: {version}")
 
-        # Get architecture version
-        architecture_version = event.get('architecture_version', 'v1')
+        # Get architecture version - default to v2 now
+        architecture_version = event.get('architecture_version', 'v2')
         logger.info(f"Using architecture version: {architecture_version}")
 
         # Get environment variables with defaults
         src_bucket = event.get('src_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
         dst_bucket = event.get('dst_bucket', os.environ.get("DATA_BUCKET", "ncsh-app-data"))
 
-        # Adjust paths based on architecture version
-        if architecture_version == 'v2':
-            # Use v2 directory structure
-            src_prefix = event.get('src_prefix', 'v2/processed/json/')
-            dst_prefix = event.get('dst_prefix', 'v2/processed/parquet/')
-            logger.info(f"Using v2 directory structure: src={src_prefix}, dst={dst_prefix}")
-        else:
-            # Use v1 directory structure (original defaults)
-            src_prefix = event.get('src_prefix', os.environ.get("JSON_PREFIX", "data/json/"))
-            dst_prefix = event.get('dst_prefix', os.environ.get("PARQUET_PREFIX", "data/parquet/"))
+        # Set paths for v2 directory structure
+        src_prefix = event.get('src_prefix', 'v2/processed/json/')
+        dst_prefix = event.get('dst_prefix', 'v2/processed/parquet/')
+        logger.info(f"Using directory structure: src={src_prefix}, dst={dst_prefix}")
+
+        # For backward compatibility
+        if architecture_version == 'v1':
+            logger.warning("v1 architecture is deprecated, please update to use v2")
+            # Still use v2 paths but log a warning
 
         if operation == "list_files":
             # List JSON files, optionally filtering for only recent ones

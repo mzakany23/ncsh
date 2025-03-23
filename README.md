@@ -24,6 +24,47 @@ A data pipeline for collecting and processing soccer game data.
 └── Makefile         # Build and deployment tasks
 ```
 
+## Data Architecture
+
+As of version 2.2.0, this project uses the v2 data architecture by default. The v2 architecture provides:
+
+- Improved directory structure for better organization of data
+- Enhanced performance in data processing
+- Better separation of JSON and Parquet data
+- Standardized file naming conventions
+
+### Directory Structure
+
+The v2 architecture uses the following S3 directory structure:
+
+```
+ncsh-app-data/
+└── v2/
+    └── processed/
+        ├── json/
+        │   └── year=YYYY/
+        │       └── month=MM/
+        │           └── day=DD/
+        │               ├── YYYY-MM-DD_games.jsonl  # Game data in JSONL format
+        │               └── YYYY-MM-DD_meta.json    # Metadata for the day
+        └── parquet/
+            ├── YYYY-MM-DD-HH-MM-SS/               # Timestamped snapshots
+            │   └── data.parquet
+            ├── data.parquet                        # Latest complete dataset
+            └── last_processed.json                 # Processing status info
+```
+
+### Migration from v1
+
+If you're upgrading from v1 architecture, a migration script is provided to help transfer your data:
+
+```bash
+cd scripts/
+python migrate_v1_to_v2.py --help
+```
+
+See the [scripts README](scripts/README.md) for detailed migration instructions.
+
 ## Setup
 
 1. Install dependencies:
