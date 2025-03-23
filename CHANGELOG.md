@@ -1,3 +1,16 @@
+## [2.16.1] - 2025-04-06
+### Fixed
+- Enhanced validate_and_transform_data function to handle alternative data formats in games.jsonl
+- Added support for parsing score strings ("7 - 2") into separate home and away scores
+- Improved field mapping between different source data formats and the Game schema
+- Fixed issue where valid game data was not being properly processed due to format mismatch
+
+## [2.16.0] - 2025-04-05
+### Added
+- Enhanced validate_and_transform_data function to handle alternative JSON format found in games.jsonl
+- Added support for parsing combined score strings (e.g., "7 - 2") into separate home and away scores
+- Improved field mapping between different data formats and the internal data model
+
 ## [2.15.9] - 2025-04-05
 ### Fixed
 - Enhanced JSON file filtering in processing Lambda to exclude meta.json files
