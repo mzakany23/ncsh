@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.2] - 2025-03-30
+### Fixed
+- Fixed Lambda function dependency issue with BeautifulSoup4 by explicitly installing the package
+- Ensured bs4 module is properly available in the Lambda environment
+- Updated Docker build process to explicitly install BeautifulSoup4
+
 ## [2.15.1] - 2025-03-30
 ### Added
 - Added new logging improvements for better troubleshooting
