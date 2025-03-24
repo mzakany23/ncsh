@@ -1,3 +1,9 @@
+## [3.0.20] - 2025-03-24
+### Fixed
+- Fixed datetime import issue in the scraper Lambda function
+- Resolved UnboundLocalError with datetime module in handle_unified_format function
+- Improved error handling in Lambda function
+
 ## [3.0.19] - 2025-03-24
 ### Added
 - Successfully applied Terraform changes to create Lambda functions and state machine
