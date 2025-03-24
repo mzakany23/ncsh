@@ -111,8 +111,10 @@ def handle_unified_format(event, context):
 
         # Parse dates
         try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            # Use the imported datetime module explicitly to avoid local variable shadowing
+            from datetime import datetime as dt
+            start_date = dt.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = dt.strptime(end_date_str, '%Y-%m-%d').date()
         except ValueError as e:
             error_msg = f"Invalid date format: {str(e)}. Use YYYY-MM-DD format."
             logger.error(error_msg)
