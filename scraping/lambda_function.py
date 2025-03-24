@@ -194,7 +194,8 @@ def handle_unified_format(event, context):
         failed_dates = [date for date, success in results.items() if not success]
         all_succeeded = success_count == total_dates
 
-        result = {
+        # Create detailed results object
+        detailed_results = {
             'success': all_succeeded,
             'all_processed': len(results) == total_dates,
             'total_dates': total_dates,
@@ -207,8 +208,50 @@ def handle_unified_format(event, context):
             'bucket_name': bucket_name,
             'architecture_version': architecture_version,
             'execution_time_seconds': time.time() - start_time,
-            'games_scraped': scraper.games_scraped
+            'games_scraped': scraper.games_scraped,
+            'detailed_results': results
         }
+        
+        # Store detailed results in S3
+        import boto3
+        import uuid
+        from datetime import datetime
+        
+        s3 = boto3.client('s3')
+        timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+        batch_id = str(uuid.uuid4())[:8]  # Use a short UUID for the batch ID
+        results_key = f"{architecture_version}/metadata/batch_results/{start_date_str}_to_{end_date_str}_{timestamp}_{batch_id}.json"
+        
+        try:
+            s3.put_object(
+                Bucket=bucket_name,
+                Key=results_key,
+                Body=json.dumps(detailed_results),
+                ContentType='application/json'
+            )
+            logger.info(f"Stored detailed batch results in S3: s3://{bucket_name}/{results_key}")
+            
+            # Return minimal result with reference to S3
+            result = {
+                'success': all_succeeded,
+                'total_dates': total_dates,
+                'success_count': success_count,
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'results_s3_bucket': bucket_name,
+                'results_s3_key': results_key
+            }
+        except Exception as e:
+            logger.error(f"Failed to store detailed results in S3: {str(e)}")
+            # Fall back to returning minimal results without S3 reference
+            result = {
+                'success': all_succeeded,
+                'total_dates': total_dates,
+                'success_count': success_count,
+                'start_date': start_date_str,
+                'end_date': end_date_str,
+                'error_storing_results': str(e)
+            }
 
         logger.info(f"Scraping complete: {success_count}/{total_dates} dates succeeded in {time.time() - start_time:.2f} seconds")
 
