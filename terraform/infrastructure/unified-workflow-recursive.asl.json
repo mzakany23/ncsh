@@ -1,5 +1,5 @@
 {
-  "Comment": "NC Soccer Unified Workflow - Recursive Pattern for Large Date Ranges",
+  "Comment": "NC Soccer Unified Workflow - Recursive Pattern for Large Date Ranges (Two-Phase)",
   "StartAt": "ValidateInput",
   "States": {
     "ValidateInput": {
@@ -107,7 +107,7 @@
         {
           "Variable": "$.execution_status.Payload.success",
           "BooleanEquals": true,
-          "Next": "WorkflowSuccess"
+          "Next": "CollectScrapingResults"
         }
       ],
       "Default": "CheckIfAnyExecutionsFailed"
@@ -131,6 +131,53 @@
       "Cause": "One or more sub-executions failed. Check CloudWatch logs for details."
     },
 
+    "CollectScrapingResults": {
+      "Type": "Pass",
+      "Comment": "Collect results from all sub-executions for final processing",
+      "Parameters": {
+        "original_start_date.$": "$.validated_input.Payload.start_date",
+        "original_end_date.$": "$.validated_input.Payload.end_date",
+        "bucket_name.$": "$.validated_input.Payload.bucket_name",
+        "architecture_version.$": "$.validated_input.Payload.architecture_version",
+        "force_scrape.$": "$.validated_input.Payload.force_scrape",
+        "sub_executions.$": "$.execution_status.Payload.executions"
+      },
+      "ResultPath": "$.scraping_results",
+      "Next": "FinalProcessing"
+    },
+
+    "FinalProcessing": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
+        "Payload": {
+          "operation": "process_all",
+          "src_bucket.$": "$.scraping_results.bucket_name",
+          "dst_bucket.$": "$.scraping_results.bucket_name",
+          "start_date.$": "$.scraping_results.original_start_date",
+          "end_date.$": "$.scraping_results.original_end_date",
+          "architecture_version.$": "$.scraping_results.architecture_version"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleProcessingFailure"
+        }
+      ],
+      "ResultPath": "$.processing_result",
+      "Next": "WorkflowSuccess"
+    },
+
     "PlanBatches": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
@@ -150,13 +197,14 @@
       "Type": "Map",
       "ItemsPath": "$.batches.Payload.batches",
       "MaxConcurrency": 5,
-      "ResultPath": null,
+      "ResultPath": "$.batch_results",
       "Parameters": {
         "start_date.$": "$$.Map.Item.Value.start_date",
         "end_date.$": "$$.Map.Item.Value.end_date",
         "force_scrape.$": "$.validated_input.Payload.force_scrape",
         "architecture_version.$": "$.validated_input.Payload.architecture_version",
-        "bucket_name.$": "$.validated_input.Payload.bucket_name"
+        "bucket_name.$": "$.validated_input.Payload.bucket_name",
+        "scrape_only": true
       },
       "Iterator": {
         "StartAt": "ProcessBatch",
@@ -171,7 +219,8 @@
                 "end_date.$": "$.end_date",
                 "force_scrape.$": "$.force_scrape",
                 "architecture_version.$": "$.architecture_version",
-                "bucket_name.$": "$.bucket_name"
+                "bucket_name.$": "$.bucket_name",
+                "scrape_only.$": "$.scrape_only"
               }
             },
             "Retry": [
@@ -211,7 +260,7 @@
         {
           "Variable": "$.verification.Payload.success",
           "BooleanEquals": true,
-          "Next": "ProcessFiles"
+          "Next": "CheckIfSubExecutionForProcessing"
         }
       ],
       "Default": "HandleBatchFailure"
@@ -223,38 +272,25 @@
       "Cause": "Failed to process some batches. Check CloudWatch logs for details."
     },
 
-    "ProcessFiles": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
-        "Payload": {
-          "operation": "process_all",
-          "src_bucket.$": "$.validated_input.Payload.bucket_name",
-          "dst_bucket.$": "$.validated_input.Payload.bucket_name",
-          "date_range": {
-            "start_date.$": "$.validated_input.Payload.start_date",
-            "end_date.$": "$.validated_input.Payload.end_date"
-          },
-          "architecture_version.$": "$.validated_input.Payload.architecture_version"
+    "CheckIfSubExecutionForProcessing": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.is_sub_execution",
+          "BooleanEquals": true,
+          "Next": "SubExecutionSuccess"
         }
+      ],
+      "Default": "FinalProcessing"
+    },
+
+    "SubExecutionSuccess": {
+      "Type": "Pass",
+      "Result": {
+        "status": "SUCCESS",
+        "message": "Sub-execution scraping completed successfully"
       },
-      "Retry": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "IntervalSeconds": 60,
-          "MaxAttempts": 3,
-          "BackoffRate": 2.0
-        }
-      ],
-      "Catch": [
-        {
-          "ErrorEquals": ["States.ALL"],
-          "Next": "HandleProcessingFailure"
-        }
-      ],
-      "ResultPath": null,
-      "Next": "WorkflowSuccess"
+      "End": true
     },
 
     "HandleProcessingFailure": {

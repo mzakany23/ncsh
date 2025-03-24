@@ -88,6 +88,7 @@ def handle_unified_format(event, context):
 
     Args:
         event (dict): Lambda event in unified format
+            scrape_only (bool): If True, only perform scraping without processing
         context (LambdaContext): Lambda context
 
     Returns:
@@ -130,6 +131,7 @@ def handle_unified_format(event, context):
         force_scrape = event.get('force_scrape', False)
         architecture_version = "v2"  # Only support v2 architecture now
         bucket_name = event.get('bucket_name', 'ncsh-app-data')
+        scrape_only = event.get('scrape_only', False)  # New parameter for two-phase approach
         
         # CRITICAL: Ensure we're using clean paths without /tmp for v2 architecture
         # Remove any /tmp prefix if it exists in the provided paths
@@ -211,6 +213,7 @@ def handle_unified_format(event, context):
             'architecture_version': architecture_version,
             'execution_time_seconds': time.time() - start_time,
             'games_scraped': scraper.games_scraped,
+            'scrape_only': scrape_only,
             'detailed_results': results
         }
         
@@ -240,6 +243,7 @@ def handle_unified_format(event, context):
                 'success_count': success_count,
                 'start_date': start_date_str,
                 'end_date': end_date_str,
+                'scrape_only': scrape_only,
                 'results_s3_bucket': bucket_name,
                 'results_s3_key': results_key
             }
