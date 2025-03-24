@@ -269,23 +269,3 @@ resource "aws_cloudwatch_log_group" "ncsoccer_execution_checker_logs" {
     Project     = "ncsoccer"
   }
 }
-
-resource "aws_cloudwatch_log_group" "ncsoccer_date_range_splitter_logs" {
-  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_date_range_splitter.function_name}"
-  retention_in_days = 30
-
-  tags = {
-    Environment = var.environment
-    Project     = "ncsoccer"
-  }
-}
-
-resource "aws_cloudwatch_log_group" "ncsoccer_execution_checker_logs" {
-  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_execution_checker.function_name}"
-  retention_in_days = 30
-
-  tags = {
-    Environment = var.environment
-    Project     = "ncsoccer"
-  }
-}

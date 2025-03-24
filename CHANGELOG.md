@@ -1,3 +1,9 @@
+## [3.0.17] - 2025-03-24
+### Fixed
+- Fixed duplicate CloudWatch log group resources in Terraform configuration
+- Removed duplicate ncsoccer_date_range_splitter_logs and ncsoccer_execution_checker_logs resources
+- Ensured Terraform can be applied without errors
+
 ## [3.0.16] - 2025-03-24
 ### Fixed
 - Fixed duplicate resource in Terraform configuration
