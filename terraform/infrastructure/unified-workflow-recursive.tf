@@ -73,12 +73,12 @@ resource "aws_iam_policy" "unified_workflow_recursive_step_function_policy" {
           "lambda:InvokeFunction"
         ]
         Resource = [
-          aws_lambda_function.ncsoccer_input_validator.arn,
-          aws_lambda_function.ncsoccer_batch_planner.arn,
-          aws_lambda_function.ncsoccer_scraper.arn,
-          aws_lambda_function.ncsoccer_batch_verifier.arn,
-          aws_lambda_function.ncsoccer_date_range_splitter.arn,
-          aws_lambda_function.ncsoccer_execution_checker.arn,
+          "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_input_validator",
+          "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_batch_planner",
+          "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_scraper",
+          "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_batch_verifier",
+          "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_date_range_splitter",
+          "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_execution_checker",
           "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing"
         ]
       },

@@ -196,7 +196,7 @@ resource "aws_lambda_function" "ncsoccer_date_range_splitter" {
   environment {
     variables = {
       DATA_BUCKET = "ncsh-app-data"
-      STATE_MACHINE_ARN = aws_sfn_state_machine.ncsoccer_unified_workflow_recursive.arn
+      STATE_MACHINE_ARN = "arn:aws:states:us-east-2:552336166511:stateMachine:ncsoccer-unified-workflow-recursive"
     }
   }
 }

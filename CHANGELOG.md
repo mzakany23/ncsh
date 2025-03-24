@@ -1,3 +1,10 @@
+## [3.0.18] - 2025-03-24
+### Fixed
+- Fixed circular dependency in Terraform configuration
+- Updated IAM policy to use hardcoded ARNs for Lambda functions
+- Updated Lambda function to use hardcoded ARN for state machine
+- Ensured Terraform can be applied without errors
+
 ## [3.0.17] - 2025-03-24
 ### Fixed
 - Fixed duplicate CloudWatch log group resources in Terraform configuration
