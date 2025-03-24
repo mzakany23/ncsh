@@ -115,7 +115,9 @@ resource "aws_iam_role_policy" "lambda_utils_policy" {
         ],
         Resource = [
           "arn:aws:states:us-east-2:*:stateMachine:ncsoccer-unified-workflow-batched",
-          "arn:aws:states:us-east-2:*:execution:ncsoccer-unified-workflow-batched:*"
+          "arn:aws:states:us-east-2:*:execution:ncsoccer-unified-workflow-batched:*",
+          "arn:aws:states:us-east-2:*:stateMachine:ncsoccer-unified-workflow-recursive",
+          "arn:aws:states:us-east-2:*:execution:ncsoccer-unified-workflow-recursive:*"
         ]
       }
     ]
@@ -194,7 +196,25 @@ resource "aws_lambda_function" "ncsoccer_date_range_splitter" {
   environment {
     variables = {
       DATA_BUCKET = "ncsh-app-data"
-      STATE_MACHINE_ARN = aws_sfn_state_machine.ncsoccer_unified_workflow_batched.arn
+      STATE_MACHINE_ARN = aws_sfn_state_machine.ncsoccer_unified_workflow_recursive.arn
+    }
+  }
+}
+
+# Execution Checker Lambda
+resource "aws_lambda_function" "ncsoccer_execution_checker" {
+  function_name = "ncsoccer_execution_checker"
+  role          = aws_iam_role.lambda_utils_role.arn
+  package_type  = "Image"
+  timeout       = 60
+  memory_size   = 256
+
+  # This will be updated by the CI/CD pipeline
+  image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
+
+  environment {
+    variables = {
+      DATA_BUCKET = "ncsh-app-data"
     }
   }
 }

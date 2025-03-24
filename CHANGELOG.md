@@ -1,3 +1,10 @@
+## [3.0.15] - 2025-03-24
+### Fixed
+- Fixed Terraform configuration for recursive workflow Lambda functions
+- Added missing ncsoccer_execution_checker Lambda function definition
+- Updated ncsoccer_date_range_splitter to use the correct state machine ARN
+- Updated IAM permissions to allow Lambda functions to interact with the recursive state machine
+
 ## [3.0.14] - 2025-03-24
 ### Fixed
 - Updated GitHub workflow to deploy new recursive workflow Lambda functions
