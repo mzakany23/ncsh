@@ -155,8 +155,8 @@ resource "aws_lambda_function" "ncsoccer_batch_verifier" {
   function_name = "ncsoccer_batch_verifier"
   role          = aws_iam_role.lambda_utils_role.arn
   package_type  = "Image"
-  timeout       = 10
-  memory_size   = 128
+  timeout       = 60
+  memory_size   = 256
 
   # This will be updated by the CI/CD pipeline
   image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"

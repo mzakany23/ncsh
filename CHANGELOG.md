@@ -1,3 +1,10 @@
+## [3.0.11] - 2025-03-24
+### Fixed
+- Modified scraper Lambda to store detailed batch results in S3 instead of returning them directly
+- Increased batch verifier Lambda timeout to 60 seconds and memory to 256MB
+- Updated batch verifier to handle both S3 references and direct S3 checks
+- Improved reliability for processing very large date ranges (multi-year)
+
 ## [3.0.10] - 2025-03-24
 ### Fixed
 - Fixed ProcessBatchesInParallel payload size limit error when processing large date ranges
