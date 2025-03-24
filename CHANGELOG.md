@@ -1,3 +1,10 @@
+## [3.0.14] - 2025-03-24
+### Fixed
+- Updated GitHub workflow to deploy new recursive workflow Lambda functions
+- Added deployment steps for ncsoccer_date_range_splitter Lambda function
+- Added deployment steps for ncsoccer_execution_checker Lambda function
+- Ensured CI/CD pipeline correctly updates all Lambda functions
+
 ## [3.0.13] - 2025-03-24
 ### Added
 - Implemented recursive workflow pattern for handling large date ranges

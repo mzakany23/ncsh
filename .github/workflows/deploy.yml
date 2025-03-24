@@ -141,6 +141,15 @@ jobs:
           --function-name ncsoccer_batch_verifier \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
 
+        # Update new recursive workflow Lambda functions
+        aws lambda update-function-code \
+          --function-name ncsoccer_date_range_splitter \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
+
+        aws lambda update-function-code \
+          --function-name ncsoccer_execution_checker \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
+
   build-processing:
     needs: [validate-changes]
     if: (needs.validate-changes.outputs.should_run == 'true' && (github.event_name == 'push' || github.event_name == 'pull_request')) || github.event_name == 'workflow_dispatch'
