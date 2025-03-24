@@ -101,7 +101,8 @@ def main():
         "force_scrape": args.force_scrape,
         "batch_size": args.batch_size,
         "bucket_name": args.bucket,
-        "architecture_version": args.architecture_version
+        "architecture_version": args.architecture_version,
+        "is_sub_execution": False
     }
 
     logger.info(f"Input data: {json.dumps(input_data, indent=2)}")
