@@ -1,3 +1,10 @@
+## [3.0.16] - 2025-03-24
+### Fixed
+- Fixed duplicate resource in Terraform configuration
+- Removed duplicate ncsoccer_execution_checker Lambda function definition
+- Added CloudWatch log groups for new Lambda functions
+- Ensured Terraform can be applied without errors
+
 ## [3.0.15] - 2025-03-24
 ### Fixed
 - Fixed Terraform configuration for recursive workflow Lambda functions
