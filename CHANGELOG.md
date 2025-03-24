@@ -1,3 +1,9 @@
+## [3.0.9] - 2025-03-24
+### Fixed
+- Further reduced Lambda response payload to absolute minimum
+- Removed all non-essential data from processing Lambda response
+- Fixed persistent payload size limit errors in Step Functions
+
 ## [3.0.8] - 2025-03-23
 ### Fixed
 - Modified Step Functions state machine to discard processing results completely

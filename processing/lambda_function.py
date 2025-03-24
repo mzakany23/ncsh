@@ -821,12 +821,10 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
             ContentType='application/json'
         )
 
-        # Return minimal response with reference to S3 - keep it as small as possible
+        # Return extremely minimal response - absolute minimum to avoid payload size issues
         return {
             "status": "SUCCESS",
-            "message": f"Processed {len(files)} files. Details stored at s3://{dst_bucket}/{result_key}",
-            "filesCount": len(files),
-            "resultsLocation": f"s3://{dst_bucket}/{result_key}"
+            "message": "Processing complete. See CloudWatch logs for details."
         }
 
     except Exception as e:
