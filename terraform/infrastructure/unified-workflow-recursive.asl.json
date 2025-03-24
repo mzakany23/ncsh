@@ -1,5 +1,5 @@
 {
-  "Comment": "NC Soccer Unified Workflow - Single Mode with Batching",
+  "Comment": "NC Soccer Unified Workflow - Recursive Pattern for Large Date Ranges",
   "StartAt": "ValidateInput",
   "States": {
     "ValidateInput": {
@@ -13,7 +13,8 @@
           "force_scrape.$": "$.force_scrape",
           "architecture_version.$": "$.architecture_version",
           "batch_size.$": "$.batch_size",
-          "bucket_name.$": "$.bucket_name"
+          "bucket_name.$": "$.bucket_name",
+          "is_sub_execution.$": "$.is_sub_execution"
         }
       },
       "ResultPath": "$.validated_input",
@@ -29,13 +30,105 @@
           "Next": "HandleInputError"
         }
       ],
-      "Default": "PlanBatches"
+      "Default": "CheckIfSubExecution"
     },
 
     "HandleInputError": {
       "Type": "Fail",
       "Error": "InputValidationError",
       "Cause": "Input validation failed. Check the error details in CloudWatch logs."
+    },
+
+    "CheckIfSubExecution": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.is_sub_execution",
+          "BooleanEquals": true,
+          "Next": "PlanBatches"
+        }
+      ],
+      "Default": "CheckDateRangeSize"
+    },
+
+    "CheckDateRangeSize": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_date_range_splitter",
+        "Payload": {
+          "start_date.$": "$.validated_input.Payload.start_date",
+          "end_date.$": "$.validated_input.Payload.end_date",
+          "max_chunk_size_days": 90,
+          "force_scrape.$": "$.validated_input.Payload.force_scrape",
+          "architecture_version.$": "$.validated_input.Payload.architecture_version",
+          "batch_size.$": "$.validated_input.Payload.batch_size",
+          "bucket_name.$": "$.validated_input.Payload.bucket_name"
+        }
+      },
+      "ResultPath": "$.date_range_check",
+      "Next": "CheckIfSplitRequired"
+    },
+
+    "CheckIfSplitRequired": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.date_range_check.Payload.split_required",
+          "BooleanEquals": true,
+          "Next": "WaitForSubExecutions"
+        }
+      ],
+      "Default": "PlanBatches"
+    },
+
+    "WaitForSubExecutions": {
+      "Type": "Wait",
+      "Seconds": 30,
+      "Next": "CheckSubExecutionsStatus"
+    },
+
+    "CheckSubExecutionsStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer_execution_checker",
+        "Payload": {
+          "executions.$": "$.date_range_check.Payload.executions"
+        }
+      },
+      "ResultPath": "$.execution_status",
+      "Next": "CheckAllExecutionsComplete"
+    },
+
+    "CheckAllExecutionsComplete": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.execution_status.Payload.success",
+          "BooleanEquals": true,
+          "Next": "WorkflowSuccess"
+        }
+      ],
+      "Default": "CheckIfAnyExecutionsFailed"
+    },
+
+    "CheckIfAnyExecutionsFailed": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.execution_status.Payload.status_counts.FAILED",
+          "IsPresent": true,
+          "Next": "HandleSubExecutionFailure"
+        }
+      ],
+      "Default": "WaitForSubExecutions"
+    },
+
+    "HandleSubExecutionFailure": {
+      "Type": "Fail",
+      "Error": "SubExecutionFailed",
+      "Cause": "One or more sub-executions failed. Check CloudWatch logs for details."
     },
 
     "PlanBatches": {

@@ -105,6 +105,18 @@ resource "aws_iam_role_policy" "lambda_utils_policy" {
           "arn:aws:s3:::ncsh-app-data",
           "arn:aws:s3:::ncsh-app-data/*"
         ]
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "states:StartExecution",
+          "states:DescribeExecution",
+          "states:GetExecutionHistory"
+        ],
+        Resource = [
+          "arn:aws:states:us-east-2:*:stateMachine:ncsoccer-unified-workflow-batched",
+          "arn:aws:states:us-east-2:*:execution:ncsoccer-unified-workflow-batched:*"
+        ]
       }
     ]
   })
@@ -168,6 +180,43 @@ resource "aws_lambda_function" "ncsoccer_batch_verifier" {
   }
 }
 
+# Date Range Splitter Lambda
+resource "aws_lambda_function" "ncsoccer_date_range_splitter" {
+  function_name = "ncsoccer_date_range_splitter"
+  role          = aws_iam_role.lambda_utils_role.arn
+  package_type  = "Image"
+  timeout       = 60
+  memory_size   = 256
+
+  # This will be updated by the CI/CD pipeline
+  image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
+
+  environment {
+    variables = {
+      DATA_BUCKET = "ncsh-app-data"
+      STATE_MACHINE_ARN = aws_sfn_state_machine.ncsoccer_unified_workflow_batched.arn
+    }
+  }
+}
+
+# Execution Checker Lambda
+resource "aws_lambda_function" "ncsoccer_execution_checker" {
+  function_name = "ncsoccer_execution_checker"
+  role          = aws_iam_role.lambda_utils_role.arn
+  package_type  = "Image"
+  timeout       = 60
+  memory_size   = 256
+
+  # This will be updated by the CI/CD pipeline
+  image_uri = "${data.aws_ecr_repository.ncsoccer_utils.repository_url}:latest"
+
+  environment {
+    variables = {
+      DATA_BUCKET = "ncsh-app-data"
+    }
+  }
+}
+
 # CloudWatch Log Groups
 resource "aws_cloudwatch_log_group" "ncsoccer_input_validator_logs" {
   name              = "/aws/lambda/${aws_lambda_function.ncsoccer_input_validator.function_name}"
@@ -191,6 +240,26 @@ resource "aws_cloudwatch_log_group" "ncsoccer_batch_planner_logs" {
 
 resource "aws_cloudwatch_log_group" "ncsoccer_batch_verifier_logs" {
   name              = "/aws/lambda/${aws_lambda_function.ncsoccer_batch_verifier.function_name}"
+  retention_in_days = 30
+
+  tags = {
+    Environment = var.environment
+    Project     = "ncsoccer"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "ncsoccer_date_range_splitter_logs" {
+  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_date_range_splitter.function_name}"
+  retention_in_days = 30
+
+  tags = {
+    Environment = var.environment
+    Project     = "ncsoccer"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "ncsoccer_execution_checker_logs" {
+  name              = "/aws/lambda/${aws_lambda_function.ncsoccer_execution_checker.function_name}"
   retention_in_days = 30
 
   tags = {
