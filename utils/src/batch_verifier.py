@@ -1,101 +1,95 @@
 import json
 import logging
+import boto3
+import os
+from datetime import datetime, timedelta
+from dateutil import parser
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 def handler(event, context):
     """
-    Verifies all batches completed successfully
+    Verifies all batches completed successfully by checking S3 for processed files
+    instead of relying on batch_results from the state machine
 
     Args:
-        event (dict): Contains results from all batch executions
+        event (dict): Contains start_date, end_date, bucket_name, and architecture_version
 
     Returns:
         dict: Verification result
     """
     try:
-        batch_results = event.get('batch_results', [])
-
-        logger.info(f"Verifying {len(batch_results)} batch results")
-
-        failed_batches = []
-        success_count = 0
-        total_processed = 0
-
-        # Check each batch result
-        for i, result in enumerate(batch_results):
+        # Extract parameters from the event
+        start_date = event.get('start_date')
+        end_date = event.get('end_date')
+        bucket_name = event.get('bucket_name', 'ncsh-app-data')
+        architecture_version = event.get('architecture_version', 'v2')
+        
+        logger.info(f"Verifying batches for date range: {start_date} to {end_date}")
+        
+        # Convert date strings to datetime objects
+        start_dt = parser.parse(start_date).date()
+        end_dt = parser.parse(end_date).date()
+        
+        # Calculate the number of days in the date range
+        date_range_days = (end_dt - start_dt).days + 1
+        logger.info(f"Date range contains {date_range_days} days")
+        
+        # Initialize S3 client
+        s3 = boto3.client('s3')
+        
+        # Check for processed files in S3
+        processed_dates = []
+        missing_dates = []
+        
+        current_dt = start_dt
+        while current_dt <= end_dt:
+            year = current_dt.year
+            month = current_dt.month
+            day = current_dt.day
+            
+            # Construct the S3 prefix for this date
+            prefix = f"{architecture_version}/processed/json/year={year}/month={month:02d}/day={day:02d}/"
+            
             try:
-                if 'Payload' not in result:
-                    logger.error(f"Batch {i+1}: Missing Payload in result")
-                    failed_batches.append({
-                        'batch_index': i,
-                        'error': 'Missing Payload in result'
-                    })
-                    continue
-
-                payload = result.get('Payload', {})
-
-                # Handle both types of response formats
-                if 'body' in payload:
-                    # Standard Lambda proxy response
-                    body = json.loads(payload.get('body', '{}'))
-                    success = body.get('success', False)
-
-                    if success:
-                        success_count += 1
-                        batch_processed = body.get('dates_processed', 0)
-                        total_processed += batch_processed
-                        logger.info(f"Batch {i+1}: Success - Processed {batch_processed} dates")
-                    else:
-                        failed_batches.append({
-                            'batch_index': i,
-                            'start_date': body.get('start_date'),
-                            'end_date': body.get('end_date'),
-                            'error': body.get('error', 'Unknown error')
-                        })
-                        logger.warning(f"Batch {i+1}: Failed - {body.get('error', 'Unknown error')}")
+                # Check if files exist for this date
+                response = s3.list_objects_v2(
+                    Bucket=bucket_name,
+                    Prefix=prefix,
+                    MaxKeys=1
+                )
+                
+                if 'Contents' in response and len(response['Contents']) > 0:
+                    processed_dates.append(current_dt.strftime('%Y-%m-%d'))
+                    logger.info(f"Found processed files for {current_dt.strftime('%Y-%m-%d')}")
                 else:
-                    # Direct response
-                    success = payload.get('success', False)
-
-                    if success:
-                        success_count += 1
-                        batch_processed = payload.get('dates_processed', 0)
-                        total_processed += batch_processed
-                        logger.info(f"Batch {i+1}: Success - Processed {batch_processed} dates")
-                    else:
-                        failed_batches.append({
-                            'batch_index': i,
-                            'start_date': payload.get('start_date'),
-                            'end_date': payload.get('end_date'),
-                            'error': payload.get('error', 'Unknown error')
-                        })
-                        logger.warning(f"Batch {i+1}: Failed - {payload.get('error', 'Unknown error')}")
+                    missing_dates.append(current_dt.strftime('%Y-%m-%d'))
+                    logger.warning(f"No processed files found for {current_dt.strftime('%Y-%m-%d')}")
             except Exception as e:
-                failed_batches.append({
-                    'batch_index': i,
-                    'error': f"Failed to parse batch result: {str(e)}"
-                })
-                logger.error(f"Error parsing batch {i+1} result: {str(e)}", exc_info=True)
-
-        success = len(failed_batches) == 0
-
+                logger.error(f"Error checking S3 for {current_dt.strftime('%Y-%m-%d')}: {str(e)}")
+                missing_dates.append(current_dt.strftime('%Y-%m-%d'))
+            
+            # Move to the next day
+            current_dt += timedelta(days=1)
+        
+        # Determine success based on whether all dates were processed
+        success = len(missing_dates) == 0
+        
         result = {
             'success': success,
-            'total_batches': len(batch_results),
-            'successful_batches': success_count,
-            'total_dates_processed': total_processed,
-            'failed_batches': failed_batches
+            'total_days': date_range_days,
+            'processed_days': len(processed_dates),
+            'missing_days': missing_dates
         }
 
         logger.info(f"Verification complete: {'Success' if success else 'Failed'}")
-        logger.info(f"Processed {total_processed} dates across {success_count} successful batches")
+        logger.info(f"Processed {len(processed_dates)} days out of {date_range_days} total days")
 
         if not success:
-            logger.warning(f"Failed batches: {len(failed_batches)}")
-            for i, batch in enumerate(failed_batches):
-                logger.warning(f"  Failed batch {i+1}: {batch}")
+            logger.warning(f"Missing dates: {len(missing_dates)}")
+            for date in missing_dates:
+                logger.warning(f"  Missing date: {date}")
 
         return result
 

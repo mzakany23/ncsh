@@ -1,3 +1,10 @@
+## [3.0.10] - 2025-03-24
+### Fixed
+- Fixed ProcessBatchesInParallel payload size limit error when processing large date ranges
+- Updated batch verifier to check S3 for processed files instead of relying on batch results
+- Modified state machine to set ResultPath to null for ProcessBatchesInParallel task
+- Improved reliability for processing very large date ranges (multi-year)
+
 ## [3.0.9] - 2025-03-24
 ### Fixed
 - Further reduced Lambda response payload to absolute minimum
