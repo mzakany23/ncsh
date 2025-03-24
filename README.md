@@ -2,28 +2,6 @@
 
 A data pipeline for collecting and processing soccer game data.
 
-## Project Structure
-
-```
-/
-├── scraping/           # Soccer schedule scraping module
-│   ├── ncsoccer/      # Web scraping logic using requests and BeautifulSoup
-│   ├── tests/         # Tests for scraping module
-│   ├── requirements.txt
-│   └── setup.py
-├── processing/         # Data processing module
-│   ├── lambda_function.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── utils/             # Utility Lambda functions
-│   ├── src/           # Source code for utility functions
-│   └── Dockerfile     # Docker build for utility functions
-├── terraform/         # Infrastructure as code
-│   └── infrastructure/
-├── scripts/          # Utility scripts
-└── Makefile         # Build and deployment tasks
-```
-
 ## Data Architecture
 
 This project uses the v2 data architecture, which provides:
@@ -32,27 +10,6 @@ This project uses the v2 data architecture, which provides:
 - Enhanced performance in data processing
 - Clear separation of JSON and Parquet data
 - Standardized file naming conventions
-
-### Directory Structure
-
-The architecture uses the following S3 directory structure:
-
-```
-ncsh-app-data/
-└── v2/
-    └── processed/
-        ├── json/
-        │   └── year=YYYY/
-        │       └── month=MM/
-        │           └── day=DD/
-        │               ├── YYYY-MM-DD_games.jsonl  # Game data in JSONL format
-        │               └── YYYY-MM-DD_meta.json    # Metadata for the day
-        └── parquet/
-            ├── YYYY-MM-DD-HH-MM-SS/               # Timestamped snapshots
-            │   └── data.parquet
-            ├── data.parquet                        # Latest complete dataset
-            └── last_processed.json                 # Processing status info
-```
 
 ## Setup
 
@@ -66,77 +23,48 @@ make install
 make test
 ```
 
-3. Deploy infrastructure:
-```bash
-cd terraform/infrastructure
-terraform init
-terraform apply
-```
-
 ## Usage
 
-### Scraping Data
+### Running the Unified Workflow
 
-The project uses requests and BeautifulSoup for web scraping. The scraping functionality is implemented in the `SimpleScraper` class that provides a clean interface for collecting soccer game data.
-
-#### Using the Unified Workflow with Batching
-
-The unified workflow allows scraping data for a single day, a date range, or an entire month, with batching for improved reliability:
+The unified workflow processes soccer game data for a specified date range with automatic batching for improved reliability and performance. The workflow handles scraping, validation, and data processing in a single execution.
 
 ```bash
-# Trigger the unified workflow for a single date
-python scripts/trigger_batched_workflow.py --date 2024-03-01
+# Process data for a specific date range
+python scripts/trigger_batched_workflow.py --date-range 2024-01-01 2024-12-31
 
-# Trigger for a date range with custom batch size
-python scripts/trigger_batched_workflow.py --date-range 2024-03-01 2024-03-31 --batch-size 5
+# Optional: Specify batch size (default is 3 days)
+python scripts/trigger_batched_workflow.py --date-range 2024-01-01 2024-12-31 --batch-size 3
 
-# Trigger for an entire month
-python scripts/trigger_batched_workflow.py --month 2024 3
+# Optional: Force re-scrape of existing data
+python scripts/trigger_batched_workflow.py --date-range 2024-01-01 2024-12-31 --force-scrape
 
-# Force re-scraping of data
-python scripts/trigger_batched_workflow.py --date 2024-03-01 --force-scrape
-
-# Use a specific AWS profile
-python scripts/trigger_batched_workflow.py --date 2024-03-01 --profile your-profile-name
+# Optional: Use a specific AWS profile
+python scripts/trigger_batched_workflow.py --date-range 2024-01-01 2024-12-31 --profile your-profile-name
 ```
 
-### Processing Data
+### Parameters Explained
 
-To trigger data processing:
+| Parameter | Description |
+| --------- | ----------- |
+| `--date-range START_DATE END_DATE` | Specifies the start and end dates for data processing in YYYY-MM-DD format. The workflow will process all dates inclusive of both start and end dates. |
+| `--batch-size DAYS` | Number of days to include in each batch. The workflow divides the date range into batches to optimize processing. A smaller batch size (e.g., 3-5 days) can improve reliability for problematic date ranges, while a larger batch size (e.g., 7-14 days) is more efficient for stable date ranges. Default is 3 days. |
+| `--force-scrape` | Forces the workflow to re-scrape and re-process data even if it already exists in the destination. Without this flag, the workflow skips dates that have already been processed. |
+| `--profile PROFILE_NAME` | Specifies the AWS profile to use for authentication. Useful when you have multiple AWS profiles configured. |
+
+### Monitoring Execution
+
+You can monitor the workflow execution in the AWS Step Functions console or using the AWS CLI:
+
 ```bash
-make process-data
+# Check execution status
+aws stepfunctions describe-execution --execution-arn <execution-arn>
 ```
 
-### Backfill Historical Data
+### Accessing Processed Data
 
-The project includes a backfill mechanism to scrape and process historical data efficiently:
+Processed data is available in both JSON and Parquet formats in the S3 bucket:
 
-```bash
-# Run a backfill job via AWS Step Function
-make run-backfill
-
-# Run a backfill job locally with specific date range
-make run-local-backfill start_year=2007 start_month=1 end_year=2023 end_month=12
-```
-
-Monitoring backfill jobs:
-```bash
-# Check backfill status
-make check-backfill
-
-# Monitor backfill execution in real-time
-make monitor-backfill
-```
-
-## Project Notes
-
-### Requirements Management
-
-The project uses a modular approach to managing dependencies:
-
-- **Module-specific requirements**: Each module (`scraping/`, `processing/`) has its own `requirements.in` and/or `requirements.txt` file for module-specific dependencies.
-
-## Development
-
-- Run linting: `make lint`
-- Format code: `make format`
+- JSON files: `s3://ncsh-app-data/v2/processed/json/year=YYYY/month=MM/day=DD/`
+- Parquet dataset: `s3://ncsh-app-data/v2/processed/parquet/data.parquet`
+- Processing results: `s3://ncsh-app-data/v2/processed/parquet/processing_results/`
