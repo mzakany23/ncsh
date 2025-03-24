@@ -775,13 +775,83 @@ def check_backfill_status(src_bucket: str, src_prefix: str) -> Dict[str, Any]:
         logger.error(error_msg)
         raise Exception(error_msg)
 
-def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str) -> Dict[str, Any]:
-    """Process all JSON files regardless of their last modified date"""
+def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    """Process all JSON files regardless of their last modified date
+    
+    Args:
+        src_bucket: Source S3 bucket containing JSON files
+        src_prefix: Prefix for JSON files in the source bucket
+        dst_bucket: Destination S3 bucket for Parquet files
+        dst_prefix: Prefix for Parquet files in the destination bucket
+        start_date: Optional start date in YYYY-MM-DD format to filter files
+        end_date: Optional end date in YYYY-MM-DD format to filter files
+    
+    Returns:
+        Dictionary with operation results
+    """
     logger.info(f'Processing all JSON files from {src_bucket}/{src_prefix} to {dst_bucket}/{dst_prefix}')
 
     try:
         # List all files without time filtering
         files = list_json_files(src_bucket, src_prefix, only_recent=False)
+        
+        # Filter files by date range if specified
+        if start_date or end_date:
+            filtered_files = []
+            logger.info(f"Filtering files by date range: {start_date} to {end_date}")
+            
+            # Parse date strings to datetime objects for comparison
+            start_dt = None
+            end_dt = None
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if end_date:
+                # Set end date to end of day
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+            
+            for file_key in files:
+                # Extract date from file path using regex or string parsing
+                # Assuming file paths contain date in format YYYY-MM-DD
+                try:
+                    # Extract date from file path - adjust this logic based on your actual file naming convention
+                    date_str = None
+                    parts = file_key.split('/')
+                    for part in parts:
+                        # Look for date-like string in path parts
+                        if len(part) >= 10 and '-' in part:
+                            potential_date = part[:10]  # Take first 10 chars (YYYY-MM-DD)
+                            try:
+                                datetime.strptime(potential_date, "%Y-%m-%d")
+                                date_str = potential_date
+                                break
+                            except ValueError:
+                                continue
+                    
+                    # If no date found in path, try to get it from the file content
+                    if not date_str:
+                        # For files that don't have date in path, include them by default
+                        filtered_files.append(file_key)
+                        continue
+                    
+                    file_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    
+                    # Check if file date is within range
+                    in_range = True
+                    if start_dt and file_dt < start_dt:
+                        in_range = False
+                    if end_dt and file_dt > end_dt:
+                        in_range = False
+                    
+                    if in_range:
+                        filtered_files.append(file_key)
+                        
+                except Exception as e:
+                    logger.warning(f"Error parsing date from file {file_key}: {str(e)}")
+                    # Include files that couldn't be parsed by default
+                    filtered_files.append(file_key)
+            
+            logger.info(f"Filtered {len(files)} files to {len(filtered_files)} files within date range")
+            files = filtered_files
 
         if not files:
             logger.info("No JSON files found to process")
@@ -809,6 +879,8 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
             "timestamp": timestamp,
             "filesProcessed": len(files),
             "newRowsProcessed": result.get("new_rows_processed", 0),
+            "start_date": start_date,
+            "end_date": end_date,
             "processedFiles": files  # This is the large data that's causing the payload size issue
         }
         
@@ -824,7 +896,11 @@ def process_all(src_bucket: str, src_prefix: str, dst_bucket: str, dst_prefix: s
         # Return extremely minimal response - absolute minimum to avoid payload size issues
         return {
             "status": "SUCCESS",
-            "message": "Processing complete. See CloudWatch logs for details."
+            "message": "Processing complete. See CloudWatch logs for details.",
+            "start_date": start_date,
+            "end_date": end_date,
+            "results_s3_bucket": dst_bucket,
+            "results_s3_key": result_key
         }
 
     except Exception as e:
@@ -901,7 +977,15 @@ def lambda_handler(event, context):
 
         elif operation == "process_all":
             # Process all files regardless of last modified time
-            result = process_all(src_bucket, src_prefix, dst_bucket, dst_prefix)
+            # Get date range parameters if provided
+            start_date = event.get('start_date')
+            end_date = event.get('end_date')
+            
+            # Log date range if provided
+            if start_date or end_date:
+                logger.info(f"Processing files in date range: {start_date} to {end_date}")
+                
+            result = process_all(src_bucket, src_prefix, dst_bucket, dst_prefix, start_date, end_date)
 
             # If successful, also build a versioned dataset
             if result.get('status') == 'SUCCESS' and result.get('filesProcessed', 0) > 0:

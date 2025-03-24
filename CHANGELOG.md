@@ -1,3 +1,10 @@
+## [3.0.21] - 2025-03-24
+### Added
+- Implemented two-phase state machine approach to decouple scraping from processing
+- Added scrape_only parameter to scraper Lambda function
+- Modified state machine to perform a single processing step after all scraping is complete
+- Improved efficiency for large date ranges by eliminating redundant processing operations
+
 ## [3.0.20] - 2025-03-24
 ### Fixed
 - Fixed datetime import issue in the scraper Lambda function
