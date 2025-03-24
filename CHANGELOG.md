@@ -1,3 +1,18 @@
+## [3.0.13] - 2025-03-24
+### Added
+- Implemented recursive workflow pattern for handling large date ranges
+- Added date_range_splitter Lambda function to split large date ranges into smaller chunks
+- Added execution_checker Lambda function to monitor sub-executions
+- Created new unified-workflow-recursive state machine with automatic date range splitting
+- Added IAM permissions for Step Functions to start and check other executions
+
+## [3.0.12] - 2025-03-24
+### Fixed
+- Further fixed payload size limit by setting ResultPath to null for ProcessBatchesInParallel
+- Removed batch_results reference from batch verifier Lambda input
+- Ensured batch verifier relies entirely on S3 for result verification
+- Fixed States.DataLimitExceeded error when processing multi-year date ranges
+
 ## [3.0.11] - 2025-03-24
 ### Fixed
 - Modified scraper Lambda to store detailed batch results in S3 instead of returning them directly

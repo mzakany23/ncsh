@@ -4,6 +4,8 @@ import json
 from input_validator import handler as input_validator_handler
 from batch_planner import handler as batch_planner_handler
 from batch_verifier import handler as batch_verifier_handler
+from date_range_splitter import handler as date_range_splitter_handler
+from execution_checker import handler as execution_checker_handler
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -12,7 +14,9 @@ logger.setLevel(logging.INFO)
 HANDLER_MAP = {
     'ncsoccer_input_validator': input_validator_handler,
     'ncsoccer_batch_planner': batch_planner_handler,
-    'ncsoccer_batch_verifier': batch_verifier_handler
+    'ncsoccer_batch_verifier': batch_verifier_handler,
+    'ncsoccer_date_range_splitter': date_range_splitter_handler,
+    'ncsoccer_execution_checker': execution_checker_handler
 }
 
 def handler(event, context):
