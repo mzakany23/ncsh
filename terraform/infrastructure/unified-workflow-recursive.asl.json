@@ -137,7 +137,7 @@
       "Parameters": {
         "original_start_date.$": "$.validated_input.Payload.start_date",
         "original_end_date.$": "$.validated_input.Payload.end_date",
-        "bucket_name.$": "$.validated_input.Payload.bucket_name",
+        "bucket_name.$": "$.bucket_name",
         "architecture_version.$": "$.validated_input.Payload.architecture_version",
         "force_scrape.$": "$.validated_input.Payload.force_scrape",
         "sub_executions.$": "$.execution_status.Payload.executions"
@@ -153,11 +153,11 @@
         "FunctionName": "arn:aws:lambda:us-east-2:552336166511:function:ncsoccer-processing",
         "Payload": {
           "operation": "process_all",
-          "src_bucket.$": "$.scraping_results.bucket_name",
-          "dst_bucket.$": "$.scraping_results.bucket_name",
-          "start_date.$": "$.scraping_results.original_start_date",
-          "end_date.$": "$.scraping_results.original_end_date",
-          "architecture_version.$": "$.scraping_results.architecture_version"
+          "src_bucket.$": "$.bucket_name",
+          "dst_bucket.$": "$.bucket_name",
+          "start_date.$": "$.start_date",
+          "end_date.$": "$.end_date",
+          "architecture_version.$": "$.validated_input.Payload.architecture_version"
         }
       },
       "Retry": [

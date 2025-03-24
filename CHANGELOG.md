@@ -1,3 +1,10 @@
+## [3.0.22] - 2025-03-24
+### Fixed
+- Fixed parameter passing in the recursive workflow state machine
+- Updated FinalProcessing state to correctly reference input parameters
+- Ensured proper execution of recursive workflow for large date ranges
+- Verified workflow functionality with 1-day, 1-month, and 1-year test cases
+
 ## [3.0.21] - 2025-03-24
 ### Added
 - Implemented two-phase state machine approach to decouple scraping from processing
