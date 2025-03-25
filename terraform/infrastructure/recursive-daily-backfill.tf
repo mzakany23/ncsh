@@ -21,13 +21,20 @@ resource "aws_cloudwatch_event_target" "ncsoccer_recursive_daily_backfill_target
   role_arn  = aws_iam_role.unified_workflow_recursive_eventbridge_role.arn
 
   # Calculate the date range dynamically: today and the previous 2 days
-  input = jsonencode({
-    start_date           = "#{aws:DateNow(YYYY-MM-DD, -2)}", # 2 days ago
-    end_date             = "#{aws:DateNow(YYYY-MM-DD)}",     # today
-    force_scrape         = false,                           # Only scrape if needed
-    architecture_version = "v2",
-    batch_size           = 1,                               # Process one day at a time
-    bucket_name          = "ncsh-app-data",
-    is_sub_execution     = false
-  })
+  input_transformer {
+    input_paths = {
+      time = "$.time"
+    }
+    input_template = <<EOF
+{
+  "start_date": "$${time:0:4}-$${time:5:2}-$${time:8:2|-2}",
+  "end_date": "$${time:0:10}",
+  "force_scrape": false,
+  "batch_size": 1,
+  "bucket_name": "ncsh-app-data",
+  "architecture_version": "v2",
+  "is_sub_execution": false
+}
+EOF
+  }
 }
