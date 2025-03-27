@@ -1,3 +1,9 @@
+## [3.0.25] - 2025-03-27
+### Fixed
+- Added retry mechanism for Lambda function configuration update in CI/CD pipeline
+- Fixed ResourceConflictException error during Lambda function updates
+- Implemented exponential backoff strategy for more reliable deployments
+
 ## [3.0.24] - 2025-03-27
 ### Added
 - Created dedicated ECR repository for utility functions in Terraform
