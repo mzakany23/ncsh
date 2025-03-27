@@ -4,58 +4,12 @@
 ###############################################################
 
 ###############################################################
-# ECR Repository for Utility Functions
+# Lambda Functions for Batched Workflow
 ###############################################################
 
-# Using data source for existing ECR repository
-data "aws_ecr_repository" "ncsoccer_utils" {
-  name = "ncsoccer-utils"
-}
+# Note: ECR Repository for Utility Functions is now defined in ecr-utils.tf
 
-# ECR Lifecycle Policy
-resource "aws_ecr_lifecycle_policy" "ncsoccer_utils" {
-  repository = data.aws_ecr_repository.ncsoccer_utils.name
-
-  policy = jsonencode({
-    rules = [
-      {
-        rulePriority = 1,
-        description  = "Keep last 5 images",
-        selection = {
-          tagStatus   = "any",
-          countType   = "imageCountMoreThan",
-          countNumber = 5
-        },
-        action = {
-          type = "expire"
-        }
-      }
-    ]
-  })
-}
-
-# ECR Repository Policy
-resource "aws_ecr_repository_policy" "ncsoccer_utils_policy" {
-  repository = data.aws_ecr_repository.ncsoccer_utils.name
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid       = "AllowLambdaServiceAccess",
-        Effect    = "Allow",
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        },
-        Action = [
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:BatchCheckLayerAvailability"
-        ]
-      }
-    ]
-  })
-}
+# Note: ECR Repository Policy is now defined in ecr-utils.tf
 
 ###############################################################
 # IAM Role for Utility Lambda Functions

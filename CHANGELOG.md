@@ -1,3 +1,17 @@
+## [3.0.24] - 2025-03-27
+### Added
+- Created dedicated ECR repository for utility functions in Terraform
+- Fixed daily backfill Lambda function to properly process the last 3 days of data
+- Updated CI/CD pipeline to correctly build and deploy the daily backfill Lambda function
+- Added proper Lambda function configuration to ensure the correct handler is used
+
+## [3.0.23] - 2025-03-26
+### Fixed
+- Fixed daily recursive backfill job that was failing with "Input validation failed" error
+- Created new Lambda function (ncsoccer_daily_backfill) to properly trigger the recursive workflow
+- Configured Lambda to process the last 3 days of data to ensure complete coverage
+- Set force_scrape to true to ensure data is properly processed
+
 ## [3.0.22] - 2025-03-24
 ### Fixed
 - Fixed parameter passing in the recursive workflow state machine

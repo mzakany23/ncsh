@@ -13,28 +13,9 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_recursive_daily_backfill" {
   }
 }
 
-# EventBridge Target for Recursive Workflow
+# EventBridge Target for Daily Backfill Lambda
 resource "aws_cloudwatch_event_target" "ncsoccer_recursive_daily_backfill_target" {
   rule      = aws_cloudwatch_event_rule.ncsoccer_recursive_daily_backfill.name
   target_id = "NCSoccerRecursiveDailyBackfill"
-  arn       = aws_sfn_state_machine.ncsoccer_unified_workflow_recursive.arn
-  role_arn  = aws_iam_role.unified_workflow_recursive_eventbridge_role.arn
-
-  # Calculate the date range dynamically: today and the previous 2 days
-  input_transformer {
-    input_paths = {
-      time = "$.time"
-    }
-    input_template = <<EOF
-{
-  "start_date": "$${time:0:4}-$${time:5:2}-$${time:8:2|-2}",
-  "end_date": "$${time:0:10}",
-  "force_scrape": false,
-  "batch_size": 1,
-  "bucket_name": "ncsh-app-data",
-  "architecture_version": "v2",
-  "is_sub_execution": false
-}
-EOF
-  }
+  arn       = aws_lambda_function.ncsoccer_daily_backfill.arn
 }

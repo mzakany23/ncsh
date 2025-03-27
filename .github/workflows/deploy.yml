@@ -149,6 +149,16 @@ jobs:
         aws lambda update-function-code \
           --function-name ncsoccer_execution_checker \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
+        
+        # Update daily backfill Lambda function
+        aws lambda update-function-code \
+          --function-name ncsoccer_daily_backfill \
+          --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
+        
+        # Update the Lambda function configuration to use the correct handler
+        aws lambda update-function-configuration \
+          --function-name ncsoccer_daily_backfill \
+          --image-config '{"Command":["lambda_function.handler"]}'
 
   build-processing:
     needs: [validate-changes]
