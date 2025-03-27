@@ -155,10 +155,32 @@ jobs:
           --function-name ncsoccer_daily_backfill \
           --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.UTILS_REPOSITORY }}:${{ github.sha }}
         
-        # Update the Lambda function configuration to use the correct handler
-        aws lambda update-function-configuration \
-          --function-name ncsoccer_daily_backfill \
-          --image-config '{"Command":["lambda_function.handler"]}'
+        # Update the Lambda function configuration to use the correct handler with retry
+        MAX_RETRIES=5
+        RETRY_COUNT=0
+        RETRY_DELAY=10
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "Attempting to update Lambda function configuration (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)..."
+          
+          if aws lambda update-function-configuration \
+            --function-name ncsoccer_daily_backfill \
+            --image-config '{"Command":["lambda_function.handler"]}'; then
+            echo "Lambda function configuration updated successfully."
+            break
+          else
+            RETRY_COUNT=$((RETRY_COUNT+1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Update failed. Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+              # Increase delay for next retry (exponential backoff)
+              RETRY_DELAY=$((RETRY_DELAY*2))
+            else
+              echo "Failed to update Lambda function configuration after $MAX_RETRIES attempts."
+              exit 1
+            fi
+          fi
+        done
 
   build-processing:
     needs: [validate-changes]
