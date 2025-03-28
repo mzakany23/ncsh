@@ -122,7 +122,7 @@ resource "aws_cloudwatch_event_rule" "ncsoccer_daily_unified" {
   description = "Trigger NC Soccer unified workflow for current day at 04:00 UTC"
 
   schedule_expression = "cron(0 4 * * ? *)"
-  state               = "ENABLED"
+  state               = "DISABLED" # Disabled in favor of recursive workflow
 
   tags = {
     Environment = var.environment
