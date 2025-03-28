@@ -1,3 +1,9 @@
+## [3.0.26] - 2025-03-28
+### Fixed
+- Disabled incorrect EventBridge rules that were triggering the wrong Step Functions
+- Ensured only the recursive workflow is triggered by the daily cron job
+- Prevented failures from non-recursive workflows running in parallel
+
 ## [3.0.25] - 2025-03-27
 ### Fixed
 - Added retry mechanism for Lambda function configuration update in CI/CD pipeline
