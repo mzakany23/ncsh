@@ -19,3 +19,12 @@ resource "aws_cloudwatch_event_target" "ncsoccer_recursive_daily_backfill_target
   target_id = "NCSoccerRecursiveDailyBackfill"
   arn       = aws_lambda_function.ncsoccer_daily_backfill.arn
 }
+
+# Permission for EventBridge to invoke Lambda
+resource "aws_lambda_permission" "allow_eventbridge_to_invoke_daily_backfill" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ncsoccer_daily_backfill.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.ncsoccer_recursive_daily_backfill.arn
+}
