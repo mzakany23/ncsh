@@ -21,6 +21,6 @@ output "lambda_function_name" {
 }
 
 output "step_function_arn" {
-  description = "The ARN of the Step Function"
-  value       = aws_sfn_state_machine.ncsoccer_unified_workflow.arn
+  description = "The ARN of the Recursive Step Function"
+  value       = aws_sfn_state_machine.ncsoccer_unified_workflow_recursive.arn
 }
