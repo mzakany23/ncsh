@@ -1,1 +1,0 @@
-{"errorType":"Runtime.InvalidEntrypoint","errorMessage":"RequestId: 8b759574-4a5f-48dd-bf2c-f67313542578 Error: exec: \"lambda_function.handler\": executable file not found in $PATH"}
